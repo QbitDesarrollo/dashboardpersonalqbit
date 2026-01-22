@@ -1,0 +1,361 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
+import {
+  Download,
+  FileBox,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Briefcase,
+  Loader2,
+  ExternalLink,
+} from 'lucide-react';
+
+interface Brand {
+  id: string;
+  nombre: string;
+}
+
+interface Task {
+  id: string;
+  titulo_tarea: string;
+  estado: string;
+  fecha_entrega: string;
+  prioridad: string;
+  brands?: { nombre: string };
+}
+
+interface Deliverable {
+  id: string;
+  task_id: string;
+  version: string;
+  estado: string;
+  link_final: string | null;
+  deliverable_types?: { nombre: string };
+  tasks?: { titulo_tarea: string };
+}
+
+interface FileRecord {
+  id: string;
+  nombre_archivo: string;
+  url_storage: string;
+  deliverable_id: string | null;
+}
+
+export default function ClientPortal() {
+  const { profile } = useAuth();
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState<string>('');
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
+  const [files, setFiles] = useState<FileRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchBrands();
+  }, [profile]);
+
+  useEffect(() => {
+    if (selectedBrand) {
+      fetchBrandData();
+    }
+  }, [selectedBrand]);
+
+  const fetchBrands = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('brands')
+        .select('*')
+        .eq('activo', true);
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setBrands(data);
+        setSelectedBrand(data[0].id);
+      }
+    } catch (error) {
+      console.error('Error fetching brands:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchBrandData = async () => {
+    try {
+      const [tasksRes, delRes, filesRes] = await Promise.all([
+        supabase.from('tasks').select('*').eq('brand_id', selectedBrand),
+        supabase.from('deliverables').select(`
+          *,
+          deliverable_types (nombre),
+          tasks!inner (titulo_tarea, brand_id)
+        `).in('estado', ['aprobado', 'final']),
+        supabase.from('files').select('*'),
+      ]);
+
+      if (tasksRes.data) setTasks(tasksRes.data as Task[]);
+      
+      if (delRes.data) {
+        const filteredDel = delRes.data.filter(
+          (d: any) => d.tasks?.brand_id === selectedBrand
+        );
+        setDeliverables(filteredDel as Deliverable[]);
+      }
+      
+      if (filesRes.data) setFiles(filesRes.data as FileRecord[]);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
+  const getStatusColor = (estado: string) => {
+    const colors: Record<string, string> = {
+      backlog: 'bg-status-backlog text-white',
+      en_proceso: 'bg-status-in-progress text-white',
+      en_revision: 'bg-status-in-review text-black',
+      aprobado: 'bg-status-approved text-white',
+      entregado: 'bg-status-delivered text-white',
+      bloqueado: 'bg-status-blocked text-white',
+    };
+    return colors[estado] || 'bg-muted text-muted-foreground';
+  };
+
+  const getStatusLabel = (estado: string) => {
+    const labels: Record<string, string> = {
+      backlog: 'Backlog',
+      en_proceso: 'En Proceso',
+      en_revision: 'En Revisión',
+      aprobado: 'Aprobado',
+      entregado: 'Entregado',
+      bloqueado: 'Bloqueado',
+    };
+    return labels[estado] || estado;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (brands.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-center">
+        <Briefcase className="h-16 w-16 text-muted-foreground opacity-50 mb-4" />
+        <h3 className="text-lg font-medium text-foreground">Sin marcas asignadas</h3>
+        <p className="text-muted-foreground">No tienes marcas asignadas a tu cuenta.</p>
+      </div>
+    );
+  }
+
+  const approvedDeliverables = deliverables.filter(d => 
+    d.estado === 'aprobado' || d.estado === 'final'
+  );
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">Portal Cliente</h2>
+          <p className="text-muted-foreground">
+            Bienvenido, {profile?.nombre}
+          </p>
+        </div>
+        <Select value={selectedBrand} onValueChange={setSelectedBrand}>
+          <SelectTrigger className="w-full sm:w-48">
+            <SelectValue placeholder="Seleccionar marca" />
+          </SelectTrigger>
+          <SelectContent>
+            {brands.map((brand) => (
+              <SelectItem key={brand.id} value={brand.id}>
+                {brand.nombre}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="glass-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-info/10 rounded-lg">
+                <Clock className="h-5 w-5 text-info" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {tasks.filter(t => t.estado === 'en_proceso').length}
+                </p>
+                <p className="text-xs text-muted-foreground">En Proceso</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-warning/10 rounded-lg">
+                <FileBox className="h-5 w-5 text-warning" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {tasks.filter(t => t.estado === 'en_revision').length}
+                </p>
+                <p className="text-xs text-muted-foreground">En Revisión</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-success/10 rounded-lg">
+                <CheckCircle2 className="h-5 w-5 text-success" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {tasks.filter(t => t.estado === 'entregado').length}
+                </p>
+                <p className="text-xs text-muted-foreground">Entregado</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Briefcase className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{approvedDeliverables.length}</p>
+                <p className="text-xs text-muted-foreground">Entregables</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tasks */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="text-lg">Tareas de tu Marca</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {tasks.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground">No hay tareas</p>
+          ) : (
+            <div className="space-y-3">
+              {tasks.map((task) => (
+                <div
+                  key={task.id}
+                  className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                >
+                  <div>
+                    <p className="font-medium text-foreground">{task.titulo_tarea}</p>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                      <Calendar className="h-3 w-3" />
+                      {new Date(task.fecha_entrega).toLocaleDateString('es-ES')}
+                    </div>
+                  </div>
+                  <Badge className={cn("text-xs", getStatusColor(task.estado))}>
+                    {getStatusLabel(task.estado)}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Approved Deliverables */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-success" />
+            Entregables Aprobados
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {approvedDeliverables.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground">
+              No hay entregables aprobados aún
+            </p>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {approvedDeliverables.map((del) => {
+                const deliverableFiles = files.filter(f => f.deliverable_id === del.id);
+                return (
+                  <Card key={del.id} className="bg-muted/30">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="font-medium text-foreground">
+                            {del.tasks?.titulo_tarea}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline">{del.version}</Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {del.deliverable_types?.nombre}
+                            </span>
+                          </div>
+                        </div>
+                        <Badge className="bg-success text-success-foreground">
+                          {del.estado === 'final' ? 'Final' : 'Aprobado'}
+                        </Badge>
+                      </div>
+                      
+                      <div className="mt-3 pt-3 border-t border-border space-y-2">
+                        {del.link_final && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-start"
+                            asChild
+                          >
+                            <a href={del.link_final} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Ver Entregable
+                            </a>
+                          </Button>
+                        )}
+                        {deliverableFiles.map((file) => (
+                          <Button
+                            key={file.id}
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start text-muted-foreground"
+                            asChild
+                          >
+                            <a href={file.url_storage} target="_blank" rel="noopener noreferrer">
+                              <Download className="h-4 w-4 mr-2" />
+                              {file.nombre_archivo}
+                            </a>
+                          </Button>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
