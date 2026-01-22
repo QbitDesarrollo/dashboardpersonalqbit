@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import {
   CheckCircle2,
@@ -14,7 +13,38 @@ import {
   Calendar,
   Users,
   Briefcase,
+  Package,
+  Timer,
+  Building2,
+  User,
 } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from 'recharts';
+
+interface Task {
+  id: string;
+  titulo_tarea: string;
+  fecha_entrega: string;
+  prioridad: string;
+  estado: string;
+  responsable_user_id: string | null;
+  brand_id: string;
+  cantidad_entregables: number;
+  tiempo_trabajado: number;
+  brands?: { nombre: string };
+  profiles?: { nombre: string };
+}
 
 interface TaskStats {
   total: number;
@@ -37,8 +67,48 @@ interface UrgentTask {
   brand_name: string;
 }
 
+interface ResponsableMetric {
+  nombre: string;
+  total: number;
+  completadas: number;
+  enProgreso: number;
+  tiempoTotal: number;
+  entregables: number;
+}
+
+interface BrandMetric {
+  nombre: string;
+  total: number;
+  completadas: number;
+  tiempoTotal: number;
+  entregables: number;
+}
+
+const CHART_COLORS = [
+  'hsl(var(--primary))',
+  'hsl(var(--info))',
+  'hsl(var(--success))',
+  'hsl(var(--warning))',
+  'hsl(var(--destructive))',
+  'hsl(220, 70%, 50%)',
+  'hsl(280, 70%, 50%)',
+  'hsl(340, 70%, 50%)',
+];
+
+const formatTime = (seconds: number) => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+};
+
 export default function Dashboard() {
   const { profile, isCliente } = useAuth();
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [profiles, setProfiles] = useState<{ id: string; nombre: string }[]>([]);
+  const [brands, setBrands] = useState<{ id: string; nombre: string }[]>([]);
   const [stats, setStats] = useState<TaskStats>({
     total: 0,
     backlog: 0,
@@ -58,20 +128,24 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const { data: tasks, error } = await supabase
-        .from('tasks')
-        .select(`
-          *,
-          brands (nombre)
-        `);
+      const [tasksRes, profilesRes, brandsRes] = await Promise.all([
+        supabase.from('tasks').select(`*, brands (nombre)`),
+        supabase.from('profiles').select('id, nombre').eq('activo', true),
+        supabase.from('brands').select('id, nombre').eq('activo', true),
+      ]);
 
-      if (error) throw error;
+      if (tasksRes.error) throw tasksRes.error;
+
+      const fetchedTasks = tasksRes.data as Task[];
+      setTasks(fetchedTasks);
+      setProfiles(profilesRes.data || []);
+      setBrands(brandsRes.data || []);
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
       const taskStats: TaskStats = {
-        total: tasks?.length || 0,
+        total: fetchedTasks.length,
         backlog: 0,
         en_proceso: 0,
         en_revision: 0,
@@ -83,23 +157,19 @@ export default function Dashboard() {
 
       const urgent: UrgentTask[] = [];
 
-      tasks?.forEach(task => {
-        // Count by status
+      fetchedTasks.forEach(task => {
         if (task.estado in taskStats) {
           taskStats[task.estado as keyof TaskStats]++;
         }
 
-        // Calculate days remaining
         const fechaEntrega = new Date(task.fecha_entrega);
         fechaEntrega.setHours(0, 0, 0, 0);
         const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-        // Count overdue
         if (diasRestantes < 0 && task.estado !== 'entregado') {
           taskStats.atrasadas++;
         }
 
-        // Get urgent tasks (2 days or less)
         if (diasRestantes <= 2 && task.estado !== 'entregado') {
           urgent.push({
             id: task.id,
@@ -121,6 +191,75 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
+
+  // Metrics by Responsable
+  const responsableMetrics = useMemo(() => {
+    const metricsMap = new Map<string, ResponsableMetric>();
+    
+    tasks.forEach(task => {
+      if (!task.responsable_user_id) return;
+      
+      const profileName = profiles.find(p => p.id === task.responsable_user_id)?.nombre || 'Sin asignar';
+      const existing = metricsMap.get(task.responsable_user_id) || {
+        nombre: profileName,
+        total: 0,
+        completadas: 0,
+        enProgreso: 0,
+        tiempoTotal: 0,
+        entregables: 0,
+      };
+
+      existing.total++;
+      existing.entregables += task.cantidad_entregables;
+      existing.tiempoTotal += task.tiempo_trabajado;
+      
+      if (task.estado === 'entregado' || task.estado === 'aprobado') {
+        existing.completadas++;
+      } else if (task.estado === 'en_proceso' || task.estado === 'en_revision') {
+        existing.enProgreso++;
+      }
+
+      metricsMap.set(task.responsable_user_id, existing);
+    });
+
+    return Array.from(metricsMap.values()).sort((a, b) => b.total - a.total);
+  }, [tasks, profiles]);
+
+  // Metrics by Brand
+  const brandMetrics = useMemo(() => {
+    const metricsMap = new Map<string, BrandMetric>();
+    
+    tasks.forEach(task => {
+      const brandName = task.brands?.nombre || 'Sin marca';
+      const existing = metricsMap.get(task.brand_id) || {
+        nombre: brandName,
+        total: 0,
+        completadas: 0,
+        tiempoTotal: 0,
+        entregables: 0,
+      };
+
+      existing.total++;
+      existing.entregables += task.cantidad_entregables;
+      existing.tiempoTotal += task.tiempo_trabajado;
+      
+      if (task.estado === 'entregado' || task.estado === 'aprobado') {
+        existing.completadas++;
+      }
+
+      metricsMap.set(task.brand_id, existing);
+    });
+
+    return Array.from(metricsMap.values()).sort((a, b) => b.total - a.total);
+  }, [tasks]);
+
+  // Total metrics
+  const totals = useMemo(() => {
+    return {
+      entregables: tasks.reduce((sum, t) => sum + t.cantidad_entregables, 0),
+      tiempoTotal: tasks.reduce((sum, t) => sum + t.tiempo_trabajado, 0),
+    };
+  }, [tasks]);
 
   const kpiCards = [
     {
@@ -152,18 +291,19 @@ export default function Dashboard() {
       bgColor: 'bg-destructive/10',
     },
     {
-      title: 'Bloqueadas',
-      value: stats.bloqueado,
-      icon: <XCircle className="h-5 w-5" />,
-      color: 'text-destructive',
-      bgColor: 'bg-destructive/10',
-    },
-    {
-      title: 'Total Tareas',
-      value: stats.total,
-      icon: <Briefcase className="h-5 w-5" />,
+      title: 'Total Entregables',
+      value: totals.entregables,
+      icon: <Package className="h-5 w-5" />,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
+    },
+    {
+      title: 'Tiempo Total',
+      value: formatTime(totals.tiempoTotal),
+      icon: <Timer className="h-5 w-5" />,
+      color: 'text-info',
+      bgColor: 'bg-info/10',
+      isTime: true,
     },
   ];
 
@@ -251,11 +391,202 @@ export default function Dashboard() {
                   <span className={kpi.color}>{kpi.icon}</span>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-foreground">{kpi.value}</p>
+              <p className="text-2xl font-bold text-foreground">
+                {kpi.isTime ? kpi.value : kpi.value}
+              </p>
               <p className="text-xs text-muted-foreground">{kpi.title}</p>
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Tasks by Responsable Chart */}
+        <Card className="glass-card">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">Tareas por Responsable</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {responsableMetrics.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <User className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                <p>No hay tareas asignadas</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={responsableMetrics.slice(0, 6)} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" />
+                  <YAxis 
+                    dataKey="nombre" 
+                    type="category" 
+                    width={100} 
+                    stroke="hsl(var(--muted-foreground))"
+                    tick={{ fontSize: 12 }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                    }}
+                    formatter={(value: number, name: string) => {
+                      const labels: Record<string, string> = {
+                        completadas: 'Completadas',
+                        enProgreso: 'En Progreso',
+                        total: 'Total',
+                      };
+                      return [value, labels[name] || name];
+                    }}
+                  />
+                  <Bar dataKey="completadas" fill="hsl(var(--success))" name="completadas" stackId="a" />
+                  <Bar dataKey="enProgreso" fill="hsl(var(--info))" name="enProgreso" stackId="a" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Tasks by Brand Chart */}
+        <Card className="glass-card">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">Tareas por Marca</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {brandMetrics.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Building2 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                <p>No hay tareas registradas</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={brandMetrics.slice(0, 6)}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ nombre, total }) => `${nombre}: ${total}`}
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="total"
+                  >
+                    {brandMetrics.slice(0, 6).map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                    }}
+                    formatter={(value: number) => [`${value} tareas`, 'Total']}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Detailed Metrics Tables */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Responsable Metrics Table */}
+        <Card className="glass-card">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <User className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">Métricas por Responsable</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {responsableMetrics.length === 0 ? (
+                <p className="text-center text-muted-foreground py-4">No hay datos</p>
+              ) : (
+                responsableMetrics.slice(0, 5).map((metric, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                        <User className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">{metric.nombre}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {metric.completadas}/{metric.total} completadas
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="text-center">
+                        <p className="font-semibold text-foreground">{metric.entregables}</p>
+                        <p className="text-xs text-muted-foreground">Entregables</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="font-semibold text-foreground">{formatTime(metric.tiempoTotal)}</p>
+                        <p className="text-xs text-muted-foreground">Tiempo</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Brand Metrics Table */}
+        <Card className="glass-card">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">Métricas por Marca</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {brandMetrics.length === 0 ? (
+                <p className="text-center text-muted-foreground py-4">No hay datos</p>
+              ) : (
+                brandMetrics.slice(0, 5).map((metric, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-8 h-8 rounded-full flex items-center justify-center"
+                        style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] + '30' }}
+                      >
+                        <Building2 className="h-4 w-4" style={{ color: CHART_COLORS[index % CHART_COLORS.length] }} />
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">{metric.nombre}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {metric.completadas}/{metric.total} completadas
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="text-center">
+                        <p className="font-semibold text-foreground">{metric.entregables}</p>
+                        <p className="text-xs text-muted-foreground">Entregables</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="font-semibold text-foreground">{formatTime(metric.tiempoTotal)}</p>
+                        <p className="text-xs text-muted-foreground">Tiempo</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Progress overview */}
