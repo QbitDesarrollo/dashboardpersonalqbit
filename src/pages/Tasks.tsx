@@ -48,6 +48,8 @@ import {
 } from 'lucide-react';
 
 import { TaskTimer } from '@/components/tasks/TaskTimer';
+import { TaskFiles } from '@/components/tasks/TaskFiles';
+import { DeliverableProgress } from '@/components/tasks/DeliverableProgress';
 import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 
 interface Task {
@@ -177,9 +179,48 @@ export default function Tasks() {
         if (error) throw error;
         toast.success('Tarea actualizada');
       } else {
-        const { error } = await supabase.from('tasks').insert(taskData);
+        const { data: insertedTask, error } = await supabase
+          .from('tasks')
+          .insert(taskData)
+          .select()
+          .single();
+          
         if (error) throw error;
         toast.success('Tarea creada');
+
+        // Send email notification if a responsible user is assigned
+        if (formData.responsable_user_id) {
+          const assignedUser = users.find(u => u.id === formData.responsable_user_id);
+          const brandName = brands.find(b => b.id === formData.brand_id)?.nombre || 'Sin marca';
+          
+          if (assignedUser) {
+            // Get user email from profiles
+            const { data: userProfile } = await supabase
+              .from('profiles')
+              .select('email, nombre')
+              .eq('id', formData.responsable_user_id)
+              .single();
+
+            if (userProfile?.email) {
+              try {
+                await supabase.functions.invoke('send-task-notification', {
+                  body: {
+                    taskTitle: formData.titulo_tarea,
+                    brandName,
+                    fechaEntrega: formData.fecha_entrega,
+                    prioridad: formData.prioridad,
+                    recipientEmail: userProfile.email,
+                    recipientName: userProfile.nombre,
+                  },
+                });
+                toast.success('Notificación enviada al responsable');
+              } catch (emailError) {
+                console.error('Error sending email:', emailError);
+                // Don't show error to user, task was created successfully
+              }
+            }
+          }
+        }
       }
 
       setDialogOpen(false);
@@ -602,6 +643,7 @@ export default function Tasks() {
                   <TableHead>Mesa</TableHead>
                   <TableHead className="text-center">Entregables</TableHead>
                   <TableHead>Timer</TableHead>
+                  <TableHead>Archivos</TableHead>
                   <TableHead>Prioridad</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Entrega</TableHead>
@@ -612,7 +654,7 @@ export default function Tasks() {
               <TableBody>
                 {filteredTasks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                       No se encontraron tareas
                     </TableCell>
                   </TableRow>
@@ -655,6 +697,13 @@ export default function Tasks() {
                             canEdit={canEditTask(task)}
                             compact
                             onUpdate={fetchData}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <TaskFiles
+                            taskId={task.id}
+                            canEdit={canEditTask(task)}
+                            compact
                           />
                         </TableCell>
                         <TableCell>
@@ -772,6 +821,18 @@ export default function Tasks() {
                   <span className="ml-2 font-medium">{selectedTask.cantidad_entregables}</span>
                 </div>
               </div>
+
+              {/* Deliverable Progress */}
+              <DeliverableProgress
+                taskId={selectedTask.id}
+                expectedCount={selectedTask.cantidad_entregables}
+              />
+
+              {/* Files Section */}
+              <TaskFiles
+                taskId={selectedTask.id}
+                canEdit={canEditTask(selectedTask)}
+              />
 
               {selectedTask.detalle && (
                 <div>
