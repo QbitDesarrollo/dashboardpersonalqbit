@@ -43,7 +43,12 @@ import {
   Calendar,
   Loader2,
   X,
+  Timer,
+  Package,
 } from 'lucide-react';
+
+import { TaskTimer } from '@/components/tasks/TaskTimer';
+import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 
 interface Task {
   id: string;
@@ -64,6 +69,9 @@ interface Task {
   qa_checklist: any;
   created_at: string;
   updated_at: string;
+  tiempo_trabajado: number;
+  timer_activo: boolean;
+  timer_inicio: string | null;
   brands?: { nombre: string };
   desks?: { nombre: string };
   profiles?: { nombre: string };
@@ -592,6 +600,8 @@ export default function Tasks() {
                   <TableHead>Tarea</TableHead>
                   <TableHead>Marca</TableHead>
                   <TableHead>Mesa</TableHead>
+                  <TableHead className="text-center">Entregables</TableHead>
+                  <TableHead>Timer</TableHead>
                   <TableHead>Prioridad</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Entrega</TableHead>
@@ -602,7 +612,7 @@ export default function Tasks() {
               <TableBody>
                 {filteredTasks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                       No se encontraron tareas
                     </TableCell>
                   </TableRow>
@@ -629,6 +639,23 @@ export default function Tasks() {
                         </TableCell>
                         <TableCell>
                           <span className="text-sm">{task.desks?.nombre || '-'}</span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <Package className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">{task.cantidad_entregables}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <TaskTimer
+                            taskId={task.id}
+                            initialTime={task.tiempo_trabajado}
+                            isActive={task.timer_activo}
+                            startTime={task.timer_inicio}
+                            canEdit={canEditTask(task)}
+                            compact
+                            onUpdate={fetchData}
+                          />
                         </TableCell>
                         <TableCell>
                           <Badge className={cn("text-xs", getPriorityColor(task.prioridad))}>
@@ -710,6 +737,19 @@ export default function Tasks() {
                     {getStatusLabel(selectedTask.estado)}
                   </Badge>
                 </div>
+              </div>
+
+              {/* Timer Section */}
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-2">Tiempo Trabajado</h4>
+                <TaskTimer
+                  taskId={selectedTask.id}
+                  initialTime={selectedTask.tiempo_trabajado}
+                  isActive={selectedTask.timer_activo}
+                  startTime={selectedTask.timer_inicio}
+                  canEdit={canEditTask(selectedTask)}
+                  onUpdate={fetchData}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4 text-sm">
