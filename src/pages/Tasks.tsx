@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -97,6 +98,7 @@ interface Profile {
 
 export default function Tasks() {
   const { profile, isAdmin, isOps, isEquipo } = useAuth();
+  const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [desks, setDesks] = useState<Desk[]>([]);
@@ -287,6 +289,21 @@ export default function Tasks() {
     }
   };
 
+  const updateTaskPriority = async (taskId: string, prioridad: Task['prioridad']) => {
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ prioridad })
+        .eq('id', taskId);
+
+      if (error) throw error;
+      toast.success('Prioridad actualizada');
+      fetchData();
+    } catch (error: any) {
+      toast.error('Error', { description: error.message });
+    }
+  };
+
   const toggleCheck = async (taskId: string, checked: boolean) => {
     try {
       const { error } = await supabase
@@ -307,7 +324,12 @@ export default function Tasks() {
     const matchesStatus = filterStatus === 'all' || task.estado === filterStatus;
     const matchesPriority = filterPriority === 'all' || task.prioridad === filterPriority;
     const matchesResponsable = filterResponsable === 'all' || task.responsable_user_id === filterResponsable;
-    return matchesSearch && matchesBrand && matchesStatus && matchesPriority && matchesResponsable;
+    
+    // Apply global filters from sidebar
+    const matchesPinnedDesk = !pinnedDeskId || task.desk_id === pinnedDeskId;
+    const matchesPinnedBrand = !pinnedBrandId || task.brand_id === pinnedBrandId;
+    
+    return matchesSearch && matchesBrand && matchesStatus && matchesPriority && matchesResponsable && matchesPinnedDesk && matchesPinnedBrand;
   });
 
   const getPriorityColor = (prioridad: string) => {
@@ -736,14 +758,49 @@ export default function Tasks() {
                           />
                         </TableCell>
                         <TableCell>
-                          <Badge className={cn("text-xs", getPriorityColor(task.prioridad))}>
-                            {task.prioridad.toUpperCase()}
-                          </Badge>
+                          {canEditTask(task) ? (
+                            <Select
+                              value={task.prioridad}
+                              onValueChange={(value: Task['prioridad']) => updateTaskPriority(task.id, value)}
+                            >
+                              <SelectTrigger className={cn("h-7 w-24 text-xs border-0", getPriorityColor(task.prioridad))}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="alta">ALTA</SelectItem>
+                                <SelectItem value="media">MEDIA</SelectItem>
+                                <SelectItem value="baja">BAJA</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge className={cn("text-xs", getPriorityColor(task.prioridad))}>
+                              {task.prioridad.toUpperCase()}
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell>
-                          <Badge className={cn("text-xs", getStatusColor(task.estado))}>
-                            {getStatusLabel(task.estado)}
-                          </Badge>
+                          {canEditTask(task) ? (
+                            <Select
+                              value={task.estado}
+                              onValueChange={(value: Task['estado']) => updateTaskStatus(task.id, value)}
+                            >
+                              <SelectTrigger className={cn("h-7 w-28 text-xs border-0", getStatusColor(task.estado))}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="backlog">Backlog</SelectItem>
+                                <SelectItem value="en_proceso">En Proceso</SelectItem>
+                                <SelectItem value="en_revision">En Revisión</SelectItem>
+                                <SelectItem value="aprobado">Aprobado</SelectItem>
+                                <SelectItem value="entregado">Entregado</SelectItem>
+                                <SelectItem value="bloqueado">Bloqueado</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge className={cn("text-xs", getStatusColor(task.estado))}>
+                              {getStatusLabel(task.estado)}
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1 text-sm text-muted-foreground">

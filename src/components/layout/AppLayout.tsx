@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 import {
   LayoutDashboard,
   CheckSquare,
@@ -17,6 +19,8 @@ import {
   ChevronDown,
   Bell,
   Briefcase,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -54,12 +58,38 @@ const adminNavigation: NavItem[] = [
   { title: 'Configuración', href: '/admin/configuracion', icon: <Settings className="h-5 w-5" /> },
 ];
 
+interface Desk {
+  id: string;
+  nombre: string;
+}
+
+interface Brand {
+  id: string;
+  nombre: string;
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, signOut, isAdmin, isOps } = useAuth();
+  const { pinnedDeskId, pinnedBrandId, pinnedDeskName, pinnedBrandName, setPinnedDesk, setPinnedBrand, clearFilters, hasActiveFilter } = useGlobalFilter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [pinnedMenuOpen, setPinnedMenuOpen] = useState(true);
+  const [desks, setDesks] = useState<Desk[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const [desksRes, brandsRes] = await Promise.all([
+        supabase.from('desks').select('id, nombre').eq('activo', true),
+        supabase.from('brands').select('id, nombre').eq('activo', true),
+      ]);
+      if (desksRes.data) setDesks(desksRes.data);
+      if (brandsRes.data) setBrands(brandsRes.data);
+    };
+    fetchData();
+  }, []);
 
   const handleSignOut = async () => {
     await signOut();
@@ -146,6 +176,114 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </Link>
               ))}
             </nav>
+
+            {/* Pinned Filters Section */}
+            <div className="mt-6 px-3">
+              <button
+                onClick={() => setPinnedMenuOpen(!pinnedMenuOpen)}
+                className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Pin className="h-3 w-3" />
+                  Filtros Globales
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform",
+                    pinnedMenuOpen && "rotate-180"
+                  )}
+                />
+              </button>
+              {pinnedMenuOpen && (
+                <div className="mt-2 space-y-3">
+                  {/* Active filters display */}
+                  {hasActiveFilter && (
+                    <div className="px-3 py-2 bg-primary/10 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-primary">Filtros activos</span>
+                        <button
+                          onClick={clearFilters}
+                          className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1"
+                        >
+                          <PinOff className="h-3 w-3" />
+                          Limpiar
+                        </button>
+                      </div>
+                      {pinnedDeskName && (
+                        <div className="text-xs text-foreground flex items-center gap-1 mb-1">
+                          <LayoutDashboard className="h-3 w-3" />
+                          Mesa: <span className="font-medium">{pinnedDeskName}</span>
+                        </div>
+                      )}
+                      {pinnedBrandName && (
+                        <div className="text-xs text-foreground flex items-center gap-1">
+                          <Tags className="h-3 w-3" />
+                          Marca: <span className="font-medium">{pinnedBrandName}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Desk selection */}
+                  <div className="space-y-1">
+                    <span className="px-3 text-xs text-muted-foreground">Mesas</span>
+                    {desks.map((desk) => (
+                      <button
+                        key={desk.id}
+                        onClick={() => {
+                          if (pinnedDeskId === desk.id) {
+                            setPinnedDesk(null, null);
+                          } else {
+                            setPinnedDesk(desk.id, desk.nombre);
+                          }
+                        }}
+                        className={cn(
+                          "flex items-center justify-between w-full px-3 py-2 rounded-lg text-sm transition-colors",
+                          pinnedDeskId === desk.id
+                            ? "bg-primary text-primary-foreground"
+                            : "text-sidebar-foreground hover:bg-sidebar-accent/50"
+                        )}
+                      >
+                        <span className="flex items-center gap-2">
+                          <LayoutDashboard className="h-4 w-4" />
+                          {desk.nombre}
+                        </span>
+                        {pinnedDeskId === desk.id && <Pin className="h-3 w-3" />}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Brand selection */}
+                  <div className="space-y-1">
+                    <span className="px-3 text-xs text-muted-foreground">Marcas</span>
+                    {brands.slice(0, 8).map((brand) => (
+                      <button
+                        key={brand.id}
+                        onClick={() => {
+                          if (pinnedBrandId === brand.id) {
+                            setPinnedBrand(null, null);
+                          } else {
+                            setPinnedBrand(brand.id, brand.nombre);
+                          }
+                        }}
+                        className={cn(
+                          "flex items-center justify-between w-full px-3 py-2 rounded-lg text-sm transition-colors",
+                          pinnedBrandId === brand.id
+                            ? "bg-primary text-primary-foreground"
+                            : "text-sidebar-foreground hover:bg-sidebar-accent/50"
+                        )}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Tags className="h-4 w-4" />
+                          {brand.nombre}
+                        </span>
+                        {pinnedBrandId === brand.id && <Pin className="h-3 w-3" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Admin section */}
             {(isAdmin || isOps) && (

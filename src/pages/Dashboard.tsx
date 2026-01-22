@@ -1,8 +1,16 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
   CheckCircle2,
@@ -17,6 +25,7 @@ import {
   Timer,
   Building2,
   User,
+  Filter,
 } from 'lucide-react';
 import {
   BarChart,
@@ -106,9 +115,13 @@ const formatTime = (seconds: number) => {
 
 export default function Dashboard() {
   const { profile, isCliente } = useAuth();
+  const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [profiles, setProfiles] = useState<{ id: string; nombre: string }[]>([]);
   const [brands, setBrands] = useState<{ id: string; nombre: string }[]>([]);
+  const [desks, setDesks] = useState<{ id: string; nombre: string }[]>([]);
+  const [filterBrand, setFilterBrand] = useState<string>('all');
+  const [filterResponsable, setFilterResponsable] = useState<string>('all');
   const [stats, setStats] = useState<TaskStats>({
     total: 0,
     backlog: 0,
@@ -128,10 +141,11 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const [tasksRes, profilesRes, brandsRes] = await Promise.all([
+      const [tasksRes, profilesRes, brandsRes, desksRes] = await Promise.all([
         supabase.from('tasks').select(`*, brands (nombre)`),
         supabase.from('profiles').select('id, nombre').eq('activo', true),
         supabase.from('brands').select('id, nombre').eq('activo', true),
+        supabase.from('desks').select('id, nombre').eq('activo', true),
       ]);
 
       if (tasksRes.error) throw tasksRes.error;
@@ -140,6 +154,7 @@ export default function Dashboard() {
       setTasks(fetchedTasks);
       setProfiles(profilesRes.data || []);
       setBrands(brandsRes.data || []);
+      setDesks(desksRes.data || []);
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -192,11 +207,82 @@ export default function Dashboard() {
     }
   };
 
+  // Apply filters (local + global)
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(task => {
+      const matchesBrand = filterBrand === 'all' || task.brand_id === filterBrand;
+      const matchesResponsable = filterResponsable === 'all' || task.responsable_user_id === filterResponsable;
+      const matchesPinnedDesk = !pinnedDeskId || (task as any).desk_id === pinnedDeskId;
+      const matchesPinnedBrand = !pinnedBrandId || task.brand_id === pinnedBrandId;
+      return matchesBrand && matchesResponsable && matchesPinnedDesk && matchesPinnedBrand;
+    });
+  }, [tasks, filterBrand, filterResponsable, pinnedDeskId, pinnedBrandId]);
+
+  // Calculate stats from filtered tasks
+  const filteredStats = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const taskStats: TaskStats = {
+      total: filteredTasks.length,
+      backlog: 0,
+      en_proceso: 0,
+      en_revision: 0,
+      aprobado: 0,
+      entregado: 0,
+      bloqueado: 0,
+      atrasadas: 0,
+    };
+
+    filteredTasks.forEach(task => {
+      if (task.estado in taskStats) {
+        taskStats[task.estado as keyof TaskStats]++;
+      }
+      const fechaEntrega = new Date(task.fecha_entrega);
+      fechaEntrega.setHours(0, 0, 0, 0);
+      const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (diasRestantes < 0 && task.estado !== 'entregado') {
+        taskStats.atrasadas++;
+      }
+    });
+
+    return taskStats;
+  }, [filteredTasks]);
+
+  // Filtered urgent tasks
+  const filteredUrgentTasks = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    return filteredTasks
+      .filter(task => {
+        const fechaEntrega = new Date(task.fecha_entrega);
+        fechaEntrega.setHours(0, 0, 0, 0);
+        const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return diasRestantes <= 2 && task.estado !== 'entregado';
+      })
+      .map(task => {
+        const fechaEntrega = new Date(task.fecha_entrega);
+        fechaEntrega.setHours(0, 0, 0, 0);
+        const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return {
+          id: task.id,
+          titulo_tarea: task.titulo_tarea,
+          fecha_entrega: task.fecha_entrega,
+          dias_restantes: diasRestantes,
+          prioridad: task.prioridad,
+          estado: task.estado,
+          brand_name: task.brands?.nombre || 'Sin marca',
+        };
+      })
+      .sort((a, b) => a.dias_restantes - b.dias_restantes);
+  }, [filteredTasks]);
+
   // Metrics by Responsable
   const responsableMetrics = useMemo(() => {
     const metricsMap = new Map<string, ResponsableMetric>();
     
-    tasks.forEach(task => {
+    filteredTasks.forEach(task => {
       if (!task.responsable_user_id) return;
       
       const profileName = profiles.find(p => p.id === task.responsable_user_id)?.nombre || 'Sin asignar';
@@ -223,13 +309,13 @@ export default function Dashboard() {
     });
 
     return Array.from(metricsMap.values()).sort((a, b) => b.total - a.total);
-  }, [tasks, profiles]);
+  }, [filteredTasks, profiles]);
 
   // Metrics by Brand
   const brandMetrics = useMemo(() => {
     const metricsMap = new Map<string, BrandMetric>();
     
-    tasks.forEach(task => {
+    filteredTasks.forEach(task => {
       const brandName = task.brands?.nombre || 'Sin marca';
       const existing = metricsMap.get(task.brand_id) || {
         nombre: brandName,
@@ -251,41 +337,41 @@ export default function Dashboard() {
     });
 
     return Array.from(metricsMap.values()).sort((a, b) => b.total - a.total);
-  }, [tasks]);
+  }, [filteredTasks]);
 
   // Total metrics
   const totals = useMemo(() => {
     return {
-      entregables: tasks.reduce((sum, t) => sum + t.cantidad_entregables, 0),
-      tiempoTotal: tasks.reduce((sum, t) => sum + t.tiempo_trabajado, 0),
+      entregables: filteredTasks.reduce((sum, t) => sum + t.cantidad_entregables, 0),
+      tiempoTotal: filteredTasks.reduce((sum, t) => sum + t.tiempo_trabajado, 0),
     };
-  }, [tasks]);
+  }, [filteredTasks]);
 
   const kpiCards = [
     {
       title: 'Tareas Activas',
-      value: stats.en_proceso + stats.en_revision,
+      value: filteredStats.en_proceso + filteredStats.en_revision,
       icon: <Clock className="h-5 w-5" />,
       color: 'text-info',
       bgColor: 'bg-info/10',
     },
     {
       title: 'En Revisión',
-      value: stats.en_revision,
+      value: filteredStats.en_revision,
       icon: <TrendingUp className="h-5 w-5" />,
       color: 'text-warning',
       bgColor: 'bg-warning/10',
     },
     {
       title: 'Entregadas',
-      value: stats.entregado,
+      value: filteredStats.entregado,
       icon: <CheckCircle2 className="h-5 w-5" />,
       color: 'text-success',
       bgColor: 'bg-success/10',
     },
     {
       title: 'Atrasadas',
-      value: stats.atrasadas,
+      value: filteredStats.atrasadas,
       icon: <AlertTriangle className="h-5 w-5" />,
       color: 'text-destructive',
       bgColor: 'bg-destructive/10',
@@ -358,8 +444,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Welcome */}
-      <div className="flex items-center justify-between">
+      {/* Welcome + Filters */}
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-foreground">
             Bienvenido, {profile?.nombre?.split(' ')[0]}
@@ -368,16 +454,48 @@ export default function Dashboard() {
             Aquí está el resumen de tu día
           </p>
         </div>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Calendar className="h-4 w-4" />
-          <span className="text-sm">
-            {new Date().toLocaleDateString('es-ES', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </span>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Dashboard Filters */}
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={filterBrand} onValueChange={setFilterBrand}>
+              <SelectTrigger className="w-40 h-9">
+                <SelectValue placeholder="Marca" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las marcas</SelectItem>
+                {brands.map((brand) => (
+                  <SelectItem key={brand.id} value={brand.id}>
+                    {brand.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filterResponsable} onValueChange={setFilterResponsable}>
+              <SelectTrigger className="w-44 h-9">
+                <SelectValue placeholder="Responsable" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {profiles.map((profile) => (
+                  <SelectItem key={profile.id} value={profile.id}>
+                    {profile.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Calendar className="h-4 w-4" />
+            <span className="text-sm">
+              {new Date().toLocaleDateString('es-ES', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -597,11 +715,11 @@ export default function Dashboard() {
         <CardContent>
           <div className="space-y-4">
             {[
-              { label: 'Backlog', value: stats.backlog, total: stats.total, color: 'bg-status-backlog' },
-              { label: 'En Proceso', value: stats.en_proceso, total: stats.total, color: 'bg-status-in-progress' },
-              { label: 'En Revisión', value: stats.en_revision, total: stats.total, color: 'bg-status-in-review' },
-              { label: 'Aprobado', value: stats.aprobado, total: stats.total, color: 'bg-status-approved' },
-              { label: 'Entregado', value: stats.entregado, total: stats.total, color: 'bg-status-delivered' },
+              { label: 'Backlog', value: filteredStats.backlog, total: filteredStats.total, color: 'bg-status-backlog' },
+              { label: 'En Proceso', value: filteredStats.en_proceso, total: filteredStats.total, color: 'bg-status-in-progress' },
+              { label: 'En Revisión', value: filteredStats.en_revision, total: filteredStats.total, color: 'bg-status-in-review' },
+              { label: 'Aprobado', value: filteredStats.aprobado, total: filteredStats.total, color: 'bg-status-approved' },
+              { label: 'Entregado', value: filteredStats.entregado, total: filteredStats.total, color: 'bg-status-delivered' },
             ].map((item, index) => (
               <div key={index} className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
@@ -629,19 +747,19 @@ export default function Dashboard() {
             <AlertTriangle className="h-5 w-5 text-warning" />
             <CardTitle className="text-lg">Tareas Urgentes</CardTitle>
             <Badge variant="secondary" className="ml-2">
-              {urgentTasks.length}
+              {filteredUrgentTasks.length}
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
-          {urgentTasks.length === 0 ? (
+          {filteredUrgentTasks.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <CheckCircle2 className="h-12 w-12 mx-auto mb-2 text-success" />
               <p>¡No hay tareas urgentes!</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {urgentTasks.slice(0, 5).map((task) => (
+              {filteredUrgentTasks.slice(0, 5).map((task) => (
                 <div
                   key={task.id}
                   className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
