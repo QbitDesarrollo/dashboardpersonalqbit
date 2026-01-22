@@ -50,6 +50,7 @@ import {
 import { TaskTimer } from '@/components/tasks/TaskTimer';
 import { TaskFiles } from '@/components/tasks/TaskFiles';
 import { DeliverableProgress } from '@/components/tasks/DeliverableProgress';
+import { ResponsableMetrics } from '@/components/tasks/ResponsableMetrics';
 import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 
 interface Task {
@@ -105,6 +106,7 @@ export default function Tasks() {
   const [filterBrand, setFilterBrand] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterResponsable, setFilterResponsable] = useState<string>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -304,7 +306,8 @@ export default function Tasks() {
     const matchesBrand = filterBrand === 'all' || task.brand_id === filterBrand;
     const matchesStatus = filterStatus === 'all' || task.estado === filterStatus;
     const matchesPriority = filterPriority === 'all' || task.prioridad === filterPriority;
-    return matchesSearch && matchesBrand && matchesStatus && matchesPriority;
+    const matchesResponsable = filterResponsable === 'all' || task.responsable_user_id === filterResponsable;
+    return matchesSearch && matchesBrand && matchesStatus && matchesPriority && matchesResponsable;
   });
 
   const getPriorityColor = (prioridad: string) => {
@@ -626,6 +629,19 @@ export default function Tasks() {
                 <SelectItem value="baja">Baja</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={filterResponsable} onValueChange={setFilterResponsable}>
+              <SelectTrigger className="w-full sm:w-44">
+                <SelectValue placeholder="Responsable" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los responsables</SelectItem>
+                {users.map((user) => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {user.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
@@ -641,6 +657,7 @@ export default function Tasks() {
                   <TableHead>Tarea</TableHead>
                   <TableHead>Marca</TableHead>
                   <TableHead>Mesa</TableHead>
+                  <TableHead>Responsable</TableHead>
                   <TableHead className="text-center">Entregables</TableHead>
                   <TableHead>Timer</TableHead>
                   <TableHead>Archivos</TableHead>
@@ -654,7 +671,7 @@ export default function Tasks() {
               <TableBody>
                 {filteredTasks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
                       No se encontraron tareas
                     </TableCell>
                   </TableRow>
@@ -681,6 +698,18 @@ export default function Tasks() {
                         </TableCell>
                         <TableCell>
                           <span className="text-sm">{task.desks?.nombre || '-'}</span>
+                        </TableCell>
+                        <TableCell>
+                          {task.responsable_user_id ? (
+                            <ResponsableMetrics
+                              userId={task.responsable_user_id}
+                              userName={users.find(u => u.id === task.responsable_user_id)?.nombre || 'Sin asignar'}
+                              allTasks={tasks}
+                              compact
+                            />
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Sin asignar</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
@@ -800,6 +829,18 @@ export default function Tasks() {
                   onUpdate={fetchData}
                 />
               </div>
+
+              {/* Responsable Section */}
+              {selectedTask.responsable_user_id && (
+                <div className="p-4 rounded-lg border border-border bg-muted/30">
+                  <h4 className="text-sm font-medium text-muted-foreground mb-3">Responsable</h4>
+                  <ResponsableMetrics
+                    userId={selectedTask.responsable_user_id}
+                    userName={users.find(u => u.id === selectedTask.responsable_user_id)?.nombre || 'Sin asignar'}
+                    allTasks={tasks}
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
