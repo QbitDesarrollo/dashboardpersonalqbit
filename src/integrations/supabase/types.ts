@@ -411,6 +411,9 @@ export type Database = {
           prioridad: Database["public"]["Enums"]["task_priority"]
           qa_checklist: Json | null
           responsable_user_id: string | null
+          tiempo_trabajado: number
+          timer_activo: boolean
+          timer_inicio: string | null
           titulo_tarea: string
           updated_at: string
         }
@@ -431,6 +434,9 @@ export type Database = {
           prioridad?: Database["public"]["Enums"]["task_priority"]
           qa_checklist?: Json | null
           responsable_user_id?: string | null
+          tiempo_trabajado?: number
+          timer_activo?: boolean
+          timer_inicio?: string | null
           titulo_tarea: string
           updated_at?: string
         }
@@ -451,6 +457,9 @@ export type Database = {
           prioridad?: Database["public"]["Enums"]["task_priority"]
           qa_checklist?: Json | null
           responsable_user_id?: string | null
+          tiempo_trabajado?: number
+          timer_activo?: boolean
+          timer_inicio?: string | null
           titulo_tarea?: string
           updated_at?: string
         }
