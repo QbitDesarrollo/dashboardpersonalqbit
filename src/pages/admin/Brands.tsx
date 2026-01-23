@@ -165,14 +165,14 @@ export default function AdminBrands() {
               <div className="space-y-2">
                 <Label>Cliente</Label>
                 <Select
-                  value={formData.cliente_id}
-                  onValueChange={(value) => setFormData({ ...formData, cliente_id: value })}
+                  value={formData.cliente_id || "__none__"}
+                  onValueChange={(value) => setFormData({ ...formData, cliente_id: value === "__none__" ? "" : value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar cliente" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin cliente</SelectItem>
+                    <SelectItem value="__none__">Sin cliente</SelectItem>
                     {clients.map((client) => (
                       <SelectItem key={client.id} value={client.id}>
                         {client.nombre}
