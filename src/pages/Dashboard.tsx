@@ -443,23 +443,38 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
       {/* Welcome + Filters */}
-      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">
-            Bienvenido, {profile?.nombre?.split(' ')[0]}
-          </h2>
-          <p className="text-muted-foreground">
-            Aquí está el resumen de tu día
-          </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-foreground">
+              Bienvenido, {profile?.nombre?.split(' ')[0]}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Aquí está el resumen de tu día
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Calendar className="h-4 w-4 shrink-0" />
+            <span className="text-xs sm:text-sm truncate">
+              {new Date().toLocaleDateString('es-ES', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </span>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Dashboard Filters */}
+        {/* Dashboard Filters */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-sm text-muted-foreground sm:hidden">Filtros:</span>
+          </div>
+          <div className="grid grid-cols-2 sm:flex gap-2 flex-1 sm:flex-initial">
             <Select value={filterBrand} onValueChange={setFilterBrand}>
-              <SelectTrigger className="w-40 h-9">
+              <SelectTrigger className="w-full sm:w-40 h-9">
                 <SelectValue placeholder="Marca" />
               </SelectTrigger>
               <SelectContent>
@@ -472,7 +487,7 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
             <Select value={filterResponsable} onValueChange={setFilterResponsable}>
-              <SelectTrigger className="w-44 h-9">
+              <SelectTrigger className="w-full sm:w-44 h-9">
                 <SelectValue placeholder="Responsable" />
               </SelectTrigger>
               <SelectContent>
@@ -485,72 +500,63 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Calendar className="h-4 w-4" />
-            <span className="text-sm">
-              {new Date().toLocaleDateString('es-ES', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-              })}
-            </span>
-          </div>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4">
         {kpiCards.map((kpi, index) => (
           <Card key={index} className="glass-card hover:border-primary/50 transition-colors">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className={cn("p-2 rounded-lg", kpi.bgColor)}>
-                  <span className={kpi.color}>{kpi.icon}</span>
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center justify-between mb-1 sm:mb-2">
+                <div className={cn("p-1.5 sm:p-2 rounded-lg", kpi.bgColor)}>
+                  <span className={cn(kpi.color, "[&>svg]:h-4 [&>svg]:w-4 sm:[&>svg]:h-5 sm:[&>svg]:w-5")}>{kpi.icon}</span>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-foreground">
+              <p className="text-lg sm:text-2xl font-bold text-foreground">
                 {kpi.isTime ? kpi.value : kpi.value}
               </p>
-              <p className="text-xs text-muted-foreground">{kpi.title}</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground truncate">{kpi.title}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Tasks by Responsable Chart */}
         <Card className="glass-card">
-          <CardHeader>
+          <CardHeader className="pb-2 sm:pb-4">
             <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">Tareas por Responsable</CardTitle>
+              <Users className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              <CardTitle className="text-base sm:text-lg">Tareas por Responsable</CardTitle>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-2 sm:px-6">
             {responsableMetrics.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <User className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                <p>No hay tareas asignadas</p>
+              <div className="text-center py-6 sm:py-8 text-muted-foreground">
+                <User className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No hay tareas asignadas</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={responsableMetrics.slice(0, 6)} layout="vertical">
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={responsableMetrics.slice(0, 5)} layout="vertical" margin={{ left: 0, right: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" />
+                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 11 }} />
                   <YAxis 
                     dataKey="nombre" 
                     type="category" 
-                    width={100} 
+                    width={70} 
                     stroke="hsl(var(--muted-foreground))"
-                    tick={{ fontSize: 12 }}
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(value) => value.length > 10 ? value.substring(0, 10) + '...' : value}
                   />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--card))', 
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '8px',
+                      fontSize: '12px',
                     }}
                     formatter={(value: number, name: string) => {
                       const labels: Record<string, string> = {
@@ -571,28 +577,28 @@ export default function Dashboard() {
 
         {/* Tasks by Brand Chart */}
         <Card className="glass-card">
-          <CardHeader>
+          <CardHeader className="pb-2 sm:pb-4">
             <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">Tareas por Marca</CardTitle>
+              <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              <CardTitle className="text-base sm:text-lg">Tareas por Marca</CardTitle>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-2 sm:px-6">
             {brandMetrics.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Building2 className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                <p>No hay tareas registradas</p>
+              <div className="text-center py-6 sm:py-8 text-muted-foreground">
+                <Building2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No hay tareas registradas</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
                   <Pie
                     data={brandMetrics.slice(0, 6)}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ nombre, total }) => `${nombre}: ${total}`}
-                    outerRadius={100}
+                    label={({ nombre, total }) => `${nombre.substring(0, 8)}${nombre.length > 8 ? '..' : ''}: ${total}`}
+                    outerRadius={80}
                     fill="#8884d8"
                     dataKey="total"
                   >
@@ -605,6 +611,7 @@ export default function Dashboard() {
                       backgroundColor: 'hsl(var(--card))', 
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '8px',
+                      fontSize: '12px',
                     }}
                     formatter={(value: number) => [`${value} tareas`, 'Total']}
                   />
@@ -616,41 +623,41 @@ export default function Dashboard() {
       </div>
 
       {/* Detailed Metrics Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Responsable Metrics Table */}
         <Card className="glass-card">
-          <CardHeader>
+          <CardHeader className="pb-2 sm:pb-4">
             <div className="flex items-center gap-2">
-              <User className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">Métricas por Responsable</CardTitle>
+              <User className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              <CardTitle className="text-base sm:text-lg">Métricas por Responsable</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {responsableMetrics.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4">No hay datos</p>
+                <p className="text-center text-muted-foreground py-4 text-sm">No hay datos</p>
               ) : (
                 responsableMetrics.slice(0, 5).map((metric, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                        <User className="h-4 w-4 text-primary" />
+                  <div key={index} className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                        <User className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
                       </div>
-                      <div>
-                        <p className="font-medium text-foreground">{metric.nombre}</p>
-                        <p className="text-xs text-muted-foreground">
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground text-sm sm:text-base truncate">{metric.nombre}</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                           {metric.completadas}/{metric.total} completadas
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 text-sm">
+                    <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm shrink-0">
                       <div className="text-center">
                         <p className="font-semibold text-foreground">{metric.entregables}</p>
-                        <p className="text-xs text-muted-foreground">Entregables</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Entregables</p>
                       </div>
                       <div className="text-center">
                         <p className="font-semibold text-foreground">{formatTime(metric.tiempoTotal)}</p>
-                        <p className="text-xs text-muted-foreground">Tiempo</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Tiempo</p>
                       </div>
                     </div>
                   </div>
@@ -662,41 +669,41 @@ export default function Dashboard() {
 
         {/* Brand Metrics Table */}
         <Card className="glass-card">
-          <CardHeader>
+          <CardHeader className="pb-2 sm:pb-4">
             <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">Métricas por Marca</CardTitle>
+              <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              <CardTitle className="text-base sm:text-lg">Métricas por Marca</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {brandMetrics.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4">No hay datos</p>
+                <p className="text-center text-muted-foreground py-4 text-sm">No hay datos</p>
               ) : (
                 brandMetrics.slice(0, 5).map((metric, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                    <div className="flex items-center gap-3">
+                  <div key={index} className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                       <div 
-                        className="w-8 h-8 rounded-full flex items-center justify-center"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0"
                         style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] + '30' }}
                       >
-                        <Building2 className="h-4 w-4" style={{ color: CHART_COLORS[index % CHART_COLORS.length] }} />
+                        <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" style={{ color: CHART_COLORS[index % CHART_COLORS.length] }} />
                       </div>
-                      <div>
-                        <p className="font-medium text-foreground">{metric.nombre}</p>
-                        <p className="text-xs text-muted-foreground">
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground text-sm sm:text-base truncate">{metric.nombre}</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                           {metric.completadas}/{metric.total} completadas
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 text-sm">
+                    <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm shrink-0">
                       <div className="text-center">
                         <p className="font-semibold text-foreground">{metric.entregables}</p>
-                        <p className="text-xs text-muted-foreground">Entregables</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Entregables</p>
                       </div>
                       <div className="text-center">
                         <p className="font-semibold text-foreground">{formatTime(metric.tiempoTotal)}</p>
-                        <p className="text-xs text-muted-foreground">Tiempo</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Tiempo</p>
                       </div>
                     </div>
                   </div>
@@ -709,11 +716,11 @@ export default function Dashboard() {
 
       {/* Progress overview */}
       <Card className="glass-card">
-        <CardHeader>
-          <CardTitle className="text-lg">Progreso General</CardTitle>
+        <CardHeader className="pb-2 sm:pb-4">
+          <CardTitle className="text-base sm:text-lg">Progreso General</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {[
               { label: 'Backlog', value: filteredStats.backlog, total: filteredStats.total, color: 'bg-status-backlog' },
               { label: 'En Proceso', value: filteredStats.en_proceso, total: filteredStats.total, color: 'bg-status-in-progress' },
@@ -721,14 +728,14 @@ export default function Dashboard() {
               { label: 'Aprobado', value: filteredStats.aprobado, total: filteredStats.total, color: 'bg-status-approved' },
               { label: 'Entregado', value: filteredStats.entregado, total: filteredStats.total, color: 'bg-status-delivered' },
             ].map((item, index) => (
-              <div key={index} className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
+              <div key={index} className="space-y-1 sm:space-y-2">
+                <div className="flex items-center justify-between text-xs sm:text-sm">
                   <span className="text-muted-foreground">{item.label}</span>
                   <span className="font-medium text-foreground">
                     {item.value} / {item.total}
                   </span>
                 </div>
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div className="h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden">
                   <div
                     className={cn("h-full rounded-full transition-all", item.color)}
                     style={{ width: `${item.total > 0 ? (item.value / item.total) * 100 : 0}%` }}
@@ -742,43 +749,43 @@ export default function Dashboard() {
 
       {/* Urgent tasks */}
       <Card className="glass-card">
-        <CardHeader>
+        <CardHeader className="pb-2 sm:pb-4">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-warning" />
-            <CardTitle className="text-lg">Tareas Urgentes</CardTitle>
-            <Badge variant="secondary" className="ml-2">
+            <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-warning" />
+            <CardTitle className="text-base sm:text-lg">Tareas Urgentes</CardTitle>
+            <Badge variant="secondary" className="ml-2 text-xs">
               {filteredUrgentTasks.length}
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
           {filteredUrgentTasks.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <CheckCircle2 className="h-12 w-12 mx-auto mb-2 text-success" />
-              <p>¡No hay tareas urgentes!</p>
+            <div className="text-center py-6 sm:py-8 text-muted-foreground">
+              <CheckCircle2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 text-success" />
+              <p className="text-sm">¡No hay tareas urgentes!</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {filteredUrgentTasks.slice(0, 5).map((task) => (
                 <div
                   key={task.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors gap-2"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground truncate">{task.titulo_tarea}</p>
+                    <p className="font-medium text-foreground text-sm sm:text-base truncate">{task.titulo_tarea}</p>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-muted-foreground">{task.brand_name}</span>
-                      <Badge className={cn("text-[10px]", getPriorityColor(task.prioridad))}>
+                      <span className="text-[10px] sm:text-xs text-muted-foreground truncate">{task.brand_name}</span>
+                      <Badge className={cn("text-[10px] px-1.5", getPriorityColor(task.prioridad))}>
                         {task.prioridad.toUpperCase()}
                       </Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Badge className={cn("text-xs", getStatusColor(task.estado))}>
+                  <div className="flex items-center gap-2 sm:gap-3 justify-between sm:justify-end">
+                    <Badge className={cn("text-[10px] sm:text-xs", getStatusColor(task.estado))}>
                       {getStatusLabel(task.estado)}
                     </Badge>
                     <div className={cn(
-                      "text-sm font-medium px-2 py-1 rounded",
+                      "text-xs sm:text-sm font-medium px-2 py-1 rounded whitespace-nowrap",
                       task.dias_restantes < 0 
                         ? "bg-destructive/20 text-destructive" 
                         : task.dias_restantes === 0 

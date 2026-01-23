@@ -133,23 +133,23 @@ export default function AdminBrands() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Marcas</h2>
-          <p className="text-muted-foreground">Gestiona las marcas de tus clientes</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Marcas</h2>
+          <p className="text-sm text-muted-foreground">Gestiona las marcas de tus clientes</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) resetForm();
         }}>
           <DialogTrigger asChild>
-            <Button className="gradient-primary">
+            <Button className="gradient-primary w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               Nueva Marca
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="mx-4 sm:mx-auto">
             <DialogHeader>
               <DialogTitle>{selectedBrand ? 'Editar' : 'Nueva'} Marca</DialogTitle>
             </DialogHeader>
@@ -204,43 +204,71 @@ export default function AdminBrands() {
 
       <Card className="glass-card">
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border">
-                <TableHead>Nombre</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {brands.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                    <Tags className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    No hay marcas
-                  </TableCell>
+          {/* Mobile View */}
+          <div className="block sm:hidden divide-y divide-border">
+            {brands.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Tags className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                No hay marcas
+              </div>
+            ) : (
+              brands.map((brand) => (
+                <div key={brand.id} className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{brand.nombre}</span>
+                    <Button variant="ghost" size="icon" onClick={() => openEditDialog(brand)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{brand.clients?.nombre || '-'}</p>
+                  <Badge variant={brand.activo ? "default" : "secondary"}>
+                    {brand.activo ? 'Activa' : 'Inactiva'}
+                  </Badge>
+                </div>
+              ))
+            )}
+          </div>
+          
+          {/* Desktop View */}
+          <div className="hidden sm:block overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border">
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
                 </TableRow>
-              ) : (
-                brands.map((brand) => (
-                  <TableRow key={brand.id} className="border-border hover:bg-muted/50">
-                    <TableCell className="font-medium">{brand.nombre}</TableCell>
-                    <TableCell>{brand.clients?.nombre || '-'}</TableCell>
-                    <TableCell>
-                      <Badge variant={brand.activo ? "default" : "secondary"}>
-                        {brand.activo ? 'Activa' : 'Inactiva'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(brand)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {brands.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      <Tags className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      No hay marcas
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  brands.map((brand) => (
+                    <TableRow key={brand.id} className="border-border hover:bg-muted/50">
+                      <TableCell className="font-medium">{brand.nombre}</TableCell>
+                      <TableCell>{brand.clients?.nombre || '-'}</TableCell>
+                      <TableCell>
+                        <Badge variant={brand.activo ? "default" : "secondary"}>
+                          {brand.activo ? 'Activa' : 'Inactiva'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(brand)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

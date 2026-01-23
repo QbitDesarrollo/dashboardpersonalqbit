@@ -166,11 +166,11 @@ export default function ClientPortal() {
   );
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Portal Cliente</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Portal Cliente</h2>
+          <p className="text-sm text-muted-foreground">
             Bienvenido, {profile?.nombre}
           </p>
         </div>
@@ -189,61 +189,61 @@ export default function ClientPortal() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         <Card className="glass-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-info/10 rounded-lg">
-                <Clock className="h-5 w-5 text-info" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-info/10 rounded-lg shrink-0">
+                <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-info" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold">
                   {tasks.filter(t => t.estado === 'en_proceso').length}
                 </p>
-                <p className="text-xs text-muted-foreground">En Proceso</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground truncate">En Proceso</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="glass-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-warning/10 rounded-lg">
-                <FileBox className="h-5 w-5 text-warning" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-warning/10 rounded-lg shrink-0">
+                <FileBox className="h-4 w-4 sm:h-5 sm:w-5 text-warning" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold">
                   {tasks.filter(t => t.estado === 'en_revision').length}
                 </p>
-                <p className="text-xs text-muted-foreground">En Revisión</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground truncate">En Revisión</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="glass-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-success/10 rounded-lg">
-                <CheckCircle2 className="h-5 w-5 text-success" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-success/10 rounded-lg shrink-0">
+                <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-success" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold">
                   {tasks.filter(t => t.estado === 'entregado').length}
                 </p>
-                <p className="text-xs text-muted-foreground">Entregado</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Entregado</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="glass-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Briefcase className="h-5 w-5 text-primary" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg shrink-0">
+                <Briefcase className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
               </div>
-              <div>
-                <p className="text-2xl font-bold">{approvedDeliverables.length}</p>
-                <p className="text-xs text-muted-foreground">Entregables</p>
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold">{approvedDeliverables.length}</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Entregables</p>
               </div>
             </div>
           </CardContent>
@@ -252,27 +252,27 @@ export default function ClientPortal() {
 
       {/* Tasks */}
       <Card className="glass-card">
-        <CardHeader>
-          <CardTitle className="text-lg">Tareas de tu Marca</CardTitle>
+        <CardHeader className="pb-2 sm:pb-4">
+          <CardTitle className="text-base sm:text-lg">Tareas de tu Marca</CardTitle>
         </CardHeader>
         <CardContent>
           {tasks.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground">No hay tareas</p>
+            <p className="text-center py-6 sm:py-8 text-muted-foreground text-sm">No hay tareas</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {tasks.map((task) => (
                 <div
                   key={task.id}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors gap-2"
                 >
-                  <div>
-                    <p className="font-medium text-foreground">{task.titulo_tarea}</p>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                      <Calendar className="h-3 w-3" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground text-sm sm:text-base truncate">{task.titulo_tarea}</p>
+                    <div className="flex items-center gap-2 mt-1 text-[10px] sm:text-xs text-muted-foreground">
+                      <Calendar className="h-3 w-3 shrink-0" />
                       {new Date(task.fecha_entrega).toLocaleDateString('es-ES')}
                     </div>
                   </div>
-                  <Badge className={cn("text-xs", getStatusColor(task.estado))}>
+                  <Badge className={cn("text-[10px] sm:text-xs self-start sm:self-auto shrink-0", getStatusColor(task.estado))}>
                     {getStatusLabel(task.estado)}
                   </Badge>
                 </div>
@@ -284,37 +284,37 @@ export default function ClientPortal() {
 
       {/* Approved Deliverables */}
       <Card className="glass-card">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-success" />
+        <CardHeader className="pb-2 sm:pb-4">
+          <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-success" />
             Entregables Aprobados
           </CardTitle>
         </CardHeader>
         <CardContent>
           {approvedDeliverables.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground">
+            <p className="text-center py-6 sm:py-8 text-muted-foreground text-sm">
               No hay entregables aprobados aún
             </p>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
               {approvedDeliverables.map((del) => {
                 const deliverableFiles = files.filter(f => f.deliverable_id === del.id);
                 return (
                   <Card key={del.id} className="bg-muted/30">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <p className="font-medium text-foreground">
+                    <CardContent className="p-3 sm:p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground text-sm sm:text-base truncate">
                             {del.tasks?.titulo_tarea}
                           </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline">{del.version}</Badge>
-                            <span className="text-xs text-muted-foreground">
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <Badge variant="outline" className="text-[10px]">{del.version}</Badge>
+                            <span className="text-[10px] sm:text-xs text-muted-foreground truncate">
                               {del.deliverable_types?.nombre}
                             </span>
                           </div>
                         </div>
-                        <Badge className="bg-success text-success-foreground">
+                        <Badge className="bg-success text-success-foreground text-[10px] shrink-0">
                           {del.estado === 'final' ? 'Final' : 'Aprobado'}
                         </Badge>
                       </div>
@@ -324,12 +324,12 @@ export default function ClientPortal() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="w-full justify-start"
+                            className="w-full justify-start text-xs sm:text-sm"
                             asChild
                           >
                             <a href={del.link_final} target="_blank" rel="noopener noreferrer">
-                              <ExternalLink className="h-4 w-4 mr-2" />
-                              Ver Entregable
+                              <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4 mr-2 shrink-0" />
+                              <span className="truncate">Ver Entregable</span>
                             </a>
                           </Button>
                         )}
@@ -338,12 +338,12 @@ export default function ClientPortal() {
                             key={file.id}
                             variant="ghost"
                             size="sm"
-                            className="w-full justify-start text-muted-foreground"
+                            className="w-full justify-start text-muted-foreground text-xs sm:text-sm"
                             asChild
                           >
                             <a href={file.url_storage} target="_blank" rel="noopener noreferrer">
-                              <Download className="h-4 w-4 mr-2" />
-                              {file.nombre_archivo}
+                              <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-2 shrink-0" />
+                              <span className="truncate">{file.nombre_archivo}</span>
                             </a>
                           </Button>
                         ))}

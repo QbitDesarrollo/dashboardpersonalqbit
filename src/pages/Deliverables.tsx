@@ -194,20 +194,20 @@ export default function Deliverables() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Entregables</h2>
-          <p className="text-muted-foreground">Gestiona versiones y aprobaciones</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Entregables</h2>
+          <p className="text-sm text-muted-foreground">Gestiona versiones y aprobaciones</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="gradient-primary">
+            <Button className="gradient-primary w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               Nuevo Entregable
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="mx-4 sm:mx-auto">
             <DialogHeader>
               <DialogTitle>Nuevo Entregable</DialogTitle>
             </DialogHeader>
@@ -305,8 +305,8 @@ export default function Deliverables() {
 
       {/* Filters */}
       <Card className="glass-card">
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-4">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -333,10 +333,73 @@ export default function Deliverables() {
         </CardContent>
       </Card>
 
-      {/* Table */}
+      {/* Table - Desktop / Cards - Mobile */}
       <Card className="glass-card">
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* Mobile View */}
+          <div className="block sm:hidden">
+            {filteredDeliverables.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileBox className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                No hay entregables
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {filteredDeliverables.map((del) => (
+                  <div key={del.id} className="p-4 space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-foreground truncate">{del.tasks?.titulo_tarea}</p>
+                        <p className="text-xs text-muted-foreground">{del.tasks?.brands?.nombre || '-'}</p>
+                      </div>
+                      <Badge className={cn("text-xs ml-2 shrink-0", getStatusColor(del.estado))}>
+                        {getStatusLabel(del.estado)}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Badge variant="outline">{del.version}</Badge>
+                      <span className="text-muted-foreground">{del.deliverable_types?.nombre || '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-2">
+                      {del.link_final ? (
+                        <a
+                          href={del.link_final}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-primary hover:underline text-sm"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Ver
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">-</span>
+                      )}
+                      {(isAdmin || isOps) && del.estado !== 'final' && (
+                        <Select
+                          value={del.estado}
+                          onValueChange={(value: Deliverable['estado']) => updateStatus(del.id, value)}
+                        >
+                          <SelectTrigger className="h-8 w-28">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="borrador">Borrador</SelectItem>
+                            <SelectItem value="en_revision">En Revisión</SelectItem>
+                            <SelectItem value="aprobado">Aprobado</SelectItem>
+                            <SelectItem value="rechazado">Rechazado</SelectItem>
+                            <SelectItem value="final">Final</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          {/* Desktop View */}
+          <div className="hidden sm:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="border-border">

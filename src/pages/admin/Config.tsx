@@ -144,19 +144,19 @@ export default function AdminConfig() {
   );
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Configuración</h2>
-        <p className="text-muted-foreground">Gestiona tipos de tareas y entregables</p>
+        <h2 className="text-xl sm:text-2xl font-bold text-foreground">Configuración</h2>
+        <p className="text-sm text-muted-foreground">Gestiona tipos de tareas y entregables</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid sm:grid-cols-2 gap-4 sm:gap-6">
         {/* Task Types */}
         <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <CheckSquare className="h-5 w-5 text-primary" />
-              Tipos de Tarea
+          <CardHeader className="flex flex-row items-center justify-between pb-2 sm:pb-4">
+            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+              <CheckSquare className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              <span className="truncate">Tipos de Tarea</span>
             </CardTitle>
             <TypeDialog type="task" open={taskDialogOpen} onOpenChange={setTaskDialogOpen} />
           </CardHeader>
@@ -168,20 +168,20 @@ export default function AdminConfig() {
                 {taskTypes.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                    className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors gap-2"
                   >
-                    <span className="font-medium">{item.nombre}</span>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={item.activo ? "default" : "secondary"}>
+                    <span className="font-medium text-sm truncate">{item.nombre}</span>
+                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                      <Badge variant={item.activo ? "default" : "secondary"} className="text-[10px] sm:text-xs">
                         {item.activo ? 'Activo' : 'Inactivo'}
                       </Badge>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-7 w-7 sm:h-8 sm:w-8"
                         onClick={() => openEditDialog('task', item)}
                       >
-                        <Edit className="h-4 w-4" />
+                        <Edit className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       </Button>
                     </div>
                   </div>
@@ -193,35 +193,35 @@ export default function AdminConfig() {
 
         {/* Deliverable Types */}
         <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <FileBox className="h-5 w-5 text-primary" />
-              Tipos de Entregable
+          <CardHeader className="flex flex-row items-center justify-between pb-2 sm:pb-4">
+            <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+              <FileBox className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              <span className="truncate">Tipos de Entregable</span>
             </CardTitle>
             <TypeDialog type="deliverable" open={delDialogOpen} onOpenChange={setDelDialogOpen} />
           </CardHeader>
           <CardContent>
             {deliverableTypes.length === 0 ? (
-              <p className="text-center py-4 text-muted-foreground">No hay tipos</p>
+              <p className="text-center py-4 text-muted-foreground text-sm">No hay tipos</p>
             ) : (
               <div className="space-y-2">
                 {deliverableTypes.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                    className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors gap-2"
                   >
-                    <span className="font-medium">{item.nombre}</span>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={item.activo ? "default" : "secondary"}>
+                    <span className="font-medium text-sm truncate">{item.nombre}</span>
+                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                      <Badge variant={item.activo ? "default" : "secondary"} className="text-[10px] sm:text-xs">
                         {item.activo ? 'Activo' : 'Inactivo'}
                       </Badge>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-7 w-7 sm:h-8 sm:w-8"
                         onClick={() => openEditDialog('deliverable', item)}
                       >
-                        <Edit className="h-4 w-4" />
+                        <Edit className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       </Button>
                     </div>
                   </div>
