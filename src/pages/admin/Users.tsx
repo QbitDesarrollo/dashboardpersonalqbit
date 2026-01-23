@@ -155,63 +155,96 @@ export default function AdminUsers() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Usuarios</h2>
-          <p className="text-muted-foreground">Gestiona los usuarios del sistema</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Usuarios</h2>
+          <p className="text-sm text-muted-foreground">Gestiona los usuarios del sistema</p>
         </div>
       </div>
 
       <Card className="glass-card">
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border">
-                <TableHead>Usuario</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Rol</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                    <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    No hay usuarios
-                  </TableCell>
+          {/* Mobile View */}
+          <div className="block sm:hidden divide-y divide-border">
+            {users.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                No hay usuarios
+              </div>
+            ) : (
+              users.map((user) => (
+                <div key={user.id} className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{user.nombre}</span>
+                    <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+                  <div className="flex items-center gap-2">
+                    <Badge className={cn("text-xs", getRoleBadge(user.rol))}>
+                      {user.rol.toUpperCase()}
+                    </Badge>
+                    <Badge variant={user.activo ? "default" : "secondary"}>
+                      {user.activo ? 'Activo' : 'Inactivo'}
+                    </Badge>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          
+          {/* Desktop View */}
+          <div className="hidden sm:block overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border">
+                  <TableHead>Usuario</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Rol</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
                 </TableRow>
-              ) : (
-                users.map((user) => (
-                  <TableRow key={user.id} className="border-border hover:bg-muted/50">
-                    <TableCell className="font-medium">{user.nombre}</TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <Badge className={cn("text-xs", getRoleBadge(user.rol))}>
-                        {user.rol.toUpperCase()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={user.activo ? "default" : "secondary"}>
-                        {user.activo ? 'Activo' : 'Inactivo'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openEditDialog(user)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {users.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      No hay usuarios
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  users.map((user) => (
+                    <TableRow key={user.id} className="border-border hover:bg-muted/50">
+                      <TableCell className="font-medium">{user.nombre}</TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>
+                        <Badge className={cn("text-xs", getRoleBadge(user.rol))}>
+                          {user.rol.toUpperCase()}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={user.activo ? "default" : "secondary"}>
+                          {user.activo ? 'Activo' : 'Inactivo'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditDialog(user)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -219,7 +252,7 @@ export default function AdminUsers() {
         setDialogOpen(open);
         if (!open) resetForm();
       }}>
-        <DialogContent>
+        <DialogContent className="mx-4 sm:mx-auto">
           <DialogHeader>
             <DialogTitle>Editar Usuario</DialogTitle>
           </DialogHeader>

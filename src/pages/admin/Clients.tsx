@@ -117,23 +117,23 @@ export default function AdminClients() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Clientes</h2>
-          <p className="text-muted-foreground">Gestiona los clientes de la agencia</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Clientes</h2>
+          <p className="text-sm text-muted-foreground">Gestiona los clientes de la agencia</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) resetForm();
         }}>
           <DialogTrigger asChild>
-            <Button className="gradient-primary">
+            <Button className="gradient-primary w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               Nuevo Cliente
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="mx-4 sm:mx-auto">
             <DialogHeader>
               <DialogTitle>{selectedClient ? 'Editar' : 'Nuevo'} Cliente</DialogTitle>
             </DialogHeader>
@@ -177,43 +177,71 @@ export default function AdminClients() {
 
       <Card className="glass-card">
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border">
-                <TableHead>Nombre</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {clients.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                    <Building2 className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    No hay clientes
-                  </TableCell>
+          {/* Mobile View */}
+          <div className="block sm:hidden divide-y divide-border">
+            {clients.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Building2 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                No hay clientes
+              </div>
+            ) : (
+              clients.map((client) => (
+                <div key={client.id} className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{client.nombre}</span>
+                    <Button variant="ghost" size="icon" onClick={() => openEditDialog(client)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{client.email_contacto || '-'}</p>
+                  <Badge variant={client.activo ? "default" : "secondary"}>
+                    {client.activo ? 'Activo' : 'Inactivo'}
+                  </Badge>
+                </div>
+              ))
+            )}
+          </div>
+          
+          {/* Desktop View */}
+          <div className="hidden sm:block overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border">
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
                 </TableRow>
-              ) : (
-                clients.map((client) => (
-                  <TableRow key={client.id} className="border-border hover:bg-muted/50">
-                    <TableCell className="font-medium">{client.nombre}</TableCell>
-                    <TableCell>{client.email_contacto || '-'}</TableCell>
-                    <TableCell>
-                      <Badge variant={client.activo ? "default" : "secondary"}>
-                        {client.activo ? 'Activo' : 'Inactivo'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(client)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {clients.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      <Building2 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      No hay clientes
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  clients.map((client) => (
+                    <TableRow key={client.id} className="border-border hover:bg-muted/50">
+                      <TableCell className="font-medium">{client.nombre}</TableCell>
+                      <TableCell>{client.email_contacto || '-'}</TableCell>
+                      <TableCell>
+                        <Badge variant={client.activo ? "default" : "secondary"}>
+                          {client.activo ? 'Activo' : 'Inactivo'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(client)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

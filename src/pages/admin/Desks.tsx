@@ -103,23 +103,23 @@ export default function AdminDesks() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Mesas de Trabajo</h2>
-          <p className="text-muted-foreground">Gestiona las mesas de trabajo</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Mesas de Trabajo</h2>
+          <p className="text-sm text-muted-foreground">Gestiona las mesas de trabajo</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) resetForm();
         }}>
           <DialogTrigger asChild>
-            <Button className="gradient-primary">
+            <Button className="gradient-primary w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               Nueva Mesa
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="mx-4 sm:mx-auto">
             <DialogHeader>
               <DialogTitle>{selectedDesk ? 'Editar' : 'Nueva'} Mesa</DialogTitle>
             </DialogHeader>
@@ -156,41 +156,70 @@ export default function AdminDesks() {
 
       <Card className="glass-card">
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border">
-                <TableHead>Nombre</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {desks.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
-                    <LayoutDashboard className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    No hay mesas
-                  </TableCell>
-                </TableRow>
-              ) : (
-                desks.map((desk) => (
-                  <TableRow key={desk.id} className="border-border hover:bg-muted/50">
-                    <TableCell className="font-medium">{desk.nombre}</TableCell>
-                    <TableCell>
+          {/* Mobile View */}
+          <div className="block sm:hidden divide-y divide-border">
+            {desks.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <LayoutDashboard className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                No hay mesas
+              </div>
+            ) : (
+              desks.map((desk) => (
+                <div key={desk.id} className="p-4 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="font-medium">{desk.nombre}</span>
+                    <div>
                       <Badge variant={desk.activo ? "default" : "secondary"}>
                         {desk.activo ? 'Activa' : 'Inactiva'}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(desk)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={() => openEditDialog(desk)}>
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+          
+          {/* Desktop View */}
+          <div className="hidden sm:block overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border">
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {desks.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                      <LayoutDashboard className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      No hay mesas
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  desks.map((desk) => (
+                    <TableRow key={desk.id} className="border-border hover:bg-muted/50">
+                      <TableCell className="font-medium">{desk.nombre}</TableCell>
+                      <TableCell>
+                        <Badge variant={desk.activo ? "default" : "secondary"}>
+                          {desk.activo ? 'Activa' : 'Inactiva'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(desk)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

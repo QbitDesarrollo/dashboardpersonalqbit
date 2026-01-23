@@ -172,20 +172,20 @@ export default function Files() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Archivos</h2>
-          <p className="text-muted-foreground">Gestiona los archivos del proyecto</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Archivos</h2>
+          <p className="text-sm text-muted-foreground">Gestiona los archivos del proyecto</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="gradient-primary">
+            <Button className="gradient-primary w-full sm:w-auto">
               <Upload className="h-4 w-4 mr-2" />
               Subir Archivo
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="mx-4 sm:mx-auto">
             <DialogHeader>
               <DialogTitle>Subir Archivo</DialogTitle>
             </DialogHeader>
@@ -243,7 +243,7 @@ export default function Files() {
 
       {/* Search */}
       <Card className="glass-card">
-        <CardContent className="p-4">
+        <CardContent className="p-3 sm:p-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -259,13 +259,13 @@ export default function Files() {
       {/* Files Grid */}
       {filteredFiles.length === 0 ? (
         <Card className="glass-card">
-          <CardContent className="p-12 text-center">
-            <FilesIcon className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+          <CardContent className="p-8 sm:p-12 text-center">
+            <FilesIcon className="h-12 w-12 sm:h-16 sm:w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
             <p className="text-muted-foreground">No hay archivos</p>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
           {filteredFiles.map((file) => (
             <Card key={file.id} className="glass-card hover:border-primary/50 transition-colors">
               <CardContent className="p-4">
