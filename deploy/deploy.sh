@@ -67,10 +67,9 @@ npm run build
 # 8. Configurar y arrancar servicios
 echo "[8/8] Iniciando servicios..."
 
-# Copiar config de nginx
+# Copiar config de nginx (no toca otros sitios existentes)
 sudo cp ${REPO_DIR}/deploy/nginx.conf /etc/nginx/sites-available/tiusdei
 sudo ln -sf /etc/nginx/sites-available/tiusdei /etc/nginx/sites-enabled/tiusdei
-sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 
 # Arrancar API con PM2
@@ -84,8 +83,8 @@ echo "=========================================="
 echo "  Despliegue completado!"
 echo "=========================================="
 echo ""
-echo "  Frontend: http://$(hostname -I | awk '{print $1}')"
-echo "  API:      http://$(hostname -I | awk '{print $1}')/api/health"
+echo "  Frontend: https://tiusdei.qbit.ec"
+echo "  API:      https://tiusdei.qbit.ec/api/health"
 echo ""
 echo "  Comandos útiles:"
 echo "    pm2 status          - Ver estado del API"
@@ -98,5 +97,5 @@ echo "    nano ${APP_DIR}/server/.env"
 echo ""
 echo "  Para HTTPS con Let's Encrypt:"
 echo "    sudo apt install certbot python3-certbot-nginx"
-echo "    sudo certbot --nginx -d tu-dominio.com"
+echo "    sudo certbot --nginx -d tiusdei.qbit.ec"
 echo ""
