@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import {
   CheckCircle2,
   Clock,
@@ -49,6 +50,7 @@ interface Task {
   estado: string;
   responsable_user_id: string | null;
   brand_id: string;
+  desk_id: string | null;
   cantidad_entregables: number;
   tiempo_trabajado: number;
   brands?: { nombre: string };
@@ -202,6 +204,7 @@ export default function Dashboard() {
       setUrgentTasks(urgent.sort((a, b) => a.dias_restantes - b.dias_restantes));
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      toast.error('Error al cargar los datos del dashboard');
     } finally {
       setLoading(false);
     }
@@ -212,7 +215,7 @@ export default function Dashboard() {
     return tasks.filter(task => {
       const matchesBrand = filterBrand === 'all' || task.brand_id === filterBrand;
       const matchesResponsable = filterResponsable === 'all' || task.responsable_user_id === filterResponsable;
-      const matchesPinnedDesk = !pinnedDeskId || (task as any).desk_id === pinnedDeskId;
+      const matchesPinnedDesk = !pinnedDeskId || task.desk_id === pinnedDeskId;
       const matchesPinnedBrand = !pinnedBrandId || task.brand_id === pinnedBrandId;
       return matchesBrand && matchesResponsable && matchesPinnedDesk && matchesPinnedBrand;
     });

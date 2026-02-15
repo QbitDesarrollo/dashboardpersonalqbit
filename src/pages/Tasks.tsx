@@ -53,6 +53,7 @@ import { TaskFiles } from '@/components/tasks/TaskFiles';
 import { DeliverableProgress } from '@/components/tasks/DeliverableProgress';
 import { ResponsableMetrics } from '@/components/tasks/ResponsableMetrics';
 import { formatTimeDisplay } from '@/hooks/useTaskTimer';
+import { sendTaskNotification } from '@/lib/api';
 
 interface Task {
   id: string;
@@ -207,20 +208,18 @@ export default function Tasks() {
 
             if (userProfile?.email) {
               try {
-                await supabase.functions.invoke('send-task-notification', {
-                  body: {
-                    taskTitle: formData.titulo_tarea,
-                    brandName,
-                    fechaEntrega: formData.fecha_entrega,
-                    prioridad: formData.prioridad,
-                    recipientEmail: userProfile.email,
-                    recipientName: userProfile.nombre,
-                  },
+                await sendTaskNotification({
+                  taskTitle: formData.titulo_tarea,
+                  brandName,
+                  fechaEntrega: formData.fecha_entrega,
+                  prioridad: formData.prioridad,
+                  recipientEmail: userProfile.email,
+                  recipientName: userProfile.nombre,
                 });
                 toast.success('Notificación enviada al responsable');
               } catch (emailError) {
                 console.error('Error sending email:', emailError);
-                // Don't show error to user, task was created successfully
+                toast.info('Tarea creada, pero no se pudo enviar la notificación por email');
               }
             }
           }

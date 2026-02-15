@@ -1,0 +1,43 @@
+# Systemd service file for TIUSDEI API
+# Copy to: /etc/systemd/system/tiusdei-api.service
+# Enable: sudo systemctl enable tiusdei-api
+# Start: sudo systemctl start tiusdei-api
+# Status: sudo systemctl status tiusdei-api
+# Logs: sudo journalctl -u tiusdei-api -f
+
+[Unit]
+Description=TIUSDEI API Server
+Documentation=https://github.com/tu-repo/dashboardpersonalqbit
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/tiusdei/server
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+
+# Environment
+Environment=NODE_ENV=production
+Environment=PORT=3001
+EnvironmentFile=/var/www/tiusdei/server/.env
+
+# Resource limits (low memory usage)
+MemoryMax=200M
+CPUQuota=50%
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/tiusdei/logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tiusdei-api
+
+[Install]
+WantedBy=multi-user.target

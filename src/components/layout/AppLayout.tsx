@@ -1,9 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  getNotifications,
+  getNotificationCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  type Notification,
+} from '@/lib/api';
 import {
   LayoutDashboard,
   CheckSquare,
@@ -21,6 +28,7 @@ import {
   Briefcase,
   Pin,
   PinOff,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -32,6 +40,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -78,6 +91,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [pinnedMenuOpen, setPinnedMenuOpen] = useState(true);
   const [desks, setDesks] = useState<Desk[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const [notifResult, countResult] = await Promise.all([
+        getNotifications({ limit: 10 }),
+        getNotificationCount(),
+      ]);
+      setNotifications(notifResult.notifications || []);
+      setUnreadCount(countResult.count || 0);
+    } catch {
+      // API might not be running yet - silently fail
+    }
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -89,7 +117,32 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       if (brandsRes.data) setBrands(brandsRes.data);
     };
     fetchData();
-  }, []);
+    fetchNotifications();
+
+    // Poll for notifications every 30 seconds
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
+  const handleMarkRead = async (id: string) => {
+    try {
+      await markNotificationRead(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, leida: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await markAllNotificationsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, leida: true })));
+      setUnreadCount(0);
+    } catch {
+      // silently fail
+    }
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -256,7 +309,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   {/* Brand selection */}
                   <div className="space-y-1">
                     <span className="px-3 text-xs text-muted-foreground">Marcas</span>
-                    {brands.slice(0, 8).map((brand) => (
+                    {brands.map((brand) => (
                       <button
                         key={brand.id}
                         onClick={() => {
@@ -381,10 +434,69 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-1 right-1 h-2 w-2 bg-destructive rounded-full" />
-              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <Bell className="h-5 w-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 h-4 w-4 bg-destructive rounded-full text-[10px] font-bold text-destructive-foreground flex items-center justify-center">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-0" align="end">
+                  <div className="flex items-center justify-between p-3 border-b border-border">
+                    <h4 className="font-semibold text-sm">Notificaciones</h4>
+                    {unreadCount > 0 && (
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleMarkAllRead}>
+                        <Check className="h-3 w-3 mr-1" />
+                        Marcar todas
+                      </Button>
+                    )}
+                  </div>
+                  <ScrollArea className="max-h-72">
+                    {notifications.length === 0 ? (
+                      <div className="p-6 text-center text-sm text-muted-foreground">
+                        Sin notificaciones
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-border">
+                        {notifications.map((notif) => (
+                          <button
+                            key={notif.id}
+                            onClick={() => {
+                              if (!notif.leida) handleMarkRead(notif.id);
+                              if (notif.task_id) navigate('/tareas');
+                            }}
+                            className={cn(
+                              "w-full text-left p-3 hover:bg-muted/50 transition-colors",
+                              !notif.leida && "bg-primary/5"
+                            )}
+                          >
+                            <div className="flex items-start gap-2">
+                              {!notif.leida && (
+                                <span className="mt-1.5 h-2 w-2 rounded-full bg-primary shrink-0" />
+                              )}
+                              <div className={cn("flex-1 min-w-0", notif.leida && "ml-4")}>
+                                <p className="text-sm text-foreground line-clamp-2">{notif.mensaje}</p>
+                                <p className="text-[10px] text-muted-foreground mt-1">
+                                  {new Date(notif.created_at).toLocaleDateString('es-ES', {
+                                    day: 'numeric',
+                                    month: 'short',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </header>

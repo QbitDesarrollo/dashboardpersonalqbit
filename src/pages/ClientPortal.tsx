@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import {
   Download,
   FileBox,
@@ -101,7 +102,7 @@ export default function ClientPortal() {
           deliverable_types (nombre),
           tasks!inner (titulo_tarea, brand_id)
         `).in('estado', ['aprobado', 'final']),
-        supabase.from('files').select('*'),
+        supabase.from('files').select('*, deliverables!inner(task_id, tasks!inner(brand_id))'),
       ]);
 
       if (tasksRes.data) setTasks(tasksRes.data as Task[]);
@@ -113,9 +114,15 @@ export default function ClientPortal() {
         setDeliverables(filteredDel as Deliverable[]);
       }
       
-      if (filesRes.data) setFiles(filesRes.data as FileRecord[]);
+      if (filesRes.data) {
+        const brandFiles = filesRes.data.filter(
+          (f: any) => f.deliverables?.tasks?.brand_id === selectedBrand
+        );
+        setFiles(brandFiles as FileRecord[]);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
+      toast.error('Error al cargar datos de la marca');
     }
   };
 
