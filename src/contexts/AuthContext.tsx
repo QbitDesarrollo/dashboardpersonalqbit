@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
 
 type AppRole = 'admin' | 'ops' | 'equipo' | 'cliente';
 
@@ -10,16 +9,19 @@ interface Profile {
   email: string;
   rol: AppRole;
   activo: boolean;
+  avatar_url?: string | null;
+  google_connected?: boolean;
 }
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: { id: string; email: string; nombre: string } | null;
+  session: { access_token: string } | null;
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, nombre: string, rol?: AppRole) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
   isAdmin: boolean;
   isOps: boolean;
   isEquipo: boolean;
@@ -31,81 +33,82 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string; nombre: string } | null>(null);
+  const [session, setSession] = useState<{ access_token: string } | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          setTimeout(async () => {
-            const { data: profileData } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
-            
-            if (profileData) {
-              setProfile(profileData as Profile);
-            }
-          }, 0);
-        } else {
+    const token = localStorage.getItem('tiusdei_token');
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    api.getMe()
+      .then((data: any) => {
+        if (data.error) {
+          localStorage.removeItem('tiusdei_token');
+          setSession(null);
+          setUser(null);
           setProfile(null);
+        } else {
+          setSession({ access_token: token });
+          setUser({ id: data.id, email: data.email, nombre: data.nombre });
+          setProfile({ ...data, activo: data.activo !== false });
         }
-        
-        setLoading(false);
-      }
-    );
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle()
-          .then(({ data: profileData }) => {
-            if (profileData) {
-              setProfile(profileData as Profile);
-            }
-            setLoading(false);
-          });
-      } else {
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+      })
+      .catch(() => {
+        localStorage.removeItem('tiusdei_token');
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
+    try {
+      const data: any = await api.login(email, password);
+      if (data.error) return { error: new Error(data.error) };
+      localStorage.setItem('tiusdei_token', data.token);
+      setSession({ access_token: data.token });
+      setUser(data.user);
+      setProfile({ ...data.user, activo: true });
+      return { error: null };
+    } catch (e) {
+      return { error: e instanceof Error ? e : new Error('Error al iniciar sesión') };
+    }
   };
 
   const signUp = async (email: string, password: string, nombre: string, rol: AppRole = 'equipo') => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: { nombre, rol }
-      }
-    });
-    return { error };
+    try {
+      const data: any = await api.register(email, password, nombre, rol);
+      if (data.error) return { error: new Error(data.error) };
+      localStorage.setItem('tiusdei_token', data.token);
+      setSession({ access_token: data.token });
+      setUser(data.user);
+      setProfile({ ...data.user, activo: true });
+      return { error: null };
+    } catch (e) {
+      return { error: e instanceof Error ? e : new Error('Error al registrarse') };
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem('tiusdei_token');
+    setSession(null);
+    setUser(null);
     setProfile(null);
+  };
+
+  const refreshProfile = async () => {
+    try {
+      const data: any = await api.getMe();
+      if (!data.error) {
+        setUser({ id: data.id, email: data.email, nombre: data.nombre });
+        setProfile({ ...data, activo: data.activo !== false });
+      }
+    } catch { /* ignore */ }
   };
 
   const isAdmin = profile?.rol === 'admin';
@@ -124,6 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signIn,
       signUp,
       signOut,
+      refreshProfile,
       isAdmin,
       isOps,
       isEquipo,

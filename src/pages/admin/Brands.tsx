@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -64,13 +65,9 @@ export default function AdminBrands() {
 
   const fetchData = async () => {
     try {
-      const [brandsRes, clientsRes] = await Promise.all([
-        supabase.from('brands').select('*, clients (nombre)').order('nombre'),
-        supabase.from('clients').select('id, nombre').eq('activo', true),
-      ]);
-
-      if (brandsRes.data) setBrands(brandsRes.data as Brand[]);
-      if (clientsRes.data) setClients(clientsRes.data);
+      const [brandsData, clientsData] = await Promise.all([api.getBrands(), api.getClients()]);
+      if (Array.isArray(brandsData)) setBrands(brandsData.map((b: any) => ({ ...b, clients: (b.cliente_nombre || b.clients?.nombre) ? { nombre: b.cliente_nombre || b.clients?.nombre } : undefined })));
+      if (Array.isArray(clientsData)) setClients(clientsData.filter((c: any) => c.activo));
     } catch (error) {
       toast.error('Error al cargar datos');
     } finally {
@@ -90,12 +87,12 @@ export default function AdminBrands() {
       };
 
       if (selectedBrand) {
-        const { error } = await supabase.from('brands').update(data).eq('id', selectedBrand.id);
-        if (error) throw error;
+        const result: any = await api.patchBrand(selectedBrand.id, data);
+        if (result?.error) throw new Error(result.error);
         toast.success('Marca actualizada');
       } else {
-        const { error } = await supabase.from('brands').insert(data);
-        if (error) throw error;
+        const result: any = await api.createBrand(data);
+        if (result?.error) throw new Error(result.error);
         toast.success('Marca creada');
       }
 
@@ -149,9 +146,10 @@ export default function AdminBrands() {
               Nueva Marca
             </Button>
           </DialogTrigger>
-          <DialogContent className="mx-4 sm:mx-auto">
+          <DialogContent className="mx-4 sm:mx-auto" aria-describedby="brand-form-desc">
             <DialogHeader>
               <DialogTitle>{selectedBrand ? 'Editar' : 'Nueva'} Marca</DialogTitle>
+              <DialogDescription id="brand-form-desc">Crea o edita una marca y su cliente asociado.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">

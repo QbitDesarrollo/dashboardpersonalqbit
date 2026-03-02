@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, getInitials } from '@/lib/utils';
 
 interface Task {
   id: string;
@@ -12,11 +13,12 @@ interface Task {
 interface ResponsableMetricsProps {
   userId: string;
   userName: string;
+  avatarUrl?: string | null;
   allTasks: Task[];
   compact?: boolean;
 }
 
-export function ResponsableMetrics({ userId, userName, allTasks, compact = false }: ResponsableMetricsProps) {
+export function ResponsableMetrics({ userId, userName, avatarUrl, allTasks, compact = false }: ResponsableMetricsProps) {
   const metrics = useMemo(() => {
     const userTasks = allTasks.filter(t => t.responsable_user_id === userId);
     const total = userTasks.length;
@@ -33,7 +35,12 @@ export function ResponsableMetrics({ userId, userName, allTasks, compact = false
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-2 cursor-default">
-              <User className="h-4 w-4 text-muted-foreground" />
+              <Avatar className="h-5 w-5">
+                {avatarUrl ? <AvatarImage src={avatarUrl} alt={userName} className="object-cover" /> : null}
+                <AvatarFallback className="bg-primary/20 text-primary text-[8px] font-semibold">
+                  {getInitials(userName)}
+                </AvatarFallback>
+              </Avatar>
               <span className="text-sm font-medium truncate max-w-[120px]">{userName}</span>
               <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full font-medium">
                 {metrics.total}
@@ -71,7 +78,12 @@ export function ResponsableMetrics({ userId, userName, allTasks, compact = false
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <User className="h-5 w-5 text-primary" />
+        <Avatar className="h-7 w-7">
+          {avatarUrl ? <AvatarImage src={avatarUrl} alt={userName} className="object-cover" /> : null}
+          <AvatarFallback className="bg-primary/20 text-primary text-xs font-semibold">
+            {getInitials(userName)}
+          </AvatarFallback>
+        </Avatar>
         <span className="font-medium">{userName}</span>
       </div>
       <div className="grid grid-cols-2 gap-2 text-sm">

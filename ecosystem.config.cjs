@@ -11,21 +11,28 @@ module.exports = {
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
-        PORT: 3001,
+        PORT: 3003,
       },
-      // Low resource configuration for Ubuntu
-      max_memory_restart: '150M',
+      // Memory limit (increase for 100 concurrent users)
+      max_memory_restart: '512M',
+      node_args: '--max-old-space-size=512',
       // Restart on failure
       autorestart: true,
-      max_restarts: 10,
-      restart_delay: 4000,
+      max_restarts: 15,
+      restart_delay: 2000,
+      // Graceful shutdown
+      kill_timeout: 5000,
+      listen_timeout: 10000,
       // Logging
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
       error_file: './logs/api-error.log',
       out_file: './logs/api-out.log',
       merge_logs: true,
+      log_type: 'json',
       // Watch for changes (disable in production)
       watch: false,
+      // Exponential backoff restart
+      exp_backoff_restart_delay: 100,
     },
   ],
 };

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -61,13 +62,9 @@ export default function AdminUsers() {
 
   const fetchUsers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setUsers(data as User[]);
+      const data = await api.getProfiles();
+      if (Array.isArray(data)) setUsers(data as User[]);
+      else throw new Error(data?.error || 'Error');
     } catch (error) {
       console.error('Error:', error);
       toast.error('Error al cargar usuarios');
@@ -82,27 +79,12 @@ export default function AdminUsers() {
     
     setSaving(true);
     try {
-      // Update profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          nombre: formData.nombre,
-          rol: formData.rol,
-          activo: formData.activo,
-        })
-        .eq('id', selectedUser.id);
-
-      if (profileError) throw profileError;
-
-      // Update user_roles
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .upsert({
-          user_id: selectedUser.id,
-          role: formData.rol,
-        }, { onConflict: 'user_id,role' });
-
-      if (roleError) console.error('Role update error:', roleError);
+      const result: any = await api.patchProfile(selectedUser.id, {
+        nombre: formData.nombre.trim(),
+        rol: formData.rol.toLowerCase(),
+        activo: !!formData.activo,
+      });
+      if (result?.error) throw new Error(result.error);
 
       toast.success('Usuario actualizado');
       setDialogOpen(false);
@@ -252,9 +234,10 @@ export default function AdminUsers() {
         setDialogOpen(open);
         if (!open) resetForm();
       }}>
-        <DialogContent className="mx-4 sm:mx-auto">
+        <DialogContent className="mx-4 sm:mx-auto" aria-describedby="user-edit-desc">
           <DialogHeader>
             <DialogTitle>Editar Usuario</DialogTitle>
+            <DialogDescription id="user-edit-desc">Modifica nombre, rol y estado del usuario.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">

@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import React, { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import * as api from '@/lib/apiClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -18,10 +20,17 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Table,
   TableBody,
@@ -32,28 +41,44 @@ import {
 } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, getInitials } from '@/lib/utils';
 import {
   Plus,
   Search,
-  Filter,
   Eye,
   Edit,
+  Trash2,
+  Bookmark,
+  BookmarkPlus,
   MessageSquare,
   Paperclip,
   Calendar,
   Loader2,
   X,
+  Check,
   Timer,
   Package,
+  LayoutGrid,
+  Columns3,
+  GanttChart,
+  ChevronDown,
+  ChevronRight,
+  Link2,
+  Star,
+  SlidersHorizontal,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import { TaskTimer } from '@/components/tasks/TaskTimer';
 import { TaskFiles } from '@/components/tasks/TaskFiles';
+import { FileUploader, UploadedFile } from '@/components/tasks/FileUploader';
 import { DeliverableProgress } from '@/components/tasks/DeliverableProgress';
 import { ResponsableMetrics } from '@/components/tasks/ResponsableMetrics';
+import { CommentsPanel } from '@/components/tasks/CommentsPanel';
+import { BulkActions } from '@/components/tasks/BulkActions';
 import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 import { sendTaskNotification } from '@/lib/api';
+import { RichTextEditor, RichTextViewer } from '@/components/RichTextEditor';
 
 interface Task {
   id: string;
@@ -77,9 +102,26 @@ interface Task {
   tiempo_trabajado: number;
   timer_activo: boolean;
   timer_inicio: string | null;
+  sprint_id?: string | null;
+  story_points?: number | null;
+  feature_id?: string | null;
+  is_favorite?: boolean;
   brands?: { nombre: string };
   desks?: { nombre: string };
   profiles?: { nombre: string };
+  responsables?: { user_id: string; nombre: string; avatar_url?: string | null }[];
+  feature?: { name: string } | null;
+  sprint?: { name: string } | null;
+  google_event_id?: string | null;
+  task_type_id?: string | null;
+  task_type?: { nombre: string } | null;
+  tipo_entregable_id?: string | null;
+  deliverable_type?: { nombre: string } | null;
+  created_by?: string | null;
+  created_by_profile?: { nombre: string; avatar_url?: string | null } | null;
+  is_read?: boolean;
+  read_count?: number;
+  deliverable_types_list?: { tipo_entregable_id: string; nombre: string; cantidad: number }[];
 }
 
 interface Brand {
@@ -95,25 +137,115 @@ interface Desk {
 interface Profile {
   id: string;
   nombre: string;
+  avatar_url?: string | null;
 }
 
 export default function Tasks() {
+  const [searchParams] = useSearchParams();
   const { profile, isAdmin, isOps, isEquipo } = useAuth();
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [desks, setDesks] = useState<Desk[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
+  const [taskTypes, setTaskTypes] = useState<{ id: string; nombre: string; activo?: boolean }[]>([]);
+  const [deliverableTypes, setDeliverableTypes] = useState<{ id: string; nombre: string; activo?: boolean }[]>([]);
+  const [deskMembers, setDeskMembers] = useState<Profile[]>([]);
+  const [filterDeskMembers, setFilterDeskMembers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBrand, setFilterBrand] = useState<string>('all');
+  const [filterDesk, setFilterDesk] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
-  const [filterResponsable, setFilterResponsable] = useState<string>('all');
+  const [filterResponsable, setFilterResponsable] = useState<string>(() => searchParams.get('responsable') || 'all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [taskReads, setTaskReads] = useState<{ user_id: string; read_at: string; nombre: string; avatar_url: string | null }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalTasks, setTotalTasks] = useState(0);
+  const [savedFilters, setSavedFilters] = useState<{ id: string; name: string; filter_config: Record<string, unknown> }[]>([]);
+  const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+  const [saveFilterName, setSaveFilterName] = useState('');
+  const [saveFilterSaving, setSaveFilterSaving] = useState(false);
+  const [siteSettings, setSiteSettings] = useState<Record<string, string | null>>({});
+  const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [groupBy, setGroupBy] = useState<'estado' | 'mes'>('estado');
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+  const [subtasksCache, setSubtasksCache] = useState<Record<string, { id: string; titulo_tarea: string; check_done: boolean }[]>>({});
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState<Record<string, string>>({});
+  const [addingSubtaskFor, setAddingSubtaskFor] = useState<string | null>(null);
+  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+  const [editingSubtaskTitle, setEditingSubtaskTitle] = useState('');
+  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelectTask = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredTasks.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredTasks.map(t => t.id)));
+    }
+  };
+
+  type ColKey = 'marca' | 'mesa' | 'depto' | 'responsable' | 'entregables' | 'timer' | 'archivos' | 'tipo' | 'prioridad' | 'estado' | 'entrega' | 'dias' | 'enlace' | 'autor' | 'creado';
+  const ALL_COLUMNS: { key: ColKey; label: string }[] = [
+    { key: 'marca', label: 'Marca' },
+    { key: 'mesa', label: 'Mesa' },
+    { key: 'depto', label: 'Depto' },
+    { key: 'responsable', label: 'Responsable' },
+    { key: 'entregables', label: 'Entregables' },
+    { key: 'timer', label: 'Timer' },
+    { key: 'archivos', label: 'Archivos' },
+    { key: 'tipo', label: 'Tipo' },
+    { key: 'prioridad', label: 'Prioridad' },
+    { key: 'estado', label: 'Estado' },
+    { key: 'entrega', label: 'Fecha Entrega' },
+    { key: 'dias', label: 'Días' },
+    { key: 'enlace', label: 'Enlace' },
+    { key: 'autor', label: 'Autor' },
+    { key: 'creado', label: 'Creado' },
+  ];
+  const [visibleCols, setVisibleCols] = useState<Record<ColKey, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('tasks_visible_cols');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { marca: true, mesa: true, depto: true, responsable: true, entregables: true, timer: true, archivos: true, tipo: false, prioridad: true, estado: true, entrega: true, dias: true, enlace: false, autor: false, creado: false };
+  });
+
+  const toggleCol = (key: ColKey) => {
+    setVisibleCols(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem('tasks_visible_cols', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const pageSize = 20;
+
+  // Debounce del término de búsqueda para no saturar el servidor
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const canDeleteTasks =
+    (siteSettings.can_delete_tasks_roles || 'admin,ops').split(',').map((r) => r.trim()).includes(profile?.rol || '') ?? false;
 
   const [formData, setFormData] = useState({
     titulo_tarea: '',
@@ -121,6 +253,7 @@ export default function Tasks() {
     brand_id: '',
     desk_id: '',
     responsable_user_id: '',
+    responsable_ids: [] as string[],
     departamento: '',
     prioridad: 'media' as 'alta' | 'media' | 'baja',
     estado: 'backlog' as Task['estado'],
@@ -128,25 +261,182 @@ export default function Tasks() {
     fecha_entrega: '',
     cantidad_entregables: 1,
     enlaces: '',
+    task_type_id: '',
+    tipo_entregable_id: '',
+    entregables: [{ tipo_entregable_id: '', cantidad: 1 }] as { tipo_entregable_id: string; cantidad: number }[],
   });
 
   useEffect(() => {
     fetchData();
+  }, [page, filterResponsable, filterBrand, filterDesk, filterStatus, filterPriority, debouncedSearch, pinnedDeskId, pinnedBrandId]);
+
+  // Reset to page 0 when any filter changes
+  useEffect(() => {
+    setPage(0);
+  }, [filterResponsable, filterBrand, filterDesk, filterStatus, filterPriority, debouncedSearch, pinnedDeskId, pinnedBrandId]);
+
+  useEffect(() => {
+    const r = searchParams.get('responsable');
+    if (r) setFilterResponsable(r);
+  }, [searchParams]);
+
+  // Auto-open task detail from query param (e.g. from email link or daily)
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current) return;
+    const taskId = searchParams.get('task');
+    if (!taskId) return;
+    deepLinkHandled.current = true;
+    api.getTask(taskId).then((task: any) => {
+      if (task && task.id) {
+        setSelectedTask(task as Task);
+        setDetailDialogOpen(true);
+      }
+    }).catch(() => {
+      toast.error('No se pudo cargar la tarea');
+    });
+  }, [searchParams]);
+
+  // Cargar miembros de la mesa seleccionada en filtros para el dropdown de responsable
+  useEffect(() => {
+    const effectiveDesk = filterDesk !== 'all' ? filterDesk : (pinnedDeskId || null);
+    if (effectiveDesk) {
+      api.getProfiles(effectiveDesk)
+        .then((data) => {
+          const members = Array.isArray(data) ? data : [];
+          setFilterDeskMembers(members);
+          // Si el responsable seleccionado no está en la nueva mesa, resetear
+          if (filterResponsable !== 'all' && !members.some((m: Profile) => m.id === filterResponsable)) {
+            setFilterResponsable('all');
+          }
+        })
+        .catch(() => setFilterDeskMembers([]));
+    } else {
+      setFilterDeskMembers([]);
+    }
+  }, [filterDesk, pinnedDeskId]);
+
+  useEffect(() => {
+    if (isAdmin || isOps || isEquipo) {
+      api.getSavedFilters().then((data) => setSavedFilters(Array.isArray(data) ? data : [])).catch(() => {});
+    }
+  }, [isAdmin, isOps, isEquipo]);
+
+  useEffect(() => {
+    api.getSiteSettings().then((s) => setSiteSettings(s || {})).catch(() => {});
   }, []);
+
+  // Track task reads when detail dialog opens
+  useEffect(() => {
+    if (detailDialogOpen && selectedTask) {
+      api.markTaskRead(selectedTask.id).catch(() => {});
+      api.getTaskReads(selectedTask.id)
+        .then((data) => setTaskReads(Array.isArray(data) ? data : []))
+        .catch(() => setTaskReads([]));
+      // Update local is_read state
+      setTasks(prev => prev.map(t => t.id === selectedTask.id ? { ...t, is_read: true } : t));
+    } else {
+      setTaskReads([]);
+    }
+  }, [detailDialogOpen, selectedTask?.id]);
+
+  const appliedDefaultRef = useRef(false);
+  useEffect(() => {
+    if (appliedDefaultRef.current || savedFilters.length === 0) return;
+    const def = savedFilters.find((f) => (f as { is_default?: number }).is_default);
+    if (!def?.filter_config || typeof def.filter_config !== 'object') return;
+    appliedDefaultRef.current = true;
+    const c = def.filter_config as Record<string, string>;
+    if (c.brand_id !== undefined) setFilterBrand(c.brand_id);
+    if (c.desk_id !== undefined) setFilterDesk(c.desk_id);
+    if (c.estado !== undefined) setFilterStatus(c.estado);
+    if (c.prioridad !== undefined) setFilterPriority(c.prioridad);
+    if (c.responsable_user_id !== undefined) setFilterResponsable(c.responsable_user_id);
+    if (c.search !== undefined) setSearchTerm(c.search);
+  }, [savedFilters]);
+
+  const loadSavedFilter = (cfg: Record<string, unknown>) => {
+    const c = cfg as Record<string, string>;
+    if (c.brand_id !== undefined) setFilterBrand(c.brand_id);
+    if (c.desk_id !== undefined) setFilterDesk(c.desk_id);
+    if (c.estado !== undefined) setFilterStatus(c.estado);
+    if (c.prioridad !== undefined) setFilterPriority(c.prioridad);
+    if (c.responsable_user_id !== undefined) setFilterResponsable(c.responsable_user_id);
+    if (c.search !== undefined) setSearchTerm(c.search);
+  };
+
+  const handleSaveFilter = async () => {
+    if (!saveFilterName.trim()) { toast.error('Nombre requerido'); return; }
+    setSaveFilterSaving(true);
+    try {
+      await api.createSavedFilter({
+        name: saveFilterName.trim(),
+        entity_type: 'tasks',
+        filter_config: {
+          brand_id: filterBrand,
+          desk_id: filterDesk,
+          estado: filterStatus,
+          prioridad: filterPriority,
+          responsable_user_id: filterResponsable,
+          search: searchTerm,
+        },
+      });
+      toast.success('Filtro guardado');
+      setSaveFilterOpen(false);
+      setSaveFilterName('');
+      const data = await api.getSavedFilters();
+      setSavedFilters(Array.isArray(data) ? data : []);
+    } catch (e) {
+      toast.error('Error al guardar');
+    } finally {
+      setSaveFilterSaving(false);
+    }
+  };
+
+  // Cuando se selecciona una mesa, cargar el equipo de esa mesa
+  const isEditingRef = useRef(false);
+  useEffect(() => {
+    if (formData.desk_id) {
+      api.getProfiles(formData.desk_id)
+        .then((data) => setDeskMembers(Array.isArray(data) ? data : []))
+        .catch(() => setDeskMembers([]));
+    } else {
+      setDeskMembers([]);
+    }
+    if (isEditingRef.current) {
+      isEditingRef.current = false;
+    } else {
+      setFormData((prev) => ({ ...prev, responsable_user_id: '', responsable_ids: [] }));
+    }
+  }, [formData.desk_id]);
 
   const fetchData = async () => {
     try {
-      const [tasksRes, brandsRes, desksRes, usersRes] = await Promise.all([
-        supabase.from('tasks').select(`*, brands (nombre), desks (nombre)`),
-        supabase.from('brands').select('*').eq('activo', true),
-        supabase.from('desks').select('*').eq('activo', true),
-        supabase.from('profiles').select('id, nombre').eq('activo', true),
+      setLoading(true);
+      const [tasksRes, brandsData, desksData, usersData, taskTypesData, deliverableTypesData] = await Promise.all([
+        api.getTasks({
+          limit: pageSize,
+          offset: page * pageSize,
+          responsable_user_id: filterResponsable,
+          brand_id: filterBrand !== 'all' ? filterBrand : (pinnedBrandId || 'all'),
+          desk_id: filterDesk !== 'all' ? filterDesk : (pinnedDeskId || undefined),
+          estado: filterStatus,
+          prioridad: filterPriority,
+          search: debouncedSearch || undefined,
+        }),
+        api.getBrands(),
+        api.getDesks(),
+        api.getProfiles(),
+        api.getTaskTypes(),
+        api.getDeliverableTypes(),
       ]);
-
-      if (tasksRes.data) setTasks(tasksRes.data as Task[]);
-      if (brandsRes.data) setBrands(brandsRes.data);
-      if (desksRes.data) setDesks(desksRes.data);
-      if (usersRes.data) setUsers(usersRes.data);
+      setTasks((tasksRes.tasks || []) as Task[]);
+      setTotalTasks(tasksRes.total ?? 0);
+      if (Array.isArray(brandsData)) setBrands(brandsData.filter((b: { activo?: unknown }) => b.activo !== 0 && b.activo !== false));
+      if (Array.isArray(desksData)) setDesks(desksData.filter((d: { activo?: unknown }) => d.activo !== 0 && d.activo !== false));
+      if (Array.isArray(usersData)) setUsers(usersData);
+      if (Array.isArray(taskTypesData)) setTaskTypes(taskTypesData.filter((t: { activo?: unknown }) => t.activo !== 0 && t.activo !== false));
+      if (Array.isArray(deliverableTypesData)) setDeliverableTypes(deliverableTypesData.filter((t: { activo?: unknown }) => t.activo !== 0 && t.activo !== false));
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Error al cargar datos');
@@ -160,61 +450,64 @@ export default function Tasks() {
     setSaving(true);
 
     try {
+      const validEntregables = formData.entregables.filter(e => e.tipo_entregable_id);
       const taskData = {
         titulo_tarea: formData.titulo_tarea,
         detalle: formData.detalle || null,
         brand_id: formData.brand_id,
         desk_id: formData.desk_id || null,
-        responsable_user_id: formData.responsable_user_id || null,
+        responsable_user_id: formData.responsable_ids[0] || formData.responsable_user_id || null,
+        responsable_ids: formData.responsable_ids.length > 0 ? formData.responsable_ids : (formData.responsable_user_id ? [formData.responsable_user_id] : []),
         departamento: formData.departamento || null,
         prioridad: formData.prioridad,
         estado: formData.estado,
         fecha_inicio: formData.fecha_inicio || null,
         fecha_entrega: formData.fecha_entrega,
-        cantidad_entregables: formData.cantidad_entregables,
+        cantidad_entregables: validEntregables.length > 0 ? validEntregables.reduce((sum, e) => sum + e.cantidad, 0) : formData.cantidad_entregables,
         enlaces: formData.enlaces ? formData.enlaces.split('\n').filter(Boolean) : null,
+        task_type_id: formData.task_type_id || null,
+        tipo_entregable_id: validEntregables[0]?.tipo_entregable_id || formData.tipo_entregable_id || null,
+        entregables: validEntregables.map(e => ({ tipo_entregable_id: e.tipo_entregable_id, cantidad: e.cantidad })),
       };
 
       if (selectedTask) {
-        const { error } = await supabase
-          .from('tasks')
-          .update(taskData)
-          .eq('id', selectedTask.id);
-
-        if (error) throw error;
+        const result: any = await api.patchTask(selectedTask.id, taskData);
+        if (result?.error) throw new Error(result.error);
         toast.success('Tarea actualizada');
+        setDialogOpen(false);
+        resetForm();
       } else {
-        const { data: insertedTask, error } = await supabase
-          .from('tasks')
-          .insert(taskData)
-          .select()
-          .single();
-          
-        if (error) throw error;
+        const insertedTask: any = await api.createTask(taskData);
+        if (insertedTask?.error) throw new Error(insertedTask.error);
+
+        if (pendingFiles.length > 0 && insertedTask?.id) {
+          try {
+            await api.assignFilesToTask(pendingFiles.map(f => f.id), insertedTask.id);
+          } catch { /* silent */ }
+          setPendingFiles([]);
+        }
+
         toast.success('Tarea creada');
 
-        // Send email notification if a responsible user is assigned
         if (formData.responsable_user_id) {
           const assignedUser = users.find(u => u.id === formData.responsable_user_id);
           const brandName = brands.find(b => b.id === formData.brand_id)?.nombre || 'Sin marca';
-          
-          if (assignedUser) {
-            // Get user email from profiles
-            const { data: userProfile } = await supabase
-              .from('profiles')
-              .select('email, nombre')
-              .eq('id', formData.responsable_user_id)
-              .single();
 
-            if (userProfile?.email) {
+          if (assignedUser) {
+            const profileEmail = (assignedUser as any).email;
+            if (profileEmail) {
               try {
                 await sendTaskNotification({
+                  taskId: insertedTask.id,
                   taskTitle: formData.titulo_tarea,
                   brandName,
                   fechaEntrega: formData.fecha_entrega,
                   prioridad: formData.prioridad,
-                  recipientEmail: userProfile.email,
-                  recipientName: userProfile.nombre,
+                  recipientEmail: profileEmail,
+                  recipientName: assignedUser.nombre,
+                  detalle: formData.detalle || undefined,
+                  fechaInicio: formData.fecha_inicio || undefined,
+                  archivosAdjuntos: formData.enlaces ? formData.enlaces.split('\n').filter(Boolean) : undefined,
                 });
                 toast.success('Notificación enviada al responsable');
               } catch (emailError) {
@@ -224,10 +517,16 @@ export default function Tasks() {
             }
           }
         }
+
+        // Switch to edit mode so the user can attach files
+        if (insertedTask?.id) {
+          setSelectedTask(insertedTask as Task);
+        } else {
+          setDialogOpen(false);
+          resetForm();
+        }
       }
 
-      setDialogOpen(false);
-      resetForm();
       fetchData();
     } catch (error: any) {
       toast.error('Error al guardar', { description: error.message });
@@ -243,6 +542,7 @@ export default function Tasks() {
       brand_id: '',
       desk_id: '',
       responsable_user_id: '',
+      responsable_ids: [],
       departamento: '',
       prioridad: 'media',
       estado: 'backlog',
@@ -250,37 +550,53 @@ export default function Tasks() {
       fecha_entrega: '',
       cantidad_entregables: 1,
       enlaces: '',
+      task_type_id: '',
+      tipo_entregable_id: '',
+      entregables: [{ tipo_entregable_id: '', cantidad: 1 }],
     });
     setSelectedTask(null);
+    setPendingFiles([]);
   };
 
   const openEditDialog = (task: Task) => {
     setSelectedTask(task);
+    isEditingRef.current = true;
+
+    // Build entregables from multi-type list or fallback to legacy single type
+    const entregables = task.deliverable_types_list && task.deliverable_types_list.length > 0
+      ? task.deliverable_types_list.map(dt => ({
+          tipo_entregable_id: dt.tipo_entregable_id,
+          cantidad: dt.cantidad,
+        }))
+      : task.tipo_entregable_id
+        ? [{ tipo_entregable_id: task.tipo_entregable_id, cantidad: task.cantidad_entregables || 1 }]
+        : [{ tipo_entregable_id: '', cantidad: 1 }];
+
     setFormData({
       titulo_tarea: task.titulo_tarea,
       detalle: task.detalle || '',
       brand_id: task.brand_id,
       desk_id: task.desk_id || '',
       responsable_user_id: task.responsable_user_id || '',
+      responsable_ids: task.responsables?.map(r => r.user_id) || (task.responsable_user_id ? [task.responsable_user_id] : []),
       departamento: task.departamento || '',
       prioridad: task.prioridad,
       estado: task.estado,
-      fecha_inicio: task.fecha_inicio || '',
-      fecha_entrega: task.fecha_entrega,
+      fecha_inicio: task.fecha_inicio ? task.fecha_inicio.substring(0, 10) : '',
+      fecha_entrega: task.fecha_entrega ? task.fecha_entrega.substring(0, 10) : '',
       cantidad_entregables: task.cantidad_entregables,
       enlaces: task.enlaces?.join('\n') || '',
+      task_type_id: task.task_type_id || '',
+      tipo_entregable_id: task.tipo_entregable_id || '',
+      entregables,
     });
     setDialogOpen(true);
   };
 
   const updateTaskStatus = async (taskId: string, status: Task['estado']) => {
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .update({ estado: status })
-        .eq('id', taskId);
-
-      if (error) throw error;
+      const result: any = await api.patchTask(taskId, { estado: status });
+      if (result?.error) throw new Error(result.error);
       toast.success('Estado actualizado');
       fetchData();
     } catch (error: any) {
@@ -290,12 +606,8 @@ export default function Tasks() {
 
   const updateTaskPriority = async (taskId: string, prioridad: Task['prioridad']) => {
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .update({ prioridad })
-        .eq('id', taskId);
-
-      if (error) throw error;
+      const result: any = await api.patchTask(taskId, { prioridad });
+      if (result?.error) throw new Error(result.error);
       toast.success('Prioridad actualizada');
       fetchData();
     } catch (error: any) {
@@ -305,30 +617,22 @@ export default function Tasks() {
 
   const toggleCheck = async (taskId: string, checked: boolean) => {
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .update({ check_done: checked })
-        .eq('id', taskId);
-
-      if (error) throw error;
+      const result: any = await api.patchTask(taskId, { check_done: checked });
+      if (result?.error) throw new Error(result.error);
       fetchData();
     } catch (error: any) {
       toast.error('Error', { description: error.message });
     }
   };
 
+  // Los filtros principales se aplican en el servidor.
+  // Aquí solo filtramos combinaciones de dropdown + pinned sidebar cuando ambos están activos.
   const filteredTasks = tasks.filter(task => {
-    const matchesSearch = task.titulo_tarea.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesBrand = filterBrand === 'all' || task.brand_id === filterBrand;
-    const matchesStatus = filterStatus === 'all' || task.estado === filterStatus;
-    const matchesPriority = filterPriority === 'all' || task.prioridad === filterPriority;
-    const matchesResponsable = filterResponsable === 'all' || task.responsable_user_id === filterResponsable;
-    
-    // Apply global filters from sidebar
+    const matchesDesk = filterDesk === 'all' || task.desk_id === filterDesk;
     const matchesPinnedDesk = !pinnedDeskId || task.desk_id === pinnedDeskId;
     const matchesPinnedBrand = !pinnedBrandId || task.brand_id === pinnedBrandId;
-    
-    return matchesSearch && matchesBrand && matchesStatus && matchesPriority && matchesResponsable && matchesPinnedDesk && matchesPinnedBrand;
+    return matchesBrand && matchesDesk && matchesPinnedDesk && matchesPinnedBrand;
   });
 
   const getPriorityColor = (prioridad: string) => {
@@ -364,18 +668,224 @@ export default function Tasks() {
     return labels[estado] || estado;
   };
 
+  const statusOrder: Task['estado'][] = ['en_proceso', 'en_revision', 'backlog', 'bloqueado', 'aprobado', 'entregado'];
+
+  const getStatusHeaderColor = (estado: string) => {
+    const colors: Record<string, string> = {
+      backlog: 'bg-[hsl(222,35%,35%)]',
+      en_proceso: 'bg-[hsl(199,89%,48%)]',
+      en_revision: 'bg-[hsl(38,92%,50%)]',
+      aprobado: 'bg-[hsl(142,76%,36%)]',
+      entregado: 'bg-[hsl(168,76%,42%)]',
+      bloqueado: 'bg-[hsl(0,84%,60%)]',
+    };
+    return colors[estado] || 'bg-muted';
+  };
+
+  const MONTH_HEADER_COLORS = [
+    'bg-amber-500', 'bg-emerald-500', 'bg-sky-500', 'bg-violet-500',
+    'bg-rose-500', 'bg-lime-500', 'bg-orange-500', 'bg-cyan-500',
+    'bg-fuchsia-500', 'bg-teal-500', 'bg-indigo-500', 'bg-pink-500',
+  ];
+  const getMonthHeaderColor = (monthKey: string) => {
+    const idx = monthKey.length > 0 ? (monthKey.charCodeAt(0) + (monthKey.length || 0)) % 12 : 0;
+    return MONTH_HEADER_COLORS[idx] || 'bg-muted';
+  };
+
+  const getDepartmentColor = (departamento: string | null) => {
+    if (!departamento) return 'bg-muted text-muted-foreground';
+    const d = departamento.toUpperCase().trim();
+    const map: Record<string, string> = {
+      MESA: 'bg-blue-500/90 text-white',
+      DISEÑO: 'bg-purple-500/90 text-white',
+      DISENO: 'bg-purple-500/90 text-white',
+      PRODUCCIÓN: 'bg-amber-500/90 text-white',
+      PRODUCCION: 'bg-amber-500/90 text-white',
+      CUENTAS: 'bg-emerald-500/90 text-white',
+      DESARROLLO: 'bg-cyan-500/90 text-white',
+      MARKETING: 'bg-pink-500/90 text-white',
+      QA: 'bg-orange-500/90 text-white',
+      ADMIN: 'bg-slate-500/90 text-white',
+    };
+    return map[d] || 'bg-primary/80 text-primary-foreground';
+  };
+
+  const groupedTasks = React.useMemo(() => {
+    if (groupBy === 'mes') {
+      const byMonth: Record<string, Task[]> = {};
+      filteredTasks.forEach((t) => {
+        const d = t.fecha_entrega ? t.fecha_entrega.substring(0, 10) : '';
+        const [y, m] = d.split('-').map(Number);
+        const key = `${y || 0}-${String(m || 1).padStart(2, '0')}`;
+        if (!byMonth[key]) byMonth[key] = [];
+        byMonth[key].push(t);
+      });
+      const sorted = Object.keys(byMonth).sort().reverse();
+      return sorted.reduce<Record<string, Task[]>>((acc, key) => {
+        acc[key] = byMonth[key];
+        return acc;
+      }, {});
+    }
+    return statusOrder.reduce<Record<string, Task[]>>((acc, status) => {
+      const tasksInGroup = filteredTasks.filter(t => t.estado === status);
+      if (tasksInGroup.length > 0) acc[status] = tasksInGroup;
+      return acc;
+    }, {});
+  }, [filteredTasks, groupBy]);
+
+  const getGroupLabel = (key: string) => {
+    if (groupBy === 'mes') {
+      const [y, m] = key.split('-').map(Number);
+      const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+      return `${monthNames[(m || 1) - 1]} ${y || '—'}`;
+    }
+    return getStatusLabel(key);
+  };
+
+  const toggleGroup = (groupKey: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
+  };
+
+  const toggleTaskExpand = async (taskId: string) => {
+    setExpandedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+    if (!subtasksCache[taskId]) {
+      try {
+        const list = await api.getSubtasks(taskId) as { id: string; titulo_tarea: string; check_done?: boolean | number }[];
+        const arr = Array.isArray(list) ? list.map(x => ({ id: x.id, titulo_tarea: x.titulo_tarea, check_done: !!(x.check_done) })) : [];
+        setSubtasksCache(c => ({ ...c, [taskId]: arr }));
+      } catch {
+        setSubtasksCache(c => ({ ...c, [taskId]: [] }));
+      }
+    }
+  };
+
+  const toggleFavorite = async (task: Task) => {
+    const next = !task.is_favorite;
+    try {
+      await api.patchTask(task.id, { is_favorite: next });
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_favorite: next } : t));
+    } catch {
+      toast.error('No se pudo actualizar favorito');
+    }
+  };
+
+  const handleAddSubtask = async (parentTaskId: string) => {
+    const title = newSubtaskTitle[parentTaskId]?.trim();
+    if (!title) return;
+    setAddingSubtaskFor(parentTaskId);
+    try {
+      const created = await api.createSubtask(parentTaskId, { titulo_tarea: title }) as { id?: string; titulo_tarea?: string; check_done?: boolean | number } | undefined;
+      setNewSubtaskTitle(t => ({ ...t, [parentTaskId]: '' }));
+      // Mostrar de inmediato la nueva subtarea (optimistic + respuesta del API)
+      const newItem = created && created.id ? { id: created.id, titulo_tarea: created.titulo_tarea || title, check_done: !!(created.check_done) } : null;
+      if (newItem) {
+        setSubtasksCache(c => ({
+          ...c,
+          [parentTaskId]: [...(c[parentTaskId] || []), newItem],
+        }));
+      }
+      toast.success('Subtarea creada');
+      // Refrescar lista desde el servidor para quedar en sync
+      const list = await api.getSubtasks(parentTaskId);
+      const arr = Array.isArray(list) ? list.map((x: { id: string; titulo_tarea: string; check_done?: boolean | number }) => ({ id: x.id, titulo_tarea: x.titulo_tarea, check_done: !!(x.check_done) })) : [];
+      setSubtasksCache(c => ({ ...c, [parentTaskId]: arr }));
+    } catch {
+      toast.error('Error al crear subtarea');
+    } finally {
+      setAddingSubtaskFor(null);
+    }
+  };
+
+  const refreshSubtasks = async (parentTaskId: string) => {
+    try {
+      const list = await api.getSubtasks(parentTaskId) as { id: string; titulo_tarea: string; check_done?: boolean | number }[];
+      const arr = Array.isArray(list) ? list.map(x => ({ id: x.id, titulo_tarea: x.titulo_tarea, check_done: !!(x.check_done) })) : [];
+      setSubtasksCache(c => ({ ...c, [parentTaskId]: arr }));
+    } catch {
+      setSubtasksCache(c => ({ ...c, [parentTaskId]: c[parentTaskId] || [] }));
+    }
+  };
+
+  const handleToggleSubtaskDone = async (st: { id: string; check_done: boolean }, parentTaskId: string) => {
+    try {
+      await api.patchTask(st.id, { check_done: !st.check_done });
+      await refreshSubtasks(parentTaskId);
+    } catch {
+      toast.error('No se pudo actualizar');
+    }
+  };
+
+  const handleEditSubtask = (st: { id: string; titulo_tarea: string }) => {
+    setEditingSubtaskId(st.id);
+    setEditingSubtaskTitle(st.titulo_tarea);
+  };
+
+  const handleSaveSubtaskEdit = async (stId: string, parentTaskId: string) => {
+    const title = editingSubtaskTitle.trim();
+    if (!title) return;
+    try {
+      await api.patchTask(stId, { titulo_tarea: title });
+      setEditingSubtaskId(null);
+      setEditingSubtaskTitle('');
+      await refreshSubtasks(parentTaskId);
+      toast.success('Subtarea actualizada');
+    } catch {
+      toast.error('No se pudo actualizar');
+    }
+  };
+
+  const handleDeleteSubtask = async (stId: string, parentTaskId: string) => {
+    if (!window.confirm('¿Eliminar esta subtarea?')) return;
+    try {
+      await api.deleteTask(stId);
+      await refreshSubtasks(parentTaskId);
+      toast.success('Subtarea eliminada');
+    } catch {
+      toast.error('No se pudo eliminar');
+    }
+  };
+
+  const parseLocalDate = (dateStr: string) => {
+    // Handle ISO format "2026-02-16T00:00:00.000Z" and plain "2026-02-16"
+    const clean = dateStr.substring(0, 10);
+    const [y, m, d] = clean.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  };
+
   const getDaysRemaining = (fechaEntrega: string) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const entrega = new Date(fechaEntrega);
-    entrega.setHours(0, 0, 0, 0);
+    const entrega = parseLocalDate(fechaEntrega);
     return Math.ceil((entrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   };
 
   const canEditTask = (task: Task) => {
     if (isAdmin || isOps) return true;
-    if (isEquipo && task.responsable_user_id === profile?.id) return true;
+    if (isEquipo && (task.responsable_user_id === profile?.id || task.responsables?.some(r => r.user_id === profile?.id))) return true;
     return false;
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm('¿Eliminar esta tarea? Se borrarán también subtareas, entregables y archivos.')) return;
+    setDeleteTaskId(taskId);
+    try {
+      await api.deleteTask(taskId);
+      toast.success('Tarea eliminada');
+      if (selectedTask?.id === taskId) {
+        setDetailDialogOpen(false);
+        setSelectedTask(null);
+      }
+      fetchData();
+    } catch (e) {
+      toast.error((e as Error).message || 'Error al eliminar');
+    } finally {
+      setDeleteTaskId(null);
+    }
   };
 
   if (loading) {
@@ -387,29 +897,64 @@ export default function Tasks() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Tareas</h2>
-          <p className="text-sm text-muted-foreground">Gestiona todas las tareas del equipo</p>
-        </div>
-        {(isAdmin || isOps || isEquipo) && (
+    <div className="space-y-4 sm:space-y-6 animate-fade-in min-w-0 overflow-x-hidden">
+      {/* Header + vista */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-foreground">Tareas</h2>
+            <p className="text-sm text-muted-foreground">Gestiona todas las tareas del equipo</p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-wrap w-full sm:w-auto">
+            <div className="overflow-x-auto -mx-px sm:overflow-visible">
+            <div className="flex gap-1 p-1 rounded-lg bg-muted/50 shrink-0 flex-wrap min-w-0">
+              <Button variant="default" size="sm" className="pointer-events-none">
+                <LayoutGrid className="h-4 w-4 mr-1.5" />
+                Lista
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/tareas/kanban" className="flex items-center gap-1.5">
+                  <Columns3 className="h-4 w-4" />
+                  Tablero
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/tareas/gantt" className="flex items-center gap-1.5">
+                  <GanttChart className="h-4 w-4" />
+                  Cronograma
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/tareas/calendario" className="flex items-center gap-1.5">
+                  <Calendar className="h-4 w-4" />
+                  Calendario
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/tareas/workload" className="flex items-center gap-1.5">Carga</Link>
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/tareas/tiempo" className="flex items-center gap-1.5">Tiempo</Link>
+              </Button>
+            </div>
+            </div>
+            {(isAdmin || isOps || isEquipo) && (
           <Dialog open={dialogOpen} onOpenChange={(open) => {
             setDialogOpen(open);
             if (!open) resetForm();
           }}>
             <DialogTrigger asChild>
-              <Button className="gradient-primary w-full sm:w-auto">
+              <Button className="gradient-primary w-full sm:w-auto" onClick={() => resetForm()}>
                 <Plus className="h-4 w-4 mr-2" />
                 Nueva Tarea
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto mx-4 sm:mx-auto">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto mx-4 sm:mx-auto" aria-describedby="task-form-desc">
               <DialogHeader>
                 <DialogTitle>
                   {selectedTask ? 'Editar Tarea' : 'Nueva Tarea'}
                 </DialogTitle>
+                <DialogDescription id="task-form-desc">{selectedTask ? 'Modifica los datos de la tarea.' : 'Crea una nueva tarea con marca, responsable y fechas.'}</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -430,14 +975,18 @@ export default function Tasks() {
                       onValueChange={(value) => setFormData({ ...formData, brand_id: value })}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar marca" />
+                        <SelectValue placeholder={brands.length ? 'Seleccionar marca' : 'No hay marcas. Crea una en Admin → Marcas'} />
                       </SelectTrigger>
                       <SelectContent>
-                        {brands.map((brand) => (
-                          <SelectItem key={brand.id} value={brand.id}>
-                            {brand.nombre}
-                          </SelectItem>
-                        ))}
+                        {brands.length === 0 ? (
+                          <div className="px-2 py-3 text-sm text-muted-foreground">No hay marcas. Crea una en Admin → Marcas</div>
+                        ) : (
+                          brands.map((brand) => (
+                            <SelectItem key={brand.id} value={brand.id}>
+                              {brand.nombre}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -449,35 +998,46 @@ export default function Tasks() {
                       onValueChange={(value) => setFormData({ ...formData, desk_id: value })}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar mesa" />
+                        <SelectValue placeholder={desks.length ? 'Seleccionar mesa' : 'No hay mesas. Crea una en Admin → Mesas'} />
                       </SelectTrigger>
                       <SelectContent>
-                        {desks.map((desk) => (
-                          <SelectItem key={desk.id} value={desk.id}>
-                            {desk.nombre}
-                          </SelectItem>
-                        ))}
+                        {desks.length === 0 ? (
+                          <div className="px-2 py-3 text-sm text-muted-foreground">No hay mesas. Crea una en Admin → Mesas</div>
+                        ) : (
+                          desks.map((desk) => (
+                            <SelectItem key={desk.id} value={desk.id}>
+                              {desk.nombre}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="responsable">Responsable</Label>
-                    <Select
-                      value={formData.responsable_user_id}
-                      onValueChange={(value) => setFormData({ ...formData, responsable_user_id: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Asignar responsable" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {users.map((user) => (
-                          <SelectItem key={user.id} value={user.id}>
+                    <Label>Responsables (equipo de la mesa)</Label>
+                    {!formData.desk_id ? (
+                      <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">Selecciona una mesa primero</p>
+                    ) : deskMembers.length === 0 ? (
+                      <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">No hay equipo en esta mesa</p>
+                    ) : (
+                      <div className="border rounded-md p-2 space-y-1 max-h-40 overflow-y-auto">
+                        {deskMembers.map((user) => (
+                          <label key={user.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer text-sm">
+                            <Checkbox
+                              checked={formData.responsable_ids.includes(user.id)}
+                              onCheckedChange={(checked) => {
+                                const ids = checked
+                                  ? [...formData.responsable_ids, user.id]
+                                  : formData.responsable_ids.filter(id => id !== user.id);
+                                setFormData({ ...formData, responsable_ids: ids, responsable_user_id: ids[0] || '' });
+                              }}
+                            />
                             {user.nombre}
-                          </SelectItem>
+                          </label>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -487,6 +1047,94 @@ export default function Tasks() {
                       value={formData.departamento}
                       onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="task_type">Tipo de Tarea</Label>
+                    <Select
+                      value={formData.task_type_id}
+                      onValueChange={(value) => setFormData({ ...formData, task_type_id: value === '__none__' ? '' : value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sin tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Sin tipo</SelectItem>
+                        {taskTypes.map((tt) => (
+                          <SelectItem key={tt.id} value={tt.id}>{tt.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Tipos de Entregable</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setFormData({
+                          ...formData,
+                          entregables: [...formData.entregables, { tipo_entregable_id: '', cantidad: 1 }]
+                        })}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Agregar
+                      </Button>
+                    </div>
+                    {formData.entregables.map((ent, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <Select
+                            value={ent.tipo_entregable_id || '__none__'}
+                            onValueChange={(value) => {
+                              const updated = [...formData.entregables];
+                              updated[idx] = { ...updated[idx], tipo_entregable_id: value === '__none__' ? '' : value };
+                              setFormData({ ...formData, entregables: updated });
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Sin tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">Sin tipo</SelectItem>
+                              {deliverableTypes.map((dt) => (
+                                <SelectItem key={dt.id} value={dt.id}>{dt.nombre}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="w-20">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={ent.cantidad}
+                            onChange={(e) => {
+                              const updated = [...formData.entregables];
+                              updated[idx] = { ...updated[idx], cantidad: parseInt(e.target.value) || 1 };
+                              setFormData({ ...formData, entregables: updated });
+                            }}
+                            placeholder="Cant."
+                          />
+                        </div>
+                        {formData.entregables.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                            onClick={() => {
+                              const updated = formData.entregables.filter((_, i) => i !== idx);
+                              setFormData({ ...formData, entregables: updated });
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
                   </div>
 
                   <div className="space-y-2">
@@ -551,24 +1199,13 @@ export default function Tasks() {
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="cantidad">Cantidad Entregables</Label>
-                    <Input
-                      id="cantidad"
-                      type="number"
-                      min={1}
-                      value={formData.cantidad_entregables}
-                      onChange={(e) => setFormData({ ...formData, cantidad_entregables: parseInt(e.target.value) || 1 })}
-                    />
-                  </div>
-
                   <div className="col-span-1 sm:col-span-2 space-y-2">
                     <Label htmlFor="detalle">Detalle</Label>
-                    <Textarea
-                      id="detalle"
-                      value={formData.detalle}
-                      onChange={(e) => setFormData({ ...formData, detalle: e.target.value })}
-                      rows={3}
+                    <RichTextEditor
+                      content={formData.detalle}
+                      onChange={(html) => setFormData({ ...formData, detalle: html })}
+                      placeholder="Escribe el detalle de la tarea... Usa encabezados, listas, checklists, etc."
+                      minHeight="120px"
                     />
                   </div>
 
@@ -581,6 +1218,22 @@ export default function Tasks() {
                       rows={2}
                       placeholder="https://..."
                     />
+                  </div>
+
+                  <div className="col-span-1 sm:col-span-2">
+                    {selectedTask ? (
+                      <TaskFiles
+                        taskId={selectedTask.id}
+                        canEdit={canEditTask(selectedTask)}
+                      />
+                    ) : (
+                      <FileUploader
+                        taskId={null}
+                        files={pendingFiles}
+                        onFilesChange={setPendingFiles}
+                        canEdit
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -596,26 +1249,20 @@ export default function Tasks() {
               </form>
             </DialogContent>
           </Dialog>
-        )}
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Filters */}
       <Card className="glass-card">
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex flex-col gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar tareas..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <div className="grid grid-cols-2 sm:flex gap-2 sm:flex-wrap">
+        <CardContent className="p-3 sm:p-4 space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[180px]">
+              <Label className="text-xs text-muted-foreground block">Marca</Label>
               <Select value={filterBrand} onValueChange={setFilterBrand}>
-                <SelectTrigger className="w-full sm:w-36">
-                  <SelectValue placeholder="Marca" />
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
@@ -626,9 +1273,28 @@ export default function Tasks() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5 w-[calc(50%-6px)] sm:w-auto sm:flex-1 sm:min-w-[120px]">
+              <Label className="text-xs text-muted-foreground block">Mesa</Label>
+              <Select value={filterDesk} onValueChange={setFilterDesk}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {desks.map((desk) => (
+                    <SelectItem key={desk.id} value={desk.id}>
+                      {desk.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 w-[calc(50%-6px)] sm:w-auto sm:flex-1 sm:min-w-[120px]">
+              <Label className="text-xs text-muted-foreground block">Estado</Label>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full sm:w-36">
-                  <SelectValue placeholder="Estado" />
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
@@ -640,9 +1306,12 @@ export default function Tasks() {
                   <SelectItem value="bloqueado">Bloqueado</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5 w-[calc(50%-6px)] sm:w-auto sm:flex-1 sm:min-w-[110px]">
+              <Label className="text-xs text-muted-foreground block">Prioridad</Label>
               <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger className="w-full sm:w-28">
-                  <SelectValue placeholder="Prioridad" />
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
@@ -651,13 +1320,16 @@ export default function Tasks() {
                   <SelectItem value="baja">Baja</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5 w-[calc(50%-6px)] sm:w-auto sm:flex-1 sm:min-w-[130px]">
+              <Label className="text-xs text-muted-foreground block">Responsable</Label>
               <Select value={filterResponsable} onValueChange={setFilterResponsable}>
-                <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue placeholder="Responsable" />
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  {users.map((user) => (
+                  {(filterDeskMembers.length > 0 ? filterDeskMembers : users).map((user) => (
                     <SelectItem key={user.id} value={user.id}>
                       {user.nombre}
                     </SelectItem>
@@ -666,323 +1338,897 @@ export default function Tasks() {
               </Select>
             </div>
           </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[180px]">
+              <Label className="text-xs text-muted-foreground block mb-1.5">Buscar</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar tareas..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground block">Agrupar por</Label>
+              <Select value={groupBy} onValueChange={(v: 'estado' | 'mes') => setGroupBy(v)}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="estado">Estado</SelectItem>
+                  <SelectItem value="mes">Mes de entrega</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              {(isAdmin || isOps || isEquipo) && savedFilters.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Bookmark className="h-4 w-4 mr-1" />
+                      Filtros
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {savedFilters.map((f) => (
+                      <DropdownMenuItem key={f.id} onClick={() => f.filter_config && typeof f.filter_config === 'object' && loadSavedFilter(f.filter_config)}>
+                        {f.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              {(isAdmin || isOps || isEquipo) && (
+                <Button variant="outline" size="sm" onClick={() => setSaveFilterOpen(true)}>
+                  <BookmarkPlus className="h-4 w-4 mr-1" />
+                  Guardar filtro
+                </Button>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
+      {saveFilterOpen && (
+        <Dialog open={saveFilterOpen} onOpenChange={setSaveFilterOpen}>
+          <DialogContent aria-describedby="save-filter-desc">
+            <DialogHeader>
+              <DialogTitle>Guardar filtro</DialogTitle>
+              <DialogDescription id="save-filter-desc">Guarda la combinación actual de filtros para usarla después.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Nombre del filtro"
+                value={saveFilterName}
+                onChange={(e) => setSaveFilterName(e.target.value)}
+              />
+              <Button onClick={handleSaveFilter} disabled={saveFilterSaving}>{saveFilterSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Guardar</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Tasks Table */}
-      <Card className="glass-card">
+      <Card className="glass-card overflow-hidden">
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
+          {/* Column visibility toolbar */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
+            <span className="text-xs text-muted-foreground">{filteredTasks.length} tarea{filteredTasks.length !== 1 ? 's' : ''}</span>
+            <div className="relative">
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5" onClick={() => setShowColumnsMenu(v => !v)}>
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Columnas
+              </Button>
+              {showColumnsMenu && (
+                <div className="absolute right-0 top-8 z-50 bg-popover border border-border rounded-lg shadow-lg p-3 min-w-[180px]">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Mostrar columnas</p>
+                  <div className="space-y-1">
+                    {ALL_COLUMNS.map(col => (
+                      <label key={col.key} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted/50 cursor-pointer text-sm">
+                        <Checkbox
+                          checked={visibleCols[col.key]}
+                          onCheckedChange={() => toggleCol(col.key)}
+                          className="h-3.5 w-3.5"
+                        />
+                        {col.label}
+                      </label>
+                    ))}
+                  </div>
+                  <Button variant="ghost" size="sm" className="w-full mt-2 h-7 text-xs" onClick={() => setShowColumnsMenu(false)}>
+                    Cerrar
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="overflow-x-auto -mx-px">
+            <Table className="min-w-[600px]">
               <TableHeader>
                 <TableRow className="border-border">
-                  <TableHead className="w-12"></TableHead>
+                  <TableHead className="w-10 px-1" title="Expandir subtareas"></TableHead>
+                  <TableHead className="w-10 px-1 text-center">
+                    <Checkbox
+                      checked={filteredTasks.length > 0 && selectedIds.size === filteredTasks.length}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Seleccionar todas"
+                      className="h-4 w-4"
+                    />
+                  </TableHead>
+                  <TableHead className="w-8 px-1" title="Favorito"></TableHead>
                   <TableHead>Tarea</TableHead>
-                  <TableHead>Marca</TableHead>
-                  <TableHead>Mesa</TableHead>
-                  <TableHead>Responsable</TableHead>
-                  <TableHead className="text-center">Entregables</TableHead>
-                  <TableHead>Timer</TableHead>
-                  <TableHead>Archivos</TableHead>
-                  <TableHead>Prioridad</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Entrega</TableHead>
-                  <TableHead>Días</TableHead>
+                  {visibleCols.marca && <TableHead>Marca</TableHead>}
+                  {visibleCols.mesa && <TableHead>Mesa</TableHead>}
+                  {visibleCols.depto && <TableHead>Depto</TableHead>}
+                  {visibleCols.responsable && <TableHead>Responsable</TableHead>}
+                  {visibleCols.entregables && <TableHead className="text-center">Entregables</TableHead>}
+                  {visibleCols.timer && <TableHead>Timer</TableHead>}
+                  {visibleCols.archivos && <TableHead>Archivos</TableHead>}
+                  {visibleCols.tipo && <TableHead>Tipo</TableHead>}
+                  {visibleCols.prioridad && <TableHead>Prioridad</TableHead>}
+                  {visibleCols.estado && <TableHead>Estado</TableHead>}
+                  {visibleCols.entrega && <TableHead>Entrega</TableHead>}
+                  {visibleCols.dias && <TableHead>Días</TableHead>}
+                  {visibleCols.enlace && <TableHead className="w-10">Enlace</TableHead>}
+                  {visibleCols.autor && <TableHead>Autor</TableHead>}
+                  {visibleCols.creado && <TableHead className="w-20">Creado</TableHead>}
                   <TableHead className="w-24">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredTasks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={30} className="text-center py-8 text-muted-foreground">
                       No se encontraron tareas
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredTasks.map((task) => {
-                    const dias = getDaysRemaining(task.fecha_entrega);
-                    return (
-                      <TableRow key={task.id} className="border-border hover:bg-muted/50">
-                        <TableCell>
-                          <Checkbox
-                            checked={task.check_done}
-                            onCheckedChange={(checked) => toggleCheck(task.id, checked as boolean)}
-                            disabled={!canEditTask(task)}
-                          />
+                  Object.entries(groupedTasks).map(([groupKey, tasksInGroup]) => (
+                    <React.Fragment key={groupKey}>
+                      {/* Group header - Monday style colored bar */}
+                      <TableRow className="border-0 hover:bg-transparent">
+                        <TableCell colSpan={30} className="p-0 pt-2">
+                          <button
+                            onClick={() => toggleGroup(groupKey)}
+                            className={cn(
+                              "flex items-center gap-2 w-full px-3 py-2 rounded-t-md text-white text-sm font-semibold",
+                              groupBy === 'mes' ? getMonthHeaderColor(groupKey) : getStatusHeaderColor(groupKey)
+                            )}
+                          >
+                            {collapsedGroups[groupKey] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            {getGroupLabel(groupKey)}
+                            <span className="ml-1 opacity-90 font-normal">({tasksInGroup.length})</span>
+                          </button>
                         </TableCell>
-                        <TableCell>
-                          <div className="font-medium text-foreground">{task.titulo_tarea}</div>
-                          {task.departamento && (
-                            <div className="text-xs text-muted-foreground">{task.departamento}</div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{task.brands?.nombre || '-'}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{task.desks?.nombre || '-'}</span>
-                        </TableCell>
-                        <TableCell>
-                          {task.responsable_user_id ? (
-                            <ResponsableMetrics
-                              userId={task.responsable_user_id}
-                              userName={users.find(u => u.id === task.responsable_user_id)?.nombre || 'Sin asignar'}
-                              allTasks={tasks}
-                              compact
-                            />
-                          ) : (
-                            <span className="text-sm text-muted-foreground">Sin asignar</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <Package className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">{task.cantidad_entregables}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <TaskTimer
-                            taskId={task.id}
-                            initialTime={task.tiempo_trabajado}
-                            isActive={task.timer_activo}
-                            startTime={task.timer_inicio}
-                            canEdit={canEditTask(task)}
-                            compact
-                            onUpdate={fetchData}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <TaskFiles
-                            taskId={task.id}
-                            canEdit={canEditTask(task)}
-                            compact
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {canEditTask(task) ? (
-                            <Select
-                              value={task.prioridad}
-                              onValueChange={(value: Task['prioridad']) => updateTaskPriority(task.id, value)}
-                            >
-                              <SelectTrigger className={cn("h-7 w-24 text-xs border-0", getPriorityColor(task.prioridad))}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="alta">ALTA</SelectItem>
-                                <SelectItem value="media">MEDIA</SelectItem>
-                                <SelectItem value="baja">BAJA</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Badge className={cn("text-xs", getPriorityColor(task.prioridad))}>
-                              {task.prioridad.toUpperCase()}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {canEditTask(task) ? (
-                            <Select
-                              value={task.estado}
-                              onValueChange={(value: Task['estado']) => updateTaskStatus(task.id, value)}
-                            >
-                              <SelectTrigger className={cn("h-7 w-28 text-xs border-0", getStatusColor(task.estado))}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="backlog">Backlog</SelectItem>
-                                <SelectItem value="en_proceso">En Proceso</SelectItem>
-                                <SelectItem value="en_revision">En Revisión</SelectItem>
-                                <SelectItem value="aprobado">Aprobado</SelectItem>
-                                <SelectItem value="entregado">Entregado</SelectItem>
-                                <SelectItem value="bloqueado">Bloqueado</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Badge className={cn("text-xs", getStatusColor(task.estado))}>
-                              {getStatusLabel(task.estado)}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(task.fecha_entrega).toLocaleDateString('es-ES')}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className={cn(
-                            "text-sm font-medium px-2 py-0.5 rounded",
-                            dias < 0 ? "bg-destructive/20 text-destructive" :
-                            dias === 0 ? "bg-warning/20 text-warning" :
-                            dias <= 2 ? "bg-info/20 text-info" :
-                            "text-muted-foreground"
-                          )}>
-                            {dias < 0 ? `${Math.abs(dias)}d atrás` : dias === 0 ? 'Hoy' : `${dias}d`}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => {
-                                setSelectedTask(task);
-                                setDetailDialogOpen(true);
-                              }}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            {canEditTask(task) && (
+                      </TableRow>
+                      {/* Group rows */}
+                      {!collapsedGroups[groupKey] && tasksInGroup.map((task) => {
+                        const dias = getDaysRemaining(task.fecha_entrega);
+                        const subtasks = subtasksCache[task.id] || [];
+                        const isExpanded = expandedTaskIds.has(task.id);
+                        return (
+                          <React.Fragment key={task.id}>
+                          <TableRow className="border-border hover:bg-muted/50">
+                            <TableCell className="w-10 px-1">
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8"
-                                onClick={() => openEditDialog(task)}
+                                className="h-7 w-7"
+                                onClick={() => toggleTaskExpand(task.id)}
                               >
-                                <Edit className="h-4 w-4" />
+                                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                               </Button>
+                            </TableCell>
+                            <TableCell className="w-10 px-1 text-center">
+                              <Checkbox
+                                checked={selectedIds.has(task.id)}
+                                onCheckedChange={() => toggleSelectTask(task.id)}
+                                aria-label="Seleccionar tarea"
+                                className="h-4 w-4"
+                              />
+                            </TableCell>
+                            <TableCell className="w-8 px-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                                onClick={() => toggleFavorite(task)}
+                              >
+                                <Star className={cn("h-4 w-4", task.is_favorite && "fill-current")} />
+                              </Button>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                {!task.is_read && (
+                                  <span className="h-2 w-2 rounded-full bg-primary shrink-0" title="No leída" />
+                                )}
+                                <span
+                                  className="font-medium text-foreground cursor-pointer hover:text-primary hover:underline"
+                                  onClick={() => { setSelectedTask(task); setDetailDialogOpen(true); }}
+                                >
+                                  {task.titulo_tarea}
+                                </span>
+                              </div>
+                            </TableCell>
+                            {visibleCols.marca && <TableCell><span className="text-sm">{task.brands?.nombre || '-'}</span></TableCell>}
+                            {visibleCols.mesa && <TableCell><span className="text-sm">{task.desks?.nombre || '-'}</span></TableCell>}
+                            {visibleCols.depto && (
+                              <TableCell>
+                                {task.departamento ? (
+                                  <Badge className={cn("text-[10px] font-semibold uppercase", getDepartmentColor(task.departamento))}>
+                                    {task.departamento}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
                             )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
+                            {visibleCols.responsable && (
+                              <TableCell>
+                                {(task.responsables && task.responsables.length > 0) ? (
+                                  <div className="flex flex-col gap-0.5">
+                                    {task.responsables.map((r) => (
+                                      <ResponsableMetrics
+                                        key={r.user_id}
+                                        userId={r.user_id}
+                                        userName={r.nombre || 'Sin nombre'}
+                                        avatarUrl={r.avatar_url}
+                                        allTasks={tasks}
+                                        compact
+                                      />
+                                    ))}
+                                  </div>
+                                ) : task.responsable_user_id ? (
+                                  <ResponsableMetrics
+                                    userId={task.responsable_user_id}
+                                    userName={users.find(u => u.id === task.responsable_user_id)?.nombre || 'Sin asignar'}
+                                    avatarUrl={users.find(u => u.id === task.responsable_user_id)?.avatar_url}
+                                    allTasks={tasks}
+                                    compact
+                                  />
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">Sin asignar</span>
+                                )}
+                                {task.read_count != null && task.read_count > 0 && (
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-0.5" title={`${task.read_count} persona(s) han visto esta tarea`}>
+                                    <Eye className="h-3 w-3" />
+                                    {task.read_count} visto{task.read_count > 1 ? 's' : ''}
+                                  </span>
+                                )}
+                              </TableCell>
+                            )}
+                            {visibleCols.entregables && (
+                              <TableCell className="text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <Package className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-medium">{task.cantidad_entregables}</span>
+                                </div>
+                              </TableCell>
+                            )}
+                            {visibleCols.timer && (
+                              <TableCell>
+                                <TaskTimer
+                                  taskId={task.id}
+                                  initialTime={task.tiempo_trabajado}
+                                  isActive={task.timer_activo}
+                                  startTime={task.timer_inicio}
+                                  canEdit={canEditTask(task)}
+                                  compact
+                                  onUpdate={fetchData}
+                                />
+                              </TableCell>
+                            )}
+                            {visibleCols.archivos && (
+                              <TableCell>
+                                <TaskFiles
+                                  taskId={task.id}
+                                  canEdit={canEditTask(task)}
+                                  compact
+                                />
+                              </TableCell>
+                            )}
+                            {visibleCols.tipo && (
+                              <TableCell className="px-1">
+                                <span className="text-xs text-muted-foreground">{task.task_type?.nombre || '—'}</span>
+                              </TableCell>
+                            )}
+                            {visibleCols.prioridad && (
+                              <TableCell className="px-1">
+                                {canEditTask(task) ? (
+                                  <Select
+                                    value={task.prioridad}
+                                    onValueChange={(value: Task['prioridad']) => updateTaskPriority(task.id, value)}
+                                  >
+                                    <SelectTrigger className={cn("h-8 w-full min-w-[90px] text-xs font-semibold border-0 rounded-md justify-center [&>svg]:ml-1", getPriorityColor(task.prioridad))}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="alta">ALTA</SelectItem>
+                                      <SelectItem value="media">MEDIA</SelectItem>
+                                      <SelectItem value="baja">BAJA</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <div className={cn("h-8 flex items-center justify-center rounded-md text-xs font-semibold", getPriorityColor(task.prioridad))}>
+                                    {task.prioridad.toUpperCase()}
+                                  </div>
+                                )}
+                              </TableCell>
+                            )}
+                            {visibleCols.estado && (
+                              <TableCell className="px-1">
+                                {canEditTask(task) ? (
+                                  <Select
+                                    value={task.estado}
+                                    onValueChange={(value: Task['estado']) => updateTaskStatus(task.id, value)}
+                                  >
+                                    <SelectTrigger className={cn("h-8 w-full min-w-[110px] text-xs font-semibold border-0 rounded-md justify-center [&>svg]:ml-1", getStatusColor(task.estado))}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="backlog">Backlog</SelectItem>
+                                      <SelectItem value="en_proceso">En Proceso</SelectItem>
+                                      <SelectItem value="en_revision">En Revisión</SelectItem>
+                                      <SelectItem value="aprobado">Aprobado</SelectItem>
+                                      <SelectItem value="entregado">Entregado</SelectItem>
+                                      <SelectItem value="bloqueado">Bloqueado</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <div className={cn("h-8 flex items-center justify-center rounded-md text-xs font-semibold", getStatusColor(task.estado))}>
+                                    {getStatusLabel(task.estado)}
+                                  </div>
+                                )}
+                              </TableCell>
+                            )}
+                            {visibleCols.entrega && (
+                              <TableCell>
+                                <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                  <Calendar className="h-3 w-3" />
+                                  {parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES')}
+                                </div>
+                              </TableCell>
+                            )}
+                            {visibleCols.dias && (
+                              <TableCell>
+                                {(task.estado === 'entregado' || task.estado === 'aprobado') ? (
+                                  <span className="text-sm font-medium px-2 py-0.5 rounded bg-success/20 text-success">Listo</span>
+                                ) : (
+                                  <span className={cn(
+                                    "text-sm font-medium px-2 py-0.5 rounded",
+                                    dias < 0 ? "bg-destructive/20 text-destructive" :
+                                    dias === 0 ? "bg-warning/20 text-warning" :
+                                    dias <= 2 ? "bg-info/20 text-info" :
+                                    "text-muted-foreground"
+                                  )}>
+                                    {dias < 0 ? `${Math.abs(dias)}d atrás` : dias === 0 ? 'Hoy' : `${dias}d`}
+                                  </span>
+                                )}
+                              </TableCell>
+                            )}
+                            {visibleCols.enlace && (
+                              <TableCell>
+                                {task.enlaces && task.enlaces.length > 0 ? (
+                                  <a
+                                    href={task.enlaces[0]}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline inline-flex items-center gap-0.5"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Link2 className="h-3.5 w-3.5" />
+                                  </a>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                            )}
+                            {visibleCols.autor && (
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  <Avatar className="h-5 w-5">
+                                    {task.created_by_profile?.avatar_url ? (
+                                      <AvatarImage src={task.created_by_profile.avatar_url} alt={task.created_by_profile.nombre} className="object-cover" />
+                                    ) : null}
+                                    <AvatarFallback className="bg-primary/20 text-primary text-[8px] font-semibold">
+                                      {getInitials(task.created_by_profile?.nombre || '?')}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-xs text-muted-foreground truncate max-w-[100px]" title={task.created_by_profile?.nombre || ''}>
+                                    {task.created_by_profile?.nombre || '—'}
+                                  </span>
+                                </div>
+                              </TableCell>
+                            )}
+                            {visibleCols.creado && (
+                              <TableCell>
+                                <span className="text-xs text-muted-foreground">
+                                  {task.created_at ? new Date(task.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                                </span>
+                              </TableCell>
+                            )}
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => {
+                                    setSelectedTask(task);
+                                    setDetailDialogOpen(true);
+                                  }}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                {canEditTask(task) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => openEditDialog(task)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {canDeleteTasks && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    onClick={() => handleDeleteTask(task.id)}
+                                    disabled={deleteTaskId === task.id}
+                                  >
+                                    {deleteTaskId === task.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {/* Subtasks expanded row - Monday style */}
+                          {isExpanded && (
+                            <TableRow className="bg-muted/30 border-l-4 border-l-primary/50">
+                              <TableCell colSpan={30} className="py-2 px-4">
+                                <div className="pl-6 space-y-2">
+                                  {!subtasksCache[task.id] && (
+                                    <div className="flex items-center gap-2 text-muted-foreground text-sm py-1">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      Cargando subtareas…
+                                    </div>
+                                  )}
+                                  {subtasksCache[task.id] && subtasks.length === 0 && (
+                                    <p className="text-sm text-muted-foreground">Sin subtareas</p>
+                                  )}
+                                  {subtasks.length > 0 && (
+                                    <ul className="space-y-1.5">
+                                      {subtasks.map((st) => (
+                                        <li key={st.id} className="flex items-center gap-2 text-sm group py-0.5">
+                                          <Checkbox
+                                            checked={!!st.check_done}
+                                            onCheckedChange={() => handleToggleSubtaskDone(st, task.id)}
+                                            disabled={!canEditTask(task)}
+                                            className="h-3.5 w-3.5 shrink-0"
+                                          />
+                                          {editingSubtaskId === st.id ? (
+                                            <>
+                                              <Input
+                                                value={editingSubtaskTitle}
+                                                onChange={(e) => setEditingSubtaskTitle(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') handleSaveSubtaskEdit(st.id, task.id);
+                                                  if (e.key === 'Escape') { setEditingSubtaskId(null); setEditingSubtaskTitle(''); }
+                                                }}
+                                                className="h-7 text-sm flex-1 max-w-[200px]"
+                                                autoFocus
+                                              />
+                                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-primary" onClick={() => handleSaveSubtaskEdit(st.id, task.id)} title="Guardar">
+                                                <Check className="h-3.5 w-3.5" />
+                                              </Button>
+                                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditingSubtaskId(null); setEditingSubtaskTitle(''); }}>
+                                                <X className="h-3.5 w-3.5" />
+                                              </Button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <span className={cn("flex-1 min-w-0 truncate", st.check_done && "text-muted-foreground line-through")}>{st.titulo_tarea}</span>
+                                              {canEditTask(task) && (
+                                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleEditSubtask(st)} title="Editar">
+                                                    <Edit className="h-3 w-3" />
+                                                  </Button>
+                                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteSubtask(st.id, task.id)} title="Eliminar">
+                                                    <Trash2 className="h-3 w-3" />
+                                                  </Button>
+                                                </div>
+                                              )}
+                                            </>
+                                          )}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  {canEditTask(task) && (
+                                    <div className="flex gap-2 items-center pt-1 border-t border-border/50">
+                                      <Input
+                                        placeholder="Nueva subtarea..."
+                                        value={newSubtaskTitle[task.id] ?? ''}
+                                        onChange={(e) => setNewSubtaskTitle(t => ({ ...t, [task.id]: e.target.value }))}
+                                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask(task.id))}
+                                        className="h-8 text-sm max-w-xs"
+                                      />
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleAddSubtask(task.id)}
+                                        disabled={addingSubtaskFor === task.id || !(newSubtaskTitle[task.id]?.trim())}
+                                      >
+                                        {addingSubtaskFor === task.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+                                        Agregar subtarea
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))
+                )}
+                {(isAdmin || isOps || isEquipo) && (
+                  <TableRow
+                    className="border-border hover:bg-muted/50 cursor-pointer group"
+                    onClick={() => { resetForm(); setDialogOpen(true); }}
+                  >
+                    <TableCell colSpan={30} className="py-2 text-muted-foreground text-sm">
+                      <div className="flex items-center gap-2 group-hover:text-primary transition-colors">
+                        <Plus className="h-4 w-4" />
+                        <span>Agregar tarea</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 )}
               </TableBody>
             </Table>
+            {totalTasks > pageSize && (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 px-3 py-3 border-t">
+                <p className="text-xs sm:text-sm text-muted-foreground order-2 sm:order-1">
+                  Página {page + 1} de {Math.max(1, Math.ceil(totalTasks / pageSize))} ({totalTasks} tareas)
+                </p>
+                <div className="flex gap-2 order-1 sm:order-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page === 0 || loading}
+                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= Math.ceil(totalTasks / pageSize) - 1 || loading}
+                    onClick={() => setPage(p => p + 1)}
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
 
       {/* Task Detail Dialog */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto" aria-describedby="task-detail-desc">
           <DialogHeader>
-            <DialogTitle>Detalle de Tarea</DialogTitle>
+            <DialogTitle className="text-xl">{selectedTask?.titulo_tarea || 'Detalle de Tarea'}</DialogTitle>
+            <DialogDescription id="task-detail-desc">Información completa, timer, comentarios y entregables.</DialogDescription>
           </DialogHeader>
           {selectedTask && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">{selectedTask.titulo_tarea}</h3>
-                <div className="flex gap-2">
-                  <Badge className={getPriorityColor(selectedTask.prioridad)}>
-                    {selectedTask.prioridad.toUpperCase()}
-                  </Badge>
-                  <Badge className={getStatusColor(selectedTask.estado)}>
-                    {getStatusLabel(selectedTask.estado)}
-                  </Badge>
-                </div>
+            <div className="space-y-5">
+              {/* Header badges */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className={getPriorityColor(selectedTask.prioridad)}>
+                  {selectedTask.prioridad.toUpperCase()}
+                </Badge>
+                <Badge className={getStatusColor(selectedTask.estado)}>
+                  {getStatusLabel(selectedTask.estado)}
+                </Badge>
+                {selectedTask.task_type && (
+                  <Badge variant="outline">{selectedTask.task_type.nombre}</Badge>
+                )}
+                {selectedTask.deliverable_type && (
+                  <Badge variant="outline" className="text-xs">{selectedTask.deliverable_type.nombre}</Badge>
+                )}
+                {selectedTask.sprint && (
+                  <Badge variant="outline" className="text-xs">{selectedTask.sprint.name}</Badge>
+                )}
               </div>
 
-              {/* Timer Section */}
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-2">Tiempo Trabajado</h4>
-                <TaskTimer
-                  taskId={selectedTask.id}
-                  initialTime={selectedTask.tiempo_trabajado}
-                  isActive={selectedTask.timer_activo}
-                  startTime={selectedTask.timer_inicio}
-                  canEdit={canEditTask(selectedTask)}
-                  onUpdate={fetchData}
-                />
-              </div>
+              {/* Two-column layout */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left column — info */}
+                <div className="space-y-5">
+                  {/* Metadata grid */}
+                  <div className="grid grid-cols-2 gap-3 text-sm p-4 rounded-lg border border-border bg-muted/20">
+                    <div>
+                      <span className="text-muted-foreground text-xs block">Marca</span>
+                      <span className="font-medium">{selectedTask.brands?.nombre || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs block">Mesa</span>
+                      <span className="font-medium">{selectedTask.desks?.nombre || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs block">Fecha Inicio</span>
+                      <span className="font-medium">
+                        {selectedTask.fecha_inicio ? parseLocalDate(selectedTask.fecha_inicio).toLocaleDateString('es-ES') : '-'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs block">Fecha Entrega</span>
+                      <span className="font-medium">
+                        {parseLocalDate(selectedTask.fecha_entrega).toLocaleDateString('es-ES')}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs block">Entregables</span>
+                      <span className="font-medium">{selectedTask.cantidad_entregables}</span>
+                    </div>
+                    {selectedTask.story_points != null && (
+                      <div>
+                        <span className="text-muted-foreground text-xs block">Story Points</span>
+                        <span className="font-medium">{selectedTask.story_points}</span>
+                      </div>
+                    )}
+                    {selectedTask.feature && (
+                      <div>
+                        <span className="text-muted-foreground text-xs block">Feature</span>
+                        <span className="font-medium">{selectedTask.feature.name}</span>
+                      </div>
+                    )}
+                    {selectedTask.deliverable_type && (
+                      <div>
+                        <span className="text-muted-foreground text-xs block">Tipo Entregable</span>
+                        <span className="font-medium">{selectedTask.deliverable_type.nombre}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-muted-foreground text-xs block">Autor</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <Avatar className="h-5 w-5">
+                          {selectedTask.created_by_profile?.avatar_url ? (
+                            <AvatarImage src={selectedTask.created_by_profile.avatar_url} alt={selectedTask.created_by_profile.nombre} className="object-cover" />
+                          ) : null}
+                          <AvatarFallback className="bg-primary/20 text-primary text-[8px] font-semibold">
+                            {getInitials(selectedTask.created_by_profile?.nombre || '?')}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="font-medium">{selectedTask.created_by_profile?.nombre || '—'}</span>
+                      </div>
+                    </div>
+                  </div>
 
-              {/* Responsable Section */}
-              {selectedTask.responsable_user_id && (
-                <div className="p-4 rounded-lg border border-border bg-muted/30">
-                  <h4 className="text-sm font-medium text-muted-foreground mb-3">Responsable</h4>
-                  <ResponsableMetrics
-                    userId={selectedTask.responsable_user_id}
-                    userName={users.find(u => u.id === selectedTask.responsable_user_id)?.nombre || 'Sin asignar'}
-                    allTasks={tasks}
+                  {/* Timer Section */}
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-2">Tiempo Trabajado</h4>
+                    <TaskTimer
+                      taskId={selectedTask.id}
+                      initialTime={selectedTask.tiempo_trabajado}
+                      isActive={selectedTask.timer_activo}
+                      startTime={selectedTask.timer_inicio}
+                      canEdit={canEditTask(selectedTask)}
+                      onUpdate={fetchData}
+                    />
+                  </div>
+
+                  {/* Responsable Section */}
+                  {((selectedTask.responsables && selectedTask.responsables.length > 0) || selectedTask.responsable_user_id) && (
+                    <div className="p-4 rounded-lg border border-border bg-muted/30">
+                      <h4 className="text-sm font-medium text-muted-foreground mb-3">Responsable{(selectedTask.responsables?.length || 0) > 1 ? 's' : ''}</h4>
+                      <div className="space-y-2">
+                        {(selectedTask.responsables && selectedTask.responsables.length > 0) ? (
+                          selectedTask.responsables.map((r) => (
+                            <ResponsableMetrics
+                              key={r.user_id}
+                              userId={r.user_id}
+                              userName={r.nombre || 'Sin nombre'}
+                              avatarUrl={r.avatar_url}
+                              allTasks={tasks}
+                            />
+                          ))
+                        ) : (
+                          <ResponsableMetrics
+                            userId={selectedTask.responsable_user_id!}
+                            userName={users.find(u => u.id === selectedTask.responsable_user_id)?.nombre || 'Sin asignar'}
+                            avatarUrl={users.find(u => u.id === selectedTask.responsable_user_id)?.avatar_url}
+                            allTasks={tasks}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Deliverable Progress */}
+                  <DeliverableProgress
+                    taskId={selectedTask.id}
+                    expectedCount={selectedTask.cantidad_entregables}
                   />
-                </div>
-              )}
 
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Marca:</span>
-                  <span className="ml-2 font-medium">{selectedTask.brands?.nombre}</span>
+                  {/* Visto por */}
+                  {taskReads.length > 0 && (
+                    <div className="p-4 rounded-lg border border-border bg-muted/20">
+                      <h4 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
+                        <Eye className="h-4 w-4" />
+                        Visto por ({taskReads.length})
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {taskReads.map((reader) => (
+                          <div key={reader.user_id} className="flex items-center gap-1.5 bg-muted/40 rounded-md px-2 py-1">
+                            <Avatar className="h-6 w-6">
+                              {reader.avatar_url ? (
+                                <AvatarImage src={reader.avatar_url} alt={reader.nombre} className="object-cover" />
+                              ) : null}
+                              <AvatarFallback className="bg-primary/20 text-primary text-[8px] font-semibold">
+                                {getInitials(reader.nombre || '?')}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex flex-col">
+                              <span className="text-xs font-medium">{reader.nombre}</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {new Date(reader.read_at).toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedTask.detalle && (
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-1">Detalle</h4>
+                      <div className="bg-muted/30 p-3 rounded-lg border border-border/50">
+                        <RichTextViewer content={selectedTask.detalle} />
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedTask.enlaces && selectedTask.enlaces.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-1">Enlaces</h4>
+                      <div className="space-y-1">
+                        {selectedTask.enlaces.map((link, i) => (
+                          <a
+                            key={i}
+                            href={link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block text-sm text-primary hover:underline truncate"
+                          >
+                            {link}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Mesa:</span>
-                  <span className="ml-2 font-medium">{selectedTask.desks?.nombre || '-'}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Fecha Entrega:</span>
-                  <span className="ml-2 font-medium">
-                    {new Date(selectedTask.fecha_entrega).toLocaleDateString('es-ES')}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Entregables:</span>
-                  <span className="ml-2 font-medium">{selectedTask.cantidad_entregables}</span>
+
+                {/* Right column — status, files, comments, calendar */}
+                <div className="space-y-5">
+                  {canEditTask(selectedTask) && (
+                    <div className="pb-4 border-b border-border">
+                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Cambiar Estado</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado'].map((status) => (
+                          <Button
+                            key={status}
+                            variant={selectedTask.estado === status ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => {
+                              updateTaskStatus(selectedTask.id, status as Task['estado']);
+                              setSelectedTask({ ...selectedTask, estado: status as Task['estado'] });
+                            }}
+                          >
+                            {getStatusLabel(status)}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Files Section */}
+                  <TaskFiles
+                    taskId={selectedTask.id}
+                    canEdit={canEditTask(selectedTask)}
+                  />
+
+                  {/* Comentarios (realtime) */}
+                  <CommentsPanel taskId={selectedTask.id} deskId={selectedTask.desk_id || undefined} />
+
+                  {/* Google Calendar Sync */}
+                  <div className="pt-4 border-t border-border">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                        <Calendar className="h-4 w-4" />
+                        Google Calendar
+                      </h4>
+                      {selectedTask.google_event_id ? (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs text-green-600 border-green-300">Sincronizado</Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={async () => {
+                              try {
+                                await api.syncTaskToGoogleCalendar(selectedTask.id);
+                                toast.success('Evento actualizado en Google Calendar');
+                              } catch { toast.error('Error al actualizar evento'); }
+                            }}
+                          >
+                            Actualizar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs text-destructive"
+                            onClick={async () => {
+                              try {
+                                await api.unsyncTaskFromGoogleCalendar(selectedTask.id);
+                                setSelectedTask({ ...selectedTask, google_event_id: null });
+                                toast.success('Evento eliminado de Google Calendar');
+                              } catch { toast.error('Error al eliminar evento'); }
+                            }}
+                          >
+                            Desvincular
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={async () => {
+                            try {
+                              const result = await api.syncTaskToGoogleCalendar(selectedTask.id);
+                              setSelectedTask({ ...selectedTask, google_event_id: result.google_event_id });
+                              toast.success('Tarea sincronizada con Google Calendar');
+                            } catch (e) {
+                              toast.error(e instanceof Error ? e.message : 'Error al sincronizar');
+                            }
+                          }}
+                        >
+                          <Calendar className="h-3 w-3" />
+                          Sincronizar
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              {/* Deliverable Progress */}
-              <DeliverableProgress
-                taskId={selectedTask.id}
-                expectedCount={selectedTask.cantidad_entregables}
-              />
-
-              {/* Files Section */}
-              <TaskFiles
-                taskId={selectedTask.id}
-                canEdit={canEditTask(selectedTask)}
-              />
-
-              {selectedTask.detalle && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Detalle</h4>
-                  <p className="text-sm bg-muted/50 p-3 rounded-lg">{selectedTask.detalle}</p>
-                </div>
-              )}
-
-              {selectedTask.enlaces && selectedTask.enlaces.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-1">Enlaces</h4>
-                  <div className="space-y-1">
-                    {selectedTask.enlaces.map((link, i) => (
-                      <a
-                        key={i}
-                        href={link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block text-sm text-primary hover:underline truncate"
-                      >
-                        {link}
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {canEditTask(selectedTask) && (
-                <div className="pt-4 border-t border-border">
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">Cambiar Estado</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado'].map((status) => (
-                      <Button
-                        key={status}
-                        variant={selectedTask.estado === status ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => {
-                          updateTaskStatus(selectedTask.id, status as Task['estado']);
-                          setSelectedTask({ ...selectedTask, estado: status as Task['estado'] });
-                        }}
-                      >
-                        {getStatusLabel(status)}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Actions bar — aparece al seleccionar tareas */}
+      <BulkActions
+        selectedIds={selectedIds}
+        onClear={() => setSelectedIds(new Set())}
+        onComplete={() => { setSelectedIds(new Set()); fetchData(); }}
+        users={users}
+      />
     </div>
   );
 }

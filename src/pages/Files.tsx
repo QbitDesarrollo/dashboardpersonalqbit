@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useEffect, useState } from 'react';
+import * as api from '@/lib/apiClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -59,7 +60,8 @@ export default function Files() {
   const [searchTerm, setSearchTerm] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fileUrl, setFileUrl] = useState('');
+  const [fileName, setFileName] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -67,13 +69,10 @@ export default function Files() {
 
   const fetchData = async () => {
     try {
-      const [filesRes, tasksRes] = await Promise.all([
-        supabase.from('files').select('*, tasks (titulo_tarea)').order('created_at', { ascending: false }),
-        supabase.from('tasks').select('id, titulo_tarea'),
-      ]);
-
-      if (filesRes.data) setFiles(filesRes.data as FileRecord[]);
-      if (tasksRes.data) setTasks(tasksRes.data);
+      const [filesData, tasksRes] = await Promise.all([api.getFiles(), api.getTasks({ limit: 200 })]);
+      if (Array.isArray(filesData)) setFiles(filesData as FileRecord[]);
+      const tasksList = tasksRes.tasks || [];
+      setTasks(tasksList.map((t: { id: string; titulo_tarea: string }) => ({ id: t.id, titulo_tarea: t.titulo_tarea })));
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Error al cargar archivos');
@@ -82,61 +81,37 @@ export default function Files() {
     }
   };
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  const handleAddFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fileUrl || !fileName) {
+      toast.error('URL y nombre requeridos');
+      return;
+    }
     setUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${profile?.id}/${Date.now()}-${file.name}`;
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('task-files')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('task-files')
-        .getPublicUrl(fileName);
-
-      const { error: dbError } = await supabase.from('files').insert({
-        task_id: selectedTask || null,
-        nombre_archivo: file.name,
-        url_storage: urlData.publicUrl,
-        subido_por: profile?.id,
+      const result: any = await api.createFile({
+        task_id: selectedTask || undefined,
+        nombre_archivo: fileName,
+        url_storage: fileUrl,
       });
-
-      if (dbError) throw dbError;
-
-      toast.success('Archivo subido correctamente');
+      if (result?.error) throw new Error(result.error);
+      toast.success('Archivo agregado');
       setDialogOpen(false);
       setSelectedTask('');
+      setFileUrl('');
+      setFileName('');
       fetchData();
     } catch (error: any) {
-      toast.error('Error al subir archivo', { description: error.message });
+      toast.error('Error al agregar archivo', { description: error.message });
     } finally {
       setUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
     }
   };
 
-  const handleDelete = async (id: string, url: string) => {
+  const handleDelete = async (id: string) => {
     try {
-      // Extract file path from URL
-      const urlParts = url.split('/task-files/');
-      const filePath = urlParts[1];
-
-      if (filePath) {
-        await supabase.storage.from('task-files').remove([filePath]);
-      }
-
-      const { error } = await supabase.from('files').delete().eq('id', id);
-      if (error) throw error;
-
+      const result: any = await api.deleteFile(id);
+      if (result?.error) throw new Error(result.error);
       toast.success('Archivo eliminado');
       fetchData();
     } catch (error: any) {
@@ -185,19 +160,20 @@ export default function Files() {
               Subir Archivo
             </Button>
           </DialogTrigger>
-          <DialogContent className="mx-4 sm:mx-auto">
+          <DialogContent className="mx-4 sm:mx-auto" aria-describedby="file-add-desc">
             <DialogHeader>
-              <DialogTitle>Subir Archivo</DialogTitle>
+              <DialogTitle>Agregar Archivo (URL)</DialogTitle>
+              <DialogDescription id="file-add-desc">Sube un archivo mediante URL y opcionalmente asócialo a una tarea.</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
+            <form onSubmit={handleAddFile} className="space-y-4">
               <div className="space-y-2">
                 <Label>Asociar a Tarea (opcional)</Label>
-                <Select value={selectedTask} onValueChange={setSelectedTask}>
+                <Select value={selectedTask || '__none__'} onValueChange={(v) => setSelectedTask(v === '__none__' ? '' : v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar tarea" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin tarea</SelectItem>
+                    <SelectItem value="__none__">Sin tarea</SelectItem>
                     {tasks.map((task) => (
                       <SelectItem key={task.id} value={task.id}>
                         {task.titulo_tarea}
@@ -208,35 +184,28 @@ export default function Files() {
               </div>
 
               <div className="space-y-2">
-                <Label>Archivo</Label>
-                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleUpload}
-                    className="hidden"
-                    id="file-upload"
-                    disabled={uploading}
-                  />
-                  <label
-                    htmlFor="file-upload"
-                    className={cn(
-                      "cursor-pointer flex flex-col items-center gap-2",
-                      uploading && "pointer-events-none opacity-50"
-                    )}
-                  >
-                    {uploading ? (
-                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    ) : (
-                      <Upload className="h-8 w-8 text-muted-foreground" />
-                    )}
-                    <span className="text-sm text-muted-foreground">
-                      {uploading ? 'Subiendo...' : 'Click para seleccionar archivo'}
-                    </span>
-                  </label>
-                </div>
+                <Label>Nombre del archivo</Label>
+                <Input
+                  value={fileName}
+                  onChange={(e) => setFileName(e.target.value)}
+                  placeholder="Ej: documento.pdf"
+                  required
+                />
               </div>
-            </div>
+              <div className="space-y-2">
+                <Label>URL del archivo</Label>
+                <Input
+                  value={fileUrl}
+                  onChange={(e) => setFileUrl(e.target.value)}
+                  placeholder="https://..."
+                  required
+                />
+              </div>
+              <Button type="submit" disabled={uploading}>
+                {uploading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Agregar archivo
+              </Button>
+            </form>
           </DialogContent>
         </Dialog>
       </div>
@@ -301,7 +270,7 @@ export default function Files() {
                     variant="ghost"
                     size="sm"
                     className="text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(file.id, file.url_storage)}
+                    onClick={() => handleDelete(file.id)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

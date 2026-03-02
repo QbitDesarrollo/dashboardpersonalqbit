@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { z } from 'zod';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
-import { supabaseAdmin } from '../services/supabase.js';
+import { query, queryOne, uuid } from '../db/mysql.js';
 import { sendEmail } from '../services/email.js';
 
 export const webhooksRouter = Router();
@@ -99,21 +99,13 @@ async function handleTaskWebhook(type: string, record: any, oldRecord: any) {
 
 async function handleDeliverableWebhook(type: string, record: any, oldRecord: any) {
   if (type === 'UPDATE' && oldRecord) {
-    // Deliverable approved
     if (oldRecord.estado !== 'aprobado' && record.estado === 'aprobado') {
-      // Get task to find responsible user
-      const { data: task } = await supabaseAdmin
-        .from('tasks')
-        .select('titulo_tarea, responsable_user_id')
-        .eq('id', record.task_id)
-        .single();
-
+      const task = await queryOne<{ titulo_tarea: string; responsable_user_id: string }>(
+        'SELECT titulo_tarea, responsable_user_id FROM tasks WHERE id = ?',
+        [record.task_id]
+      );
       if (task?.responsable_user_id) {
-        await createNotification(
-          task.responsable_user_id,
-          `Entregable aprobado para: ${task.titulo_tarea}`,
-          record.task_id
-        );
+        await createNotification(task.responsable_user_id, `Entregable aprobado para: ${task.titulo_tarea}`, record.task_id);
       }
     }
   }
@@ -121,32 +113,20 @@ async function handleDeliverableWebhook(type: string, record: any, oldRecord: an
 
 async function handleCommentWebhook(type: string, record: any) {
   if (type === 'INSERT') {
-    // New comment - notify task responsible
-    const { data: task } = await supabaseAdmin
-      .from('tasks')
-      .select('titulo_tarea, responsable_user_id')
-      .eq('id', record.task_id)
-      .single();
-
+    const task = await queryOne<{ titulo_tarea: string; responsable_user_id: string }>(
+      'SELECT titulo_tarea, responsable_user_id FROM tasks WHERE id = ?',
+      [record.task_id]
+    );
     if (task?.responsable_user_id && task.responsable_user_id !== record.user_id) {
-      await createNotification(
-        task.responsable_user_id,
-        `Nuevo comentario en: ${task.titulo_tarea}`,
-        record.task_id
-      );
+      await createNotification(task.responsable_user_id, `Nuevo comentario en: ${task.titulo_tarea}`, record.task_id);
     }
   }
 }
 
 async function createNotification(userId: string, mensaje: string, taskId?: string) {
   try {
-    await supabaseAdmin
-      .from('notifications')
-      .insert({
-        user_id: userId,
-        mensaje,
-        task_id: taskId || null,
-      });
+    const id = uuid();
+    await query('INSERT INTO notifications (id, user_id, mensaje, task_id) VALUES (?, ?, ?, ?)', [id, userId, mensaje, taskId || null]);
     console.log(`[NOTIFICATION] Creada para usuario ${userId}: ${mensaje}`);
   } catch (error) {
     console.error('[NOTIFICATION] Error creando:', error);
@@ -203,13 +183,7 @@ webhooksRouter.post('/external', requireAuth, async (req: AuthRequest, res) => {
           res.status(400).json({ error: 'taskId y status válido son requeridos' });
           return;
         }
-
-        const { error } = await supabaseAdmin
-          .from('tasks')
-          .update({ estado: status })
-          .eq('id', taskId);
-
-        if (error) throw error;
+        await query('UPDATE tasks SET estado = ? WHERE id = ?', [status, taskId]);
         res.json({ success: true });
         break;
       }

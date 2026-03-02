@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,10 +9,18 @@ import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -22,7 +30,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Edit, Loader2, LayoutDashboard } from 'lucide-react';
+import { Plus, Edit, Loader2, LayoutDashboard, Users, Trash2 } from 'lucide-react';
 
 interface Desk {
   id: string;
@@ -30,12 +38,22 @@ interface Desk {
   activo: boolean;
 }
 
+interface Profile {
+  id: string;
+  nombre: string;
+  email: string;
+}
+
 export default function AdminDesks() {
   const [desks, setDesks] = useState<Desk[]>([]);
+  const [allUsers, setAllUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [membersDialogOpen, setMembersDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedDesk, setSelectedDesk] = useState<Desk | null>(null);
+  const [deskMembers, setDeskMembers] = useState<Profile[]>([]);
+  const [userToAdd, setUserToAdd] = useState<string>('');
 
   const [formData, setFormData] = useState({
     nombre: '',
@@ -48,9 +66,9 @@ export default function AdminDesks() {
 
   const fetchDesks = async () => {
     try {
-      const { data, error } = await supabase.from('desks').select('*').order('nombre');
-      if (error) throw error;
-      setDesks(data);
+      const [data, users] = await Promise.all([api.getDesks(), api.getProfiles()]);
+      if (Array.isArray(data)) setDesks(data);
+      if (Array.isArray(users)) setAllUsers(users);
     } catch (error) {
       toast.error('Error al cargar mesas');
     } finally {
@@ -58,18 +76,58 @@ export default function AdminDesks() {
     }
   };
 
+  const openMembersDialog = async (desk: Desk) => {
+    setSelectedDesk(desk);
+    setUserToAdd('');
+    try {
+      const members = await api.getDeskMembers(desk.id);
+      setDeskMembers(Array.isArray(members) ? members : []);
+    } catch {
+      setDeskMembers([]);
+    }
+    setMembersDialogOpen(true);
+  };
+
+  const handleAddMember = async () => {
+    if (!selectedDesk || !userToAdd) return;
+    try {
+      const result: any = await api.addDeskMember(selectedDesk.id, userToAdd);
+      if (result?.error) throw new Error(result.error);
+      const members = await api.getDeskMembers(selectedDesk.id);
+      setDeskMembers(Array.isArray(members) ? members : []);
+      setUserToAdd('');
+      toast.success('Usuario añadido a la mesa');
+    } catch (err: any) {
+      toast.error(err.message || 'Error al añadir');
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!selectedDesk) return;
+    try {
+      const result: any = await api.removeDeskMember(selectedDesk.id, userId);
+      if (result?.error) throw new Error(result.error);
+      setDeskMembers((prev) => prev.filter((m) => m.id !== userId));
+      toast.success('Usuario quitado de la mesa');
+    } catch (err: any) {
+      toast.error(err.message || 'Error al quitar');
+    }
+  };
+
+  const usersNotInDesk = allUsers.filter((u) => !deskMembers.some((m) => m.id === u.id));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
 
     try {
       if (selectedDesk) {
-        const { error } = await supabase.from('desks').update(formData).eq('id', selectedDesk.id);
-        if (error) throw error;
+        const result: any = await api.patchDesk(selectedDesk.id, formData);
+        if (result?.error) throw new Error(result.error);
         toast.success('Mesa actualizada');
       } else {
-        const { error } = await supabase.from('desks').insert(formData);
-        if (error) throw error;
+        const result: any = await api.createDesk(formData);
+        if (result?.error) throw new Error(result.error);
         toast.success('Mesa creada');
       }
 
@@ -119,9 +177,10 @@ export default function AdminDesks() {
               Nueva Mesa
             </Button>
           </DialogTrigger>
-          <DialogContent className="mx-4 sm:mx-auto">
+          <DialogContent className="mx-4 sm:mx-auto" aria-describedby="desk-form-desc">
             <DialogHeader>
               <DialogTitle>{selectedDesk ? 'Editar' : 'Nueva'} Mesa</DialogTitle>
+              <DialogDescription id="desk-form-desc">Crea o edita una mesa de trabajo.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -174,9 +233,14 @@ export default function AdminDesks() {
                       </Badge>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => openEditDialog(desk)}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => openMembersDialog(desk)} title="Equipo de trabajo">
+                      <Users className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => openEditDialog(desk)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               ))
             )}
@@ -210,9 +274,14 @@ export default function AdminDesks() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(desk)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openMembersDialog(desk)} title="Equipo de trabajo">
+                            <Users className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(desk)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -222,6 +291,59 @@ export default function AdminDesks() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={membersDialogOpen} onOpenChange={(o) => { setMembersDialogOpen(o); if (!o) setSelectedDesk(null); }}>
+        <DialogContent className="max-w-md" aria-describedby="desk-members-desc">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Equipo de trabajo: {selectedDesk?.nombre}
+            </DialogTitle>
+            <DialogDescription id="desk-members-desc">
+              Los usuarios asignados a esta mesa aparecerán como responsables al crear tareas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Select value={userToAdd || '__none__'} onValueChange={(v) => setUserToAdd(v === '__none__' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Añadir usuario..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__" disabled>
+                    {usersNotInDesk.length ? 'Seleccionar usuario...' : 'Todos asignados'}
+                  </SelectItem>
+                  {usersNotInDesk.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.nombre} ({u.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button onClick={handleAddMember} disabled={!userToAdd}>
+                Añadir
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label>Equipo asignado</Label>
+              {deskMembers.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">Ningún usuario asignado</p>
+              ) : (
+                <div className="space-y-1">
+                  {deskMembers.map((m) => (
+                    <div key={m.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                      <span className="font-medium text-sm">{m.nombre}</span>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRemoveMember(m.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

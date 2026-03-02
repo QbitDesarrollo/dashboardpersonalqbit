@@ -1,38 +1,20 @@
-import { supabase } from '@/integrations/supabase/client';
+import { apiRequest } from '@/lib/apiClient';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-/**
- * Make an authenticated request to the backend API.
- * Automatically includes the Supabase JWT token.
- */
-async function apiRequest(path: string, options: RequestInit = {}): Promise<Response> {
-  const { data: { session } } = await supabase.auth.getSession();
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
-  };
-
-  if (session?.access_token) {
-    headers['Authorization'] = `Bearer ${session.access_token}`;
-  }
-
-  return fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
-}
+const API_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3003');
 
 // ===== EMAIL API =====
 
 export async function sendTaskNotification(data: {
+  taskId?: string;
   taskTitle: string;
   brandName: string;
   fechaEntrega: string;
   prioridad: string;
   recipientEmail: string;
   recipientName: string;
+  detalle?: string;
+  fechaInicio?: string | null;
+  archivosAdjuntos?: string[];
 }): Promise<{ success: boolean }> {
   const res = await apiRequest('/api/email/task-notification', {
     method: 'POST',
@@ -70,17 +52,18 @@ export interface Notification {
 export async function getNotifications(options?: {
   limit?: number;
   unreadOnly?: boolean;
+  signal?: AbortSignal;
 }): Promise<{ notifications: Notification[] }> {
   const params = new URLSearchParams();
   if (options?.limit) params.set('limit', String(options.limit));
   if (options?.unreadOnly) params.set('unread', 'true');
 
-  const res = await apiRequest(`/api/notifications?${params.toString()}`);
+  const res = await apiRequest(`/api/notifications?${params.toString()}`, { signal: options?.signal });
   return res.json();
 }
 
-export async function getNotificationCount(): Promise<{ count: number }> {
-  const res = await apiRequest('/api/notifications/count');
+export async function getNotificationCount(options?: { signal?: AbortSignal }): Promise<{ count: number }> {
+  const res = await apiRequest('/api/notifications/count', { signal: options?.signal });
   return res.json();
 }
 
@@ -114,3 +97,6 @@ export async function checkApiHealth(): Promise<{
   const res = await fetch(`${API_URL}/api/health`);
   return res.json();
 }
+
+// Re-export para uso con AbortController
+export { apiRequest } from '@/lib/apiClient';

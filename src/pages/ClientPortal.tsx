@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { cn, formatDateSafe } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Download,
@@ -76,15 +76,11 @@ export default function ClientPortal() {
 
   const fetchBrands = async () => {
     try {
-      const { data, error } = await supabase
-        .from('brands')
-        .select('*')
-        .eq('activo', true);
-
-      if (error) throw error;
-      if (data && data.length > 0) {
-        setBrands(data);
-        setSelectedBrand(data[0].id);
+      const data = await api.getBrands();
+      const activeBrands = Array.isArray(data) ? data.filter((b: any) => b.activo) : [];
+      if (activeBrands.length > 0) {
+        setBrands(activeBrands);
+        setSelectedBrand(activeBrands[0].id);
       }
     } catch (error) {
       console.error('Error fetching brands:', error);
@@ -95,31 +91,13 @@ export default function ClientPortal() {
 
   const fetchBrandData = async () => {
     try {
-      const [tasksRes, delRes, filesRes] = await Promise.all([
-        supabase.from('tasks').select('*').eq('brand_id', selectedBrand),
-        supabase.from('deliverables').select(`
-          *,
-          deliverable_types (nombre),
-          tasks!inner (titulo_tarea, brand_id)
-        `).in('estado', ['aprobado', 'final']),
-        supabase.from('files').select('*, deliverables!inner(task_id, tasks!inner(brand_id))'),
-      ]);
-
-      if (tasksRes.data) setTasks(tasksRes.data as Task[]);
-      
-      if (delRes.data) {
-        const filteredDel = delRes.data.filter(
-          (d: any) => d.tasks?.brand_id === selectedBrand
-        );
-        setDeliverables(filteredDel as Deliverable[]);
-      }
-      
-      if (filesRes.data) {
-        const brandFiles = filesRes.data.filter(
-          (f: any) => f.deliverables?.tasks?.brand_id === selectedBrand
-        );
-        setFiles(brandFiles as FileRecord[]);
-      }
+      const [tasksRes, delRes, filesData] = await Promise.all([api.getTasks({ limit: 500 }), api.getDeliverables({ limit: 500 }), api.getFiles()]);
+      const tasksList = (tasksRes.tasks || []).filter((t: { brand_id: string }) => t.brand_id === selectedBrand);
+      setTasks(tasksList);
+      const delList = (delRes.deliverables || []).filter((d: { brand_id?: string; estado: string }) => d.brand_id === selectedBrand && ['aprobado', 'final'].includes(d.estado));
+      setDeliverables(delList);
+      const filesList = Array.isArray(filesData) ? filesData.filter((f: any) => f.task_id && tasksList.some((t: any) => t.id === f.task_id)) : [];
+      setFiles(filesList);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Error al cargar datos de la marca');
@@ -276,7 +254,7 @@ export default function ClientPortal() {
                     <p className="font-medium text-foreground text-sm sm:text-base truncate">{task.titulo_tarea}</p>
                     <div className="flex items-center gap-2 mt-1 text-[10px] sm:text-xs text-muted-foreground">
                       <Calendar className="h-3 w-3 shrink-0" />
-                      {new Date(task.fecha_entrega).toLocaleDateString('es-ES')}
+                      {formatDateSafe(task.fecha_entrega)}
                     </div>
                   </div>
                   <Badge className={cn("text-[10px] sm:text-xs self-start sm:self-auto shrink-0", getStatusColor(task.estado))}>

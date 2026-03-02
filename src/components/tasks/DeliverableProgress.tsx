@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, Package } from 'lucide-react';
@@ -21,15 +21,11 @@ export function DeliverableProgress({ taskId, expectedCount, compact = false }: 
 
   const fetchDeliverables = async () => {
     try {
-      const { data, error } = await supabase
-        .from('deliverables')
-        .select('estado')
-        .eq('task_id', taskId);
-
-      if (error) throw error;
-
-      setTotalCount(data?.length || 0);
-      setApprovedCount(data?.filter(d => d.estado === 'aprobado' || d.estado === 'final').length || 0);
+      const data = await api.getDeliverables({ limit: 500 });
+      const list = (data.deliverables || []) as { task_id: string; estado: string }[];
+      const taskDeliverables = list.filter((d) => d.task_id === taskId);
+      setTotalCount(taskDeliverables.length);
+      setApprovedCount(taskDeliverables.filter((d) => d.estado === 'aprobado' || d.estado === 'final').length);
     } catch (error) {
       console.error('Error fetching deliverables:', error);
     }

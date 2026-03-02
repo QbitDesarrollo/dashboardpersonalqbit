@@ -8,42 +8,42 @@
 
 @layer base {
   :root {
-    /* Dark professional theme with teal accent */
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    /* Tema claro (normal) - fondo claro, texto oscuro */
+    --background: 0 0% 98%;
+    --foreground: 222 47% 11%;
 
-    --card: 222 47% 8%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
 
-    --popover: 222 47% 10%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
 
     --primary: 168 76% 42%;
-    --primary-foreground: 222 47% 6%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 222 47% 12%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
 
-    --muted: 222 35% 15%;
-    --muted-foreground: 215 20% 55%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
 
     --accent: 168 76% 42%;
-    --accent-foreground: 222 47% 6%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
 
     --success: 142 76% 36%;
-    --success-foreground: 210 40% 98%;
+    --success-foreground: 0 0% 100%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 222 47% 6%;
+    --warning-foreground: 222 47% 11%;
 
     --info: 199 89% 48%;
-    --info-foreground: 210 40% 98%;
+    --info-foreground: 0 0% 100%;
 
-    --border: 222 35% 18%;
-    --input: 222 35% 18%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
     --ring: 168 76% 42%;
 
     --radius: 0.75rem;
@@ -61,18 +61,19 @@
     --status-delivered: 168 76% 42%;
     --status-blocked: 0 84% 60%;
 
-    /* Sidebar */
-    --sidebar-background: 222 47% 7%;
-    --sidebar-foreground: 215 20% 65%;
+    /* Sidebar claro */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
     --sidebar-primary: 168 76% 42%;
-    --sidebar-primary-foreground: 222 47% 6%;
-    --sidebar-accent: 222 47% 12%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 222 35% 15%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 96%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 91%;
     --sidebar-ring: 168 76% 42%;
   }
 
   .dark {
+    /* Tema oscuro - modo oscuro (el que tenías por defecto) */
     --background: 222 47% 6%;
     --foreground: 210 40% 98%;
     --card: 222 47% 8%;
@@ -108,9 +109,15 @@
     @apply border-border;
   }
 
+  html {
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', system-ui, sans-serif;
+    overflow-x: hidden;
+    min-height: 100svh;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -167,4 +174,98 @@
     background-color: hsl(var(--muted));
     border-radius: 3px;
   }
+}
+
+/* Tiptap Editor Styles */
+.tiptap {
+  outline: none;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+  opacity: 0.5;
+}
+
+.tiptap ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
+}
+
+.tiptap ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.tiptap ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  user-select: none;
+  margin-top: 0.15rem;
+}
+
+.tiptap ul[data-type="taskList"] li > label input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: hsl(var(--primary));
+  cursor: pointer;
+}
+
+.tiptap ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+
+.tiptap ul[data-type="taskList"] li[data-checked="true"] > div > p {
+  text-decoration: line-through;
+  color: hsl(var(--muted-foreground));
+}
+
+.tiptap mark {
+  background-color: #fef08a;
+  border-radius: 0.2em;
+  padding: 0.1em 0.3em;
+}
+
+.tiptap pre {
+  background: hsl(var(--muted));
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.875rem;
+  overflow-x: auto;
+}
+
+.tiptap pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.tiptap blockquote {
+  border-left: 4px solid hsl(var(--primary) / 0.3);
+  padding-left: 1rem;
+  font-style: italic;
+  color: hsl(var(--muted-foreground));
+  margin: 0.5rem 0;
+}
+
+.tiptap hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 1rem 0;
+}
+
+.tiptap a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.tiptap a:hover {
+  opacity: 0.8;
 }

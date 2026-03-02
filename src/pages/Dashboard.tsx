@@ -1,9 +1,12 @@
-import { useEffect, useState, useMemo } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useEffect, useState, useMemo, lazy, Suspense } from 'react';
+import * as api from '@/lib/apiClient';
 import { useAuth } from '@/contexts/AuthContext';
+
+const GoogleCalendarWidget = lazy(() => import('@/components/GoogleCalendarWidget'));
 import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Select,
   SelectContent,
@@ -11,7 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn, getInitials } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   CheckCircle2,
@@ -27,6 +31,9 @@ import {
   Building2,
   User,
   Filter,
+  Activity,
+  Target,
+  ListChecks,
 } from 'lucide-react';
 import {
   BarChart,
@@ -80,6 +87,7 @@ interface UrgentTask {
 
 interface ResponsableMetric {
   nombre: string;
+  avatar_url?: string | null;
   total: number;
   completadas: number;
   enProgreso: number;
@@ -93,6 +101,19 @@ interface BrandMetric {
   completadas: number;
   tiempoTotal: number;
   entregables: number;
+}
+
+interface ActivityEntry {
+  id: string;
+  user_id: string;
+  user_nombre: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  field_name?: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
 }
 
 const CHART_COLORS = [
@@ -115,8 +136,56 @@ const formatTime = (seconds: number) => {
   return `${minutes}m`;
 };
 
+const calcStats = (taskList: Task[]): TaskStats => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const s: TaskStats = {
+    total: taskList.length,
+    backlog: 0, en_proceso: 0, en_revision: 0,
+    aprobado: 0, entregado: 0, bloqueado: 0, atrasadas: 0,
+  };
+  taskList.forEach(task => {
+    if (task.estado in s) {
+      s[task.estado as keyof TaskStats]++;
+    }
+    if (task.fecha_entrega) {
+      const [yy, mm, dd] = task.fecha_entrega.split('T')[0].split('-').map(Number);
+      const fechaEntrega = new Date(yy, mm - 1, dd);
+      const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (diasRestantes < 0 && task.estado !== 'entregado') {
+        s.atrasadas++;
+      }
+    }
+  });
+  return s;
+};
+
+const buildUrgentTasks = (taskList: Task[]): UrgentTask[] => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return taskList
+    .filter(task => {
+      if (!task.fecha_entrega) return false;
+      const [yy, mm, dd] = task.fecha_entrega.split('T')[0].split('-').map(Number);
+      const fechaEntrega = new Date(yy, mm - 1, dd);
+      const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      return diasRestantes <= 2 && task.estado !== 'entregado';
+    })
+    .map(task => {
+      const [yy, mm, dd] = task.fecha_entrega.split('T')[0].split('-').map(Number);
+      const fechaEntrega = new Date(yy, mm - 1, dd);
+      const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      return {
+        id: task.id, titulo_tarea: task.titulo_tarea, fecha_entrega: task.fecha_entrega,
+        dias_restantes: diasRestantes, prioridad: task.prioridad, estado: task.estado,
+        brand_name: task.brands?.nombre || 'Sin marca',
+      };
+    })
+    .sort((a, b) => a.dias_restantes - b.dias_restantes);
+};
+
 export default function Dashboard() {
-  const { profile, isCliente } = useAuth();
+  const { profile, isCliente, isAdmin, isOps, isEquipo, canViewAll } = useAuth();
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [profiles, setProfiles] = useState<{ id: string; nombre: string }[]>([]);
@@ -124,17 +193,7 @@ export default function Dashboard() {
   const [desks, setDesks] = useState<{ id: string; nombre: string }[]>([]);
   const [filterBrand, setFilterBrand] = useState<string>('all');
   const [filterResponsable, setFilterResponsable] = useState<string>('all');
-  const [stats, setStats] = useState<TaskStats>({
-    total: 0,
-    backlog: 0,
-    en_proceso: 0,
-    en_revision: 0,
-    aprobado: 0,
-    entregado: 0,
-    bloqueado: 0,
-    atrasadas: 0,
-  });
-  const [urgentTasks, setUrgentTasks] = useState<UrgentTask[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -143,65 +202,32 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const [tasksRes, profilesRes, brandsRes, desksRes] = await Promise.all([
-        supabase.from('tasks').select(`*, brands (nombre)`),
-        supabase.from('profiles').select('id, nombre').eq('activo', true),
-        supabase.from('brands').select('id, nombre').eq('activo', true),
-        supabase.from('desks').select('id, nombre').eq('activo', true),
-      ]);
+      const fetchPromises: Promise<any>[] = [
+        api.getTasks({ limit: 500 }),
+        api.getProfiles(),
+        api.getBrands(),
+        api.getDesks(),
+      ];
 
-      if (tasksRes.error) throw tasksRes.error;
+      if (isAdmin || isOps) {
+        fetchPromises.push(api.getRecentActivity(20));
+      }
 
-      const fetchedTasks = tasksRes.data as Task[];
+      const results = await Promise.all(fetchPromises);
+      const tasksRes = results[0];
+      const profilesData = results[1];
+      const brandsData = results[2];
+      const desksData = results[3];
+
+      const fetchedTasks = (tasksRes.tasks || []) as Task[];
       setTasks(fetchedTasks);
-      setProfiles(profilesRes.data || []);
-      setBrands(brandsRes.data || []);
-      setDesks(desksRes.data || []);
+      setProfiles(Array.isArray(profilesData) ? profilesData.filter((p: any) => p.activo) : []);
+      setBrands(Array.isArray(brandsData) ? brandsData.filter((b: any) => b.activo) : []);
+      setDesks(Array.isArray(desksData) ? desksData.filter((d: any) => d.activo) : []);
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const taskStats: TaskStats = {
-        total: fetchedTasks.length,
-        backlog: 0,
-        en_proceso: 0,
-        en_revision: 0,
-        aprobado: 0,
-        entregado: 0,
-        bloqueado: 0,
-        atrasadas: 0,
-      };
-
-      const urgent: UrgentTask[] = [];
-
-      fetchedTasks.forEach(task => {
-        if (task.estado in taskStats) {
-          taskStats[task.estado as keyof TaskStats]++;
-        }
-
-        const fechaEntrega = new Date(task.fecha_entrega);
-        fechaEntrega.setHours(0, 0, 0, 0);
-        const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-        if (diasRestantes < 0 && task.estado !== 'entregado') {
-          taskStats.atrasadas++;
-        }
-
-        if (diasRestantes <= 2 && task.estado !== 'entregado') {
-          urgent.push({
-            id: task.id,
-            titulo_tarea: task.titulo_tarea,
-            fecha_entrega: task.fecha_entrega,
-            dias_restantes: diasRestantes,
-            prioridad: task.prioridad,
-            estado: task.estado,
-            brand_name: task.brands?.nombre || 'Sin marca',
-          });
-        }
-      });
-
-      setStats(taskStats);
-      setUrgentTasks(urgent.sort((a, b) => a.dias_restantes - b.dias_restantes));
+      if (isAdmin || isOps) {
+        setRecentActivity(Array.isArray(results[4]) ? results[4] : []);
+      }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       toast.error('Error al cargar los datos del dashboard');
@@ -221,76 +247,35 @@ export default function Dashboard() {
     });
   }, [tasks, filterBrand, filterResponsable, pinnedDeskId, pinnedBrandId]);
 
-  // Calculate stats from filtered tasks
-  const filteredStats = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const taskStats: TaskStats = {
-      total: filteredTasks.length,
-      backlog: 0,
-      en_proceso: 0,
-      en_revision: 0,
-      aprobado: 0,
-      entregado: 0,
-      bloqueado: 0,
-      atrasadas: 0,
-    };
+  // My tasks (for equipo)
+  const myTasks = useMemo(() => {
+    if (!isEquipo || !profile?.id) return filteredTasks;
+    return filteredTasks.filter(task => task.responsable_user_id === profile.id);
+  }, [filteredTasks, isEquipo, profile]);
 
-    filteredTasks.forEach(task => {
-      if (task.estado in taskStats) {
-        taskStats[task.estado as keyof TaskStats]++;
-      }
-      const fechaEntrega = new Date(task.fecha_entrega);
-      fechaEntrega.setHours(0, 0, 0, 0);
-      const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      if (diasRestantes < 0 && task.estado !== 'entregado') {
-        taskStats.atrasadas++;
-      }
-    });
+  // Stats for admin/ops (all filtered tasks)
+  const filteredStats = useMemo(() => calcStats(filteredTasks), [filteredTasks]);
 
-    return taskStats;
-  }, [filteredTasks]);
+  // Stats for equipo (my tasks only)
+  const myStats = useMemo(() => calcStats(myTasks), [myTasks]);
 
-  // Filtered urgent tasks
-  const filteredUrgentTasks = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    return filteredTasks
-      .filter(task => {
-        const fechaEntrega = new Date(task.fecha_entrega);
-        fechaEntrega.setHours(0, 0, 0, 0);
-        const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        return diasRestantes <= 2 && task.estado !== 'entregado';
-      })
-      .map(task => {
-        const fechaEntrega = new Date(task.fecha_entrega);
-        fechaEntrega.setHours(0, 0, 0, 0);
-        const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        return {
-          id: task.id,
-          titulo_tarea: task.titulo_tarea,
-          fecha_entrega: task.fecha_entrega,
-          dias_restantes: diasRestantes,
-          prioridad: task.prioridad,
-          estado: task.estado,
-          brand_name: task.brands?.nombre || 'Sin marca',
-        };
-      })
-      .sort((a, b) => a.dias_restantes - b.dias_restantes);
-  }, [filteredTasks]);
+  // Urgent tasks for admin/ops
+  const filteredUrgentTasks = useMemo(() => buildUrgentTasks(filteredTasks), [filteredTasks]);
 
-  // Metrics by Responsable
+  // Urgent tasks for equipo
+  const myUrgentTasks = useMemo(() => buildUrgentTasks(myTasks), [myTasks]);
+
+  // Metrics by Responsable (admin/ops only)
   const responsableMetrics = useMemo(() => {
     const metricsMap = new Map<string, ResponsableMetric>();
-    
+
     filteredTasks.forEach(task => {
       if (!task.responsable_user_id) return;
-      
-      const profileName = profiles.find(p => p.id === task.responsable_user_id)?.nombre || 'Sin asignar';
+
+      const profileMatch = profiles.find(p => p.id === task.responsable_user_id);
       const existing = metricsMap.get(task.responsable_user_id) || {
-        nombre: profileName,
+        nombre: profileMatch?.nombre || 'Sin asignar',
+        avatar_url: profileMatch?.avatar_url || null,
         total: 0,
         completadas: 0,
         enProgreso: 0,
@@ -301,7 +286,7 @@ export default function Dashboard() {
       existing.total++;
       existing.entregables += task.cantidad_entregables;
       existing.tiempoTotal += task.tiempo_trabajado;
-      
+
       if (task.estado === 'entregado' || task.estado === 'aprobado') {
         existing.completadas++;
       } else if (task.estado === 'en_proceso' || task.estado === 'en_revision') {
@@ -314,10 +299,10 @@ export default function Dashboard() {
     return Array.from(metricsMap.values()).sort((a, b) => b.total - a.total);
   }, [filteredTasks, profiles]);
 
-  // Metrics by Brand
+  // Metrics by Brand (admin/ops only)
   const brandMetrics = useMemo(() => {
     const metricsMap = new Map<string, BrandMetric>();
-    
+
     filteredTasks.forEach(task => {
       const brandName = task.brands?.nombre || 'Sin marca';
       const existing = metricsMap.get(task.brand_id) || {
@@ -331,7 +316,7 @@ export default function Dashboard() {
       existing.total++;
       existing.entregables += task.cantidad_entregables;
       existing.tiempoTotal += task.tiempo_trabajado;
-      
+
       if (task.estado === 'entregado' || task.estado === 'aprobado') {
         existing.completadas++;
       }
@@ -344,13 +329,18 @@ export default function Dashboard() {
 
   // Total metrics
   const totals = useMemo(() => {
+    const source = isEquipo ? myTasks : filteredTasks;
     return {
-      entregables: filteredTasks.reduce((sum, t) => sum + t.cantidad_entregables, 0),
-      tiempoTotal: filteredTasks.reduce((sum, t) => sum + t.tiempo_trabajado, 0),
+      entregables: source.reduce((sum, t) => sum + t.cantidad_entregables, 0),
+      tiempoTotal: source.reduce((sum, t) => sum + t.tiempo_trabajado, 0),
     };
-  }, [filteredTasks]);
+  }, [filteredTasks, myTasks, isEquipo]);
 
-  const kpiCards = [
+  // Active stats based on role
+  const activeStats = isEquipo ? myStats : filteredStats;
+
+  // KPI cards for admin/ops
+  const adminKpiCards = [
     {
       title: 'Tareas Activas',
       value: filteredStats.en_proceso + filteredStats.en_revision,
@@ -396,6 +386,55 @@ export default function Dashboard() {
     },
   ];
 
+  // KPI cards for equipo (personal)
+  const equipoKpiCards = [
+    {
+      title: 'Mis Tareas Activas',
+      value: myStats.en_proceso + myStats.en_revision,
+      icon: <Target className="h-5 w-5" />,
+      color: 'text-info',
+      bgColor: 'bg-info/10',
+    },
+    {
+      title: 'En Revisión',
+      value: myStats.en_revision,
+      icon: <TrendingUp className="h-5 w-5" />,
+      color: 'text-warning',
+      bgColor: 'bg-warning/10',
+    },
+    {
+      title: 'Mis Entregadas',
+      value: myStats.entregado,
+      icon: <CheckCircle2 className="h-5 w-5" />,
+      color: 'text-success',
+      bgColor: 'bg-success/10',
+    },
+    {
+      title: 'Atrasadas',
+      value: myStats.atrasadas,
+      icon: <AlertTriangle className="h-5 w-5" />,
+      color: 'text-destructive',
+      bgColor: 'bg-destructive/10',
+    },
+    {
+      title: 'Mis Entregables',
+      value: totals.entregables,
+      icon: <Package className="h-5 w-5" />,
+      color: 'text-primary',
+      bgColor: 'bg-primary/10',
+    },
+    {
+      title: 'Mi Tiempo',
+      value: formatTime(totals.tiempoTotal),
+      icon: <Timer className="h-5 w-5" />,
+      color: 'text-info',
+      bgColor: 'bg-info/10',
+      isTime: true,
+    },
+  ];
+
+  const kpiCards = isEquipo ? equipoKpiCards : adminKpiCards;
+
   const getPriorityColor = (prioridad: string) => {
     switch (prioridad) {
       case 'alta': return 'bg-priority-high text-white';
@@ -429,6 +468,42 @@ export default function Dashboard() {
     return labels[estado] || estado;
   };
 
+  const getActionLabel = (action: string) => {
+    const labels: Record<string, string> = {
+      create: 'creó',
+      update: 'actualizó',
+      delete: 'eliminó',
+      status_change: 'cambió estado',
+    };
+    return labels[action] || action;
+  };
+
+  const getEntityLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      task: 'tarea',
+      deliverable: 'entregable',
+      sprint: 'sprint',
+      feature: 'feature',
+      comment: 'comentario',
+    };
+    return labels[type] || type;
+  };
+
+  const formatTimeAgo = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMin / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMin < 1) return 'ahora';
+    if (diffMin < 60) return `hace ${diffMin}m`;
+    if (diffHours < 24) return `hace ${diffHours}h`;
+    if (diffDays < 7) return `hace ${diffDays}d`;
+    return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -445,6 +520,8 @@ export default function Dashboard() {
     );
   }
 
+  const activeUrgentTasks = isEquipo ? myUrgentTasks : filteredUrgentTasks;
+
   return (
     <div className="space-y-4 sm:space-y-6 animate-fade-in">
       {/* Welcome + Filters */}
@@ -455,7 +532,7 @@ export default function Dashboard() {
               Bienvenido, {profile?.nombre?.split(' ')[0]}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Aquí está el resumen de tu día
+              {isEquipo ? 'Aquí está el resumen de tus tareas' : 'Aquí está el resumen general'}
             </p>
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
@@ -469,41 +546,44 @@ export default function Dashboard() {
             </span>
           </div>
         </div>
-        {/* Dashboard Filters */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="text-sm text-muted-foreground sm:hidden">Filtros:</span>
+
+        {/* Dashboard Filters - admin/ops only */}
+        {canViewAll && (
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-sm text-muted-foreground sm:hidden">Filtros:</span>
+            </div>
+            <div className="grid grid-cols-2 sm:flex gap-2 flex-1 sm:flex-initial">
+              <Select value={filterBrand} onValueChange={setFilterBrand}>
+                <SelectTrigger className="w-full sm:w-40 h-9">
+                  <SelectValue placeholder="Marca" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las marcas</SelectItem>
+                  {brands.map((brand) => (
+                    <SelectItem key={brand.id} value={brand.id}>
+                      {brand.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterResponsable} onValueChange={setFilterResponsable}>
+                <SelectTrigger className="w-full sm:w-44 h-9">
+                  <SelectValue placeholder="Responsable" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {profiles.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="grid grid-cols-2 sm:flex gap-2 flex-1 sm:flex-initial">
-            <Select value={filterBrand} onValueChange={setFilterBrand}>
-              <SelectTrigger className="w-full sm:w-40 h-9">
-                <SelectValue placeholder="Marca" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas las marcas</SelectItem>
-                {brands.map((brand) => (
-                  <SelectItem key={brand.id} value={brand.id}>
-                    {brand.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filterResponsable} onValueChange={setFilterResponsable}>
-              <SelectTrigger className="w-full sm:w-44 h-9">
-                <SelectValue placeholder="Responsable" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {profiles.map((profile) => (
-                  <SelectItem key={profile.id} value={profile.id}>
-                    {profile.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -525,211 +605,395 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {/* Tasks by Responsable Chart */}
-        <Card className="glass-card">
-          <CardHeader className="pb-2 sm:pb-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-              <CardTitle className="text-base sm:text-lg">Tareas por Responsable</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="px-2 sm:px-6">
-            {responsableMetrics.length === 0 ? (
-              <div className="text-center py-6 sm:py-8 text-muted-foreground">
-                <User className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No hay tareas asignadas</p>
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={responsableMetrics.slice(0, 5)} layout="vertical" margin={{ left: 0, right: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 11 }} />
-                  <YAxis 
-                    dataKey="nombre" 
-                    type="category" 
-                    width={70} 
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fontSize: 10 }}
-                    tickFormatter={(value) => value.length > 10 ? value.substring(0, 10) + '...' : value}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--card))', 
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
-                    formatter={(value: number, name: string) => {
-                      const labels: Record<string, string> = {
-                        completadas: 'Completadas',
-                        enProgreso: 'En Progreso',
-                        total: 'Total',
-                      };
-                      return [value, labels[name] || name];
-                    }}
-                  />
-                  <Bar dataKey="completadas" fill="hsl(var(--success))" name="completadas" stackId="a" />
-                  <Bar dataKey="enProgreso" fill="hsl(var(--info))" name="enProgreso" stackId="a" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Tasks by Brand Chart */}
-        <Card className="glass-card">
-          <CardHeader className="pb-2 sm:pb-4">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-              <CardTitle className="text-base sm:text-lg">Tareas por Marca</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="px-2 sm:px-6">
-            {brandMetrics.length === 0 ? (
-              <div className="text-center py-6 sm:py-8 text-muted-foreground">
-                <Building2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No hay tareas registradas</p>
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={brandMetrics.slice(0, 6)}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ nombre, total }) => `${nombre.substring(0, 8)}${nombre.length > 8 ? '..' : ''}: ${total}`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="total"
-                  >
-                    {brandMetrics.slice(0, 6).map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--card))', 
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
-                    formatter={(value: number) => [`${value} tareas`, 'Total']}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Detailed Metrics Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {/* Responsable Metrics Table */}
-        <Card className="glass-card">
-          <CardHeader className="pb-2 sm:pb-4">
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-              <CardTitle className="text-base sm:text-lg">Métricas por Responsable</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2 sm:space-y-3">
-              {responsableMetrics.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4 text-sm">No hay datos</p>
-              ) : (
-                responsableMetrics.slice(0, 5).map((metric, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50">
-                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                        <User className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-medium text-foreground text-sm sm:text-base truncate">{metric.nombre}</p>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          {metric.completadas}/{metric.total} completadas
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm shrink-0">
-                      <div className="text-center">
-                        <p className="font-semibold text-foreground">{metric.entregables}</p>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Entregables</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="font-semibold text-foreground">{formatTime(metric.tiempoTotal)}</p>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Tiempo</p>
-                      </div>
-                    </div>
+      {/* ====== ADMIN/OPS DASHBOARD ====== */}
+      {canViewAll && (
+        <>
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            {/* Tasks by Responsable Chart */}
+            <Card className="glass-card">
+              <CardHeader className="pb-2 sm:pb-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                  <CardTitle className="text-base sm:text-lg">Tareas por Responsable</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="px-2 sm:px-6">
+                {responsableMetrics.length === 0 ? (
+                  <div className="text-center py-6 sm:py-8 text-muted-foreground">
+                    <User className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No hay tareas asignadas</p>
                   </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={responsableMetrics.slice(0, 5)} layout="vertical" margin={{ left: 0, right: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis type="number" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 11 }} />
+                      <YAxis
+                        dataKey="nombre"
+                        type="category"
+                        width={70}
+                        stroke="hsl(var(--muted-foreground))"
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(value) => value.length > 10 ? value.substring(0, 10) + '...' : value}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                        }}
+                        formatter={(value: number, name: string) => {
+                          const labels: Record<string, string> = {
+                            completadas: 'Completadas',
+                            enProgreso: 'En Progreso',
+                            total: 'Total',
+                          };
+                          return [value, labels[name] || name];
+                        }}
+                      />
+                      <Bar dataKey="completadas" fill="hsl(var(--success))" name="completadas" stackId="a" />
+                      <Bar dataKey="enProgreso" fill="hsl(var(--info))" name="enProgreso" stackId="a" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
 
-        {/* Brand Metrics Table */}
-        <Card className="glass-card">
-          <CardHeader className="pb-2 sm:pb-4">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-              <CardTitle className="text-base sm:text-lg">Métricas por Marca</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2 sm:space-y-3">
-              {brandMetrics.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4 text-sm">No hay datos</p>
-              ) : (
-                brandMetrics.slice(0, 5).map((metric, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50">
-                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                      <div 
-                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] + '30' }}
+            {/* Tasks by Brand Chart */}
+            <Card className="glass-card">
+              <CardHeader className="pb-2 sm:pb-4">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                  <CardTitle className="text-base sm:text-lg">Tareas por Marca</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="px-2 sm:px-6">
+                {brandMetrics.length === 0 ? (
+                  <div className="text-center py-6 sm:py-8 text-muted-foreground">
+                    <Building2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No hay tareas registradas</p>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={brandMetrics.slice(0, 6)}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ nombre, total }) => `${nombre.substring(0, 8)}${nombre.length > 8 ? '..' : ''}: ${total}`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="total"
                       >
-                        <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" style={{ color: CHART_COLORS[index % CHART_COLORS.length] }} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-medium text-foreground text-sm sm:text-base truncate">{metric.nombre}</p>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          {metric.completadas}/{metric.total} completadas
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm shrink-0">
-                      <div className="text-center">
-                        <p className="font-semibold text-foreground">{metric.entregables}</p>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Entregables</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="font-semibold text-foreground">{formatTime(metric.tiempoTotal)}</p>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Tiempo</p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                        {brandMetrics.slice(0, 6).map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                        }}
+                        formatter={(value: number) => [`${value} tareas`, 'Total']}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-      {/* Progress overview */}
+          {/* Detailed Metrics Tables */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            {/* Responsable Metrics Table */}
+            <Card className="glass-card">
+              <CardHeader className="pb-2 sm:pb-4">
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                  <CardTitle className="text-base sm:text-lg">Métricas por Responsable</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 sm:space-y-3">
+                  {responsableMetrics.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-4 text-sm">No hay datos</p>
+                  ) : (
+                    responsableMetrics.slice(0, 5).map((metric, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50">
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                          <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0">
+                            {metric.avatar_url ? <AvatarImage src={metric.avatar_url} alt={metric.nombre} className="object-cover" /> : null}
+                            <AvatarFallback className="bg-primary/20 text-primary text-xs font-semibold">
+                              {getInitials(metric.nombre)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="font-medium text-foreground text-sm sm:text-base truncate">{metric.nombre}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground">
+                              {metric.completadas}/{metric.total} completadas
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm shrink-0">
+                          <div className="text-center">
+                            <p className="font-semibold text-foreground">{metric.entregables}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Entregables</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="font-semibold text-foreground">{formatTime(metric.tiempoTotal)}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Tiempo</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Brand Metrics Table */}
+            <Card className="glass-card">
+              <CardHeader className="pb-2 sm:pb-4">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                  <CardTitle className="text-base sm:text-lg">Métricas por Marca</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 sm:space-y-3">
+                  {brandMetrics.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-4 text-sm">No hay datos</p>
+                  ) : (
+                    brandMetrics.slice(0, 5).map((metric, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50">
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                          <div
+                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0"
+                            style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] + '30' }}
+                          >
+                            <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" style={{ color: CHART_COLORS[index % CHART_COLORS.length] }} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-foreground text-sm sm:text-base truncate">{metric.nombre}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground">
+                              {metric.completadas}/{metric.total} completadas
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm shrink-0">
+                          <div className="text-center">
+                            <p className="font-semibold text-foreground">{metric.entregables}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Entregables</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="font-semibold text-foreground">{formatTime(metric.tiempoTotal)}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Tiempo</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Activity Feed */}
+          <Card className="glass-card">
+            <CardHeader className="pb-2 sm:pb-4">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                <CardTitle className="text-base sm:text-lg">Actividad Reciente del Equipo</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {recentActivity.length === 0 ? (
+                <div className="text-center py-6 sm:py-8 text-muted-foreground">
+                  <Activity className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No hay actividad reciente</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[300px]">
+                  <div className="space-y-3">
+                    {recentActivity.map((entry) => (
+                      <div key={entry.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                          <User className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-foreground">
+                            <span className="font-medium">{entry.user_nombre || 'Usuario'}</span>
+                            {' '}
+                            <span className="text-muted-foreground">{getActionLabel(entry.action)}</span>
+                            {' '}
+                            <span className="text-muted-foreground">{getEntityLabel(entry.entity_type)}</span>
+                            {entry.field_name && (
+                              <span className="text-muted-foreground"> ({entry.field_name})</span>
+                            )}
+                          </p>
+                          {entry.new_value && (
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                              {entry.old_value && (
+                                <><span className="line-through">{entry.old_value}</span> → </>
+                              )}
+                              {entry.new_value}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">{formatTimeAgo(entry.created_at)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* ====== EQUIPO DASHBOARD ====== */}
+      {isEquipo && (
+        <>
+          {/* My Tasks Overview - Pie chart of my task statuses */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <Card className="glass-card">
+              <CardHeader className="pb-2 sm:pb-4">
+                <div className="flex items-center gap-2">
+                  <ListChecks className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                  <CardTitle className="text-base sm:text-lg">Mis Tareas por Estado</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="px-2 sm:px-6">
+                {myTasks.length === 0 ? (
+                  <div className="text-center py-6 sm:py-8 text-muted-foreground">
+                    <CheckCircle2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No tienes tareas asignadas</p>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Backlog', value: myStats.backlog },
+                          { name: 'En Proceso', value: myStats.en_proceso },
+                          { name: 'En Revisión', value: myStats.en_revision },
+                          { name: 'Aprobado', value: myStats.aprobado },
+                          { name: 'Entregado', value: myStats.entregado },
+                          { name: 'Bloqueado', value: myStats.bloqueado },
+                        ].filter(d => d.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, value }) => `${name}: ${value}`}
+                        outerRadius={80}
+                        dataKey="value"
+                      >
+                        {[
+                          'hsl(var(--muted-foreground))',
+                          'hsl(var(--info))',
+                          'hsl(var(--warning))',
+                          'hsl(var(--success))',
+                          'hsl(var(--primary))',
+                          'hsl(var(--destructive))',
+                        ].map((color, index) => (
+                          <Cell key={`cell-${index}`} fill={color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* My Tasks by Brand */}
+            <Card className="glass-card">
+              <CardHeader className="pb-2 sm:pb-4">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                  <CardTitle className="text-base sm:text-lg">Mis Tareas por Marca</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="px-2 sm:px-6">
+                {(() => {
+                  const myBrandMap = new Map<string, { nombre: string; total: number }>();
+                  myTasks.forEach(t => {
+                    const bName = t.brands?.nombre || 'Sin marca';
+                    const existing = myBrandMap.get(t.brand_id) || { nombre: bName, total: 0 };
+                    existing.total++;
+                    myBrandMap.set(t.brand_id, existing);
+                  });
+                  const myBrandData = Array.from(myBrandMap.values()).sort((a, b) => b.total - a.total);
+
+                  if (myBrandData.length === 0) {
+                    return (
+                      <div className="text-center py-6 sm:py-8 text-muted-foreground">
+                        <Building2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No hay tareas registradas</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={myBrandData.slice(0, 5)} layout="vertical" margin={{ left: 0, right: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis type="number" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 11 }} />
+                        <YAxis
+                          dataKey="nombre"
+                          type="category"
+                          width={70}
+                          stroke="hsl(var(--muted-foreground))"
+                          tick={{ fontSize: 10 }}
+                          tickFormatter={(value) => value.length > 10 ? value.substring(0, 10) + '...' : value}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'hsl(var(--card))',
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                          }}
+                          formatter={(value: number) => [`${value} tareas`, 'Total']}
+                        />
+                        <Bar dataKey="total" fill="hsl(var(--primary))" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+
+      {/* Progress overview - shared but with different data */}
       <Card className="glass-card">
         <CardHeader className="pb-2 sm:pb-4">
-          <CardTitle className="text-base sm:text-lg">Progreso General</CardTitle>
+          <CardTitle className="text-base sm:text-lg">
+            {isEquipo ? 'Mi Progreso' : 'Progreso General'}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-3 sm:space-y-4">
             {[
-              { label: 'Backlog', value: filteredStats.backlog, total: filteredStats.total, color: 'bg-status-backlog' },
-              { label: 'En Proceso', value: filteredStats.en_proceso, total: filteredStats.total, color: 'bg-status-in-progress' },
-              { label: 'En Revisión', value: filteredStats.en_revision, total: filteredStats.total, color: 'bg-status-in-review' },
-              { label: 'Aprobado', value: filteredStats.aprobado, total: filteredStats.total, color: 'bg-status-approved' },
-              { label: 'Entregado', value: filteredStats.entregado, total: filteredStats.total, color: 'bg-status-delivered' },
+              { label: 'Backlog', value: activeStats.backlog, total: activeStats.total, color: 'bg-status-backlog' },
+              { label: 'En Proceso', value: activeStats.en_proceso, total: activeStats.total, color: 'bg-status-in-progress' },
+              { label: 'En Revisión', value: activeStats.en_revision, total: activeStats.total, color: 'bg-status-in-review' },
+              { label: 'Aprobado', value: activeStats.aprobado, total: activeStats.total, color: 'bg-status-approved' },
+              { label: 'Entregado', value: activeStats.entregado, total: activeStats.total, color: 'bg-status-delivered' },
             ].map((item, index) => (
               <div key={index} className="space-y-1 sm:space-y-2">
                 <div className="flex items-center justify-between text-xs sm:text-sm">
@@ -755,21 +1019,25 @@ export default function Dashboard() {
         <CardHeader className="pb-2 sm:pb-4">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-warning" />
-            <CardTitle className="text-base sm:text-lg">Tareas Urgentes</CardTitle>
+            <CardTitle className="text-base sm:text-lg">
+              {isEquipo ? 'Mis Tareas Urgentes' : 'Tareas Urgentes'}
+            </CardTitle>
             <Badge variant="secondary" className="ml-2 text-xs">
-              {filteredUrgentTasks.length}
+              {activeUrgentTasks.length}
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
-          {filteredUrgentTasks.length === 0 ? (
+          {activeUrgentTasks.length === 0 ? (
             <div className="text-center py-6 sm:py-8 text-muted-foreground">
               <CheckCircle2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 text-success" />
-              <p className="text-sm">¡No hay tareas urgentes!</p>
+              <p className="text-sm">
+                {isEquipo ? '¡No tienes tareas urgentes!' : '¡No hay tareas urgentes!'}
+              </p>
             </div>
           ) : (
             <div className="space-y-2 sm:space-y-3">
-              {filteredUrgentTasks.slice(0, 5).map((task) => (
+              {activeUrgentTasks.slice(0, 5).map((task) => (
                 <div
                   key={task.id}
                   className="flex flex-col sm:flex-row sm:items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors gap-2"
@@ -789,13 +1057,13 @@ export default function Dashboard() {
                     </Badge>
                     <div className={cn(
                       "text-xs sm:text-sm font-medium px-2 py-1 rounded whitespace-nowrap",
-                      task.dias_restantes < 0 
-                        ? "bg-destructive/20 text-destructive" 
-                        : task.dias_restantes === 0 
+                      task.dias_restantes < 0
+                        ? "bg-destructive/20 text-destructive"
+                        : task.dias_restantes === 0
                         ? "bg-warning/20 text-warning"
                         : "bg-info/20 text-info"
                     )}>
-                      {task.dias_restantes < 0 
+                      {task.dias_restantes < 0
                         ? `${Math.abs(task.dias_restantes)}d atrasada`
                         : task.dias_restantes === 0
                         ? 'Hoy'
@@ -808,6 +1076,13 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Google Calendar */}
+      {profile?.google_connected && (
+        <Suspense fallback={null}>
+          <GoogleCalendarWidget />
+        </Suspense>
+      )}
     </div>
   );
 }

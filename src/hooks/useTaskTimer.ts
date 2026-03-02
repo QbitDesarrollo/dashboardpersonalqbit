@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
 import { toast } from 'sonner';
 
 interface UseTaskTimerProps {
@@ -52,15 +52,8 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
   const startTimer = useCallback(async () => {
     try {
       const now = new Date().toISOString();
-      const { error } = await supabase
-        .from('tasks')
-        .update({ 
-          timer_activo: true, 
-          timer_inicio: now 
-        })
-        .eq('id', taskId);
-
-      if (error) throw error;
+      const result: any = await api.patchTask(taskId, { timer_activo: true, timer_inicio: now });
+      if (result?.error) throw new Error(result.error);
       
       startTimeRef.current = new Date(now);
       setIsRunning(true);
@@ -78,16 +71,12 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
         additionalTime = Math.floor((new Date().getTime() - startTimeRef.current.getTime()) / 1000);
       }
 
-      const { error } = await supabase
-        .from('tasks')
-        .update({ 
-          timer_activo: false, 
-          timer_inicio: null,
-          tiempo_trabajado: initialTime + additionalTime
-        })
-        .eq('id', taskId);
-
-      if (error) throw error;
+      const result: any = await api.patchTask(taskId, {
+        timer_activo: false,
+        timer_inicio: null,
+        tiempo_trabajado: initialTime + additionalTime,
+      });
+      if (result?.error) throw new Error(result.error);
       
       setIsRunning(false);
       startTimeRef.current = null;
@@ -99,16 +88,12 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
 
   const resetTimer = useCallback(async () => {
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .update({ 
-          timer_activo: false, 
-          timer_inicio: null,
-          tiempo_trabajado: 0
-        })
-        .eq('id', taskId);
-
-      if (error) throw error;
+      const result: any = await api.patchTask(taskId, {
+        timer_activo: false,
+        timer_inicio: null,
+        tiempo_trabajado: 0,
+      });
+      if (result?.error) throw new Error(result.error);
       
       setElapsedTime(0);
       setIsRunning(false);

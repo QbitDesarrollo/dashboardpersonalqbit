@@ -1,9 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
+import { playNotificationSound, type SoundType, SOUND_TYPES } from '@/lib/notificationSound';
+import {
+  requestNotificationPermission,
+  showNativeNotification,
+  updateBadgeCount,
+  isNotificationSupported,
+  isPermissionGranted,
+} from '@/lib/nativeNotifications';
 import {
   getNotifications,
   getNotificationCount,
@@ -16,6 +24,10 @@ import {
   CheckSquare,
   FileBox,
   Files,
+  FileText,
+  LayoutTemplate,
+  Zap,
+  MessageCircle,
   Users,
   Building2,
   Tags,
@@ -24,14 +36,21 @@ import {
   Menu,
   X,
   ChevronDown,
+  PanelLeftClose,
+  PanelLeftOpen,
   Bell,
   Briefcase,
   Pin,
   PinOff,
   Check,
+  Target,
+  Sun,
+  Moon,
+  UserCog,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +66,8 @@ import {
 } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { GlobalSearch } from '@/components/GlobalSearch';
+import { ChatBubble } from '@/components/chat/ChatBubble';
 
 interface NavItem {
   title: string;
@@ -58,8 +79,11 @@ interface NavItem {
 const navigation: NavItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
   { title: 'Tareas', href: '/tareas', icon: <CheckSquare className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
-  { title: 'Entregables', href: '/entregables', icon: <FileBox className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
+  { title: 'Scrum', href: '/scrum', icon: <Target className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
+  { title: 'Daily Mesas', href: '/daily-mesas', icon: <Users className="h-5 w-5" />, roles: ['admin', 'ops'] },
   { title: 'Archivos', href: '/archivos', icon: <Files className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
+  { title: 'Plantillas', href: '/plantillas', icon: <LayoutTemplate className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
+  { title: 'Informes', href: '/informes', icon: <FileText className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
   { title: 'Portal Cliente', href: '/cliente', icon: <Briefcase className="h-5 w-5" />, roles: ['cliente'] },
 ];
 
@@ -68,6 +92,9 @@ const adminNavigation: NavItem[] = [
   { title: 'Clientes', href: '/admin/clientes', icon: <Building2 className="h-5 w-5" /> },
   { title: 'Marcas', href: '/admin/marcas', icon: <Tags className="h-5 w-5" /> },
   { title: 'Mesas', href: '/admin/mesas', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { title: 'Integraciones', href: '/admin/integraciones', icon: <MessageCircle className="h-5 w-5" /> },
+  { title: 'Automatizaciones', href: '/admin/automatizaciones', icon: <Zap className="h-5 w-5" /> },
+  { title: 'Formularios públicos', href: '/admin/formularios', icon: <FileText className="h-5 w-5" /> },
   { title: 'Configuración', href: '/admin/configuracion', icon: <Settings className="h-5 w-5" /> },
 ];
 
@@ -87,42 +114,127 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, signOut, isAdmin, isOps } = useAuth();
   const { pinnedDeskId, pinnedBrandId, pinnedDeskName, pinnedBrandName, setPinnedDesk, setPinnedBrand, clearFilters, hasActiveFilter } = useGlobalFilter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
+  });
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [pinnedMenuOpen, setPinnedMenuOpen] = useState(true);
+  const [brandsMenuOpen, setBrandsMenuOpen] = useState(false);
   const [desks, setDesks] = useState<Desk[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [siteSettings, setSiteSettings] = useState<{ logo_url?: string | null; site_name?: string | null }>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const [notifResult, countResult] = await Promise.all([
-        getNotifications({ limit: 10 }),
-        getNotificationCount(),
-      ]);
-      setNotifications(notifResult.notifications || []);
-      setUnreadCount(countResult.count || 0);
-    } catch {
-      // API might not be running yet - silently fail
-    }
-  }, []);
+  const socketRef = useRef<ReturnType<typeof import('socket.io-client').io> | null>(null);
+  const notifSoundEnabledRef = useRef(true);
+  const notifSoundTypeRef = useRef<SoundType>('chime');
+  const [chatEnabled, setChatEnabled] = useState(false);
 
   useEffect(() => {
+    const ac = new AbortController();
+    const signal = ac.signal;
+
+    const fetchNotifications = async () => {
+      try {
+        const [notifResult, countResult] = await Promise.all([
+          getNotifications({ limit: 10, signal }),
+          getNotificationCount({ signal }),
+        ]);
+        if (signal.aborted) return;
+        setNotifications(notifResult.notifications || []);
+        setUnreadCount(countResult.count || 0);
+      } catch (e) {
+        if ((e as Error)?.name === 'AbortError') return;
+      }
+    };
+
     const fetchData = async () => {
-      const [desksRes, brandsRes] = await Promise.all([
-        supabase.from('desks').select('id, nombre').eq('activo', true),
-        supabase.from('brands').select('id, nombre').eq('activo', true),
+      const [desksData, brandsData, settings] = await Promise.all([
+        api.getDesks(),
+        api.getBrands(),
+        api.getSiteSettings().catch(() => ({})),
       ]);
-      if (desksRes.data) setDesks(desksRes.data);
-      if (brandsRes.data) setBrands(brandsRes.data);
+      if (Array.isArray(desksData)) setDesks(desksData.filter((d: { activo?: boolean }) => d.activo));
+      if (Array.isArray(brandsData)) setBrands(brandsData.filter((b: { activo?: boolean }) => b.activo));
+      if (settings && typeof settings === 'object') {
+        setSiteSettings(settings);
+        notifSoundEnabledRef.current = settings.notification_sound_enabled !== 'false';
+        const st = settings.notification_sound_type;
+        if (st && SOUND_TYPES.includes(st as SoundType)) notifSoundTypeRef.current = st as SoundType;
+        setChatEnabled(settings.chat_enabled === 'true');
+      }
     };
     fetchData();
     fetchNotifications();
 
-    // Poll for notifications every 30 seconds
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
-  }, [fetchNotifications]);
+    // Escuchar notificaciones en tiempo real (menciones, asignaciones, etc.)
+    const token = localStorage.getItem('tiusdei_token');
+    if (token) {
+      const API_URL = (import.meta as any).env?.VITE_API_URL || window.location.origin;
+      import('socket.io-client').then(({ io }) => {
+        if (signal.aborted) return;
+        const socket = io(API_URL.replace(/\/$/, ''), {
+          auth: { token },
+          transports: ['websocket', 'polling'],
+        });
+        socket.on('notification:new', (notif: Notification) => {
+          setNotifications(prev => [notif, ...prev].slice(0, 20));
+          setUnreadCount(prev => {
+            const next = prev + 1;
+            updateBadgeCount(next);
+            return next;
+          });
+          if (notifSoundEnabledRef.current) {
+            playNotificationSound(notifSoundTypeRef.current);
+          }
+          showNativeNotification({
+            title: 'Tiusdei',
+            body: notif.mensaje,
+            tag: `notif-${notif.id}`,
+            data: notif.mensaje?.includes('en el chat de')
+              ? { type: 'chat', deskName: notif.mensaje.match(/en el chat de (.+)$/)?.[1] || '', url: '/' }
+              : { type: 'task', url: '/tareas' },
+          });
+        });
+        socketRef.current = socket;
+      }).catch(() => {});
+    }
+
+    const interval = setInterval(fetchNotifications, 60000);
+    return () => {
+      clearInterval(interval);
+      ac.abort();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isNotificationSupported() && !isPermissionGranted()) {
+      const timer = setTimeout(() => requestNotificationPermission(), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'open-desk-chat') {
+        window.dispatchEvent(new CustomEvent('open-desk-chat', { detail: { deskName: e.data.deskName || '' } }));
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', handler);
+    return () => navigator.serviceWorker?.removeEventListener('message', handler);
+  }, []);
+
+  const toggleSidebarCollapse = useCallback(() => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('sidebar-collapsed', String(next)); } catch {}
+      return next;
+    });
+  }, []);
 
   const handleMarkRead = async (id: string) => {
     try {
@@ -139,6 +251,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       await markAllNotificationsRead();
       setNotifications(prev => prev.map(n => ({ ...n, leida: true })));
       setUnreadCount(0);
+      updateBadgeCount(0);
     } catch {
       // silently fail
     }
@@ -163,6 +276,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       .slice(0, 2);
   };
 
+  const { setTheme, resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+
   const getRoleBadge = (rol: string) => {
     const colors: Record<string, string> = {
       admin: 'bg-primary text-primary-foreground',
@@ -174,7 +290,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex flex-col lg:flex-row w-full overflow-x-hidden">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div
@@ -186,18 +302,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-sidebar-border transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          "fixed inset-y-0 left-0 z-50 bg-sidebar border-r border-sidebar-border transform transition-all duration-300 ease-in-out lg:static lg:z-auto",
+          sidebarCollapsed ? "lg:w-0 lg:border-r-0 lg:overflow-hidden" : "lg:w-64",
+          sidebarOpen ? "translate-x-0 w-64" : "-translate-x-full lg:translate-x-0"
         )}
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
-            <Link to="/dashboard" className="flex items-center gap-3">
-              <div className="p-2 rounded-lg gradient-primary">
-                <LayoutDashboard className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <span className="font-bold text-foreground">TIUSDEI</span>
+            <Link to="/dashboard" className="flex items-center gap-3 min-w-0">
+              {siteSettings.logo_url ? (
+                <img src={siteSettings.logo_url} alt={siteSettings.site_name || 'TIUSDEI'} className="h-9 w-auto max-w-[140px] object-contain" />
+              ) : (
+                <div className="p-2 rounded-lg gradient-primary shrink-0">
+                  <LayoutDashboard className="h-5 w-5 text-primary-foreground" />
+                </div>
+              )}
+              <span className="font-bold text-foreground truncate">{siteSettings.site_name || 'TIUSDEI'}</span>
             </Link>
             <Button
               variant="ghost"
@@ -308,8 +429,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
                   {/* Brand selection */}
                   <div className="space-y-1">
-                    <span className="px-3 text-xs text-muted-foreground">Marcas</span>
-                    {brands.map((brand) => (
+                    <button
+                      onClick={() => setBrandsMenuOpen(!brandsMenuOpen)}
+                      className="flex items-center justify-between w-full px-3 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <span>Marcas</span>
+                      <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", brandsMenuOpen && "rotate-180")} />
+                    </button>
+                    {brandsMenuOpen && brands.map((brand) => (
                       <button
                         key={brand.id}
                         onClick={() => {
@@ -383,6 +510,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-sidebar-accent/50 transition-colors">
                   <Avatar className="h-9 w-9">
+                    {profile?.avatar_url ? (
+                      <AvatarImage src={profile.avatar_url} alt={profile.nombre} className="object-cover" />
+                    ) : null}
                     <AvatarFallback className="bg-primary text-primary-foreground text-sm">
                       {profile?.nombre ? getInitials(profile.nombre) : 'U'}
                     </AvatarFallback>
@@ -400,6 +530,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/perfil')}>
+                  <UserCog className="mr-2 h-4 w-4" />
+                  Mi Perfil
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />
                   Cerrar Sesión
@@ -411,11 +546,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col min-h-screen min-w-0 w-full lg:w-auto">
         {/* Header */}
-        <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-30">
-          <div className="h-full px-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        <header className="h-14 sm:h-16 shrink-0 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-30">
+          <div className="h-full px-3 sm:px-4 flex items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
               <Button
                 variant="ghost"
                 size="icon"
@@ -424,8 +559,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               >
                 <Menu className="h-5 w-5" />
               </Button>
-              <div>
-                <h1 className="text-lg font-semibold text-foreground">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hidden lg:inline-flex"
+                onClick={toggleSidebarCollapse}
+                title={sidebarCollapsed ? 'Mostrar menú lateral' : 'Ocultar menú lateral'}
+              >
+                {sidebarCollapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+              </Button>
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-lg font-semibold text-foreground truncate">
                   {filteredNav.find(n => n.href === location.pathname)?.title || 
                    adminNavigation.find(n => n.href === location.pathname)?.title || 
                    'TIUSDEI Portal'}
@@ -434,6 +578,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="flex items-center gap-2">
+              <GlobalSearch />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                title={isDark ? 'Modo claro (normal)' : 'Modo oscuro'}
+              >
+                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </Button>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative">
@@ -445,7 +598,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-80 p-0" align="end">
+                <PopoverContent className="w-[calc(100vw-2rem)] max-w-80 p-0" align="end" sideOffset={8}>
                   <div className="flex items-center justify-between p-3 border-b border-border">
                     <h4 className="font-semibold text-sm">Notificaciones</h4>
                     {unreadCount > 0 && (
@@ -467,7 +620,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                             key={notif.id}
                             onClick={() => {
                               if (!notif.leida) handleMarkRead(notif.id);
-                              if (notif.task_id) navigate('/tareas');
+                              if (notif.mensaje?.includes('en el chat de')) {
+                                const match = notif.mensaje.match(/en el chat de (.+)$/);
+                                const deskName = match?.[1] || '';
+                                window.dispatchEvent(new CustomEvent('open-desk-chat', { detail: { deskName } }));
+                              } else if (notif.task_id) {
+                                navigate('/tareas');
+                              }
                             }}
                             className={cn(
                               "w-full text-left p-3 hover:bg-muted/50 transition-colors",
@@ -502,10 +661,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-x-hidden overflow-y-auto min-h-0">
           {children}
         </main>
       </div>
+
+      {/* Floating chat bubble */}
+      {chatEnabled && (
+        <ChatBubble soundEnabled={notifSoundEnabledRef.current} soundType={notifSoundTypeRef.current} />
+      )}
     </div>
   );
 }

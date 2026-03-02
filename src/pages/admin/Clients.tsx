@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -51,13 +52,8 @@ export default function AdminClients() {
 
   const fetchClients = async () => {
     try {
-      const { data, error } = await supabase
-        .from('clients')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setClients(data);
+      const data = await api.getClients();
+      if (Array.isArray(data)) setClients(data);
     } catch (error) {
       toast.error('Error al cargar clientes');
     } finally {
@@ -71,15 +67,12 @@ export default function AdminClients() {
 
     try {
       if (selectedClient) {
-        const { error } = await supabase
-          .from('clients')
-          .update(formData)
-          .eq('id', selectedClient.id);
-        if (error) throw error;
+        const result: any = await api.patchClient(selectedClient.id, formData);
+        if (result?.error) throw new Error(result.error);
         toast.success('Cliente actualizado');
       } else {
-        const { error } = await supabase.from('clients').insert(formData);
-        if (error) throw error;
+        const result: any = await api.createClient(formData);
+        if (result?.error) throw new Error(result.error);
         toast.success('Cliente creado');
       }
 
@@ -133,9 +126,10 @@ export default function AdminClients() {
               Nuevo Cliente
             </Button>
           </DialogTrigger>
-          <DialogContent className="mx-4 sm:mx-auto">
+          <DialogContent className="mx-4 sm:mx-auto" aria-describedby="client-form-desc">
             <DialogHeader>
               <DialogTitle>{selectedClient ? 'Editar' : 'Nuevo'} Cliente</DialogTitle>
+              <DialogDescription id="client-form-desc">Crea o edita un cliente.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">

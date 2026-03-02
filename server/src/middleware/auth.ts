@@ -1,15 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { getUserRole } from '../utils/roles.js';
 
 export interface AuthRequest extends Request {
   userId?: string;
   userRole?: string;
 }
 
-/**
- * Validates Supabase JWT token from Authorization header.
- * Extracts user_id and role from the token payload.
- */
+const JWT_SECRET = process.env.JWT_SECRET!;
+
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
 
@@ -19,20 +18,24 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   }
 
   const token = authHeader.split(' ')[1];
-  const jwtSecret = process.env.SUPABASE_JWT_SECRET;
-
-  if (!jwtSecret) {
-    console.error('[AUTH] SUPABASE_JWT_SECRET no configurado');
-    res.status(500).json({ error: 'Error de configuración del servidor' });
+  if (!token || token.length > 2048) {
+    res.status(401).json({ error: 'Token inválido' });
     return;
   }
 
   try {
-    const payload = jwt.verify(token, jwtSecret) as {
+    const payload = jwt.verify(token, JWT_SECRET, {
+      algorithms: ['HS256'],
+      maxAge: '7d',
+    }) as {
       sub: string;
       role: string;
-      user_metadata?: { role?: string };
     };
+
+    if (!payload.sub || !payload.role) {
+      res.status(401).json({ error: 'Token malformado' });
+      return;
+    }
 
     req.userId = payload.sub;
     req.userRole = payload.role;
@@ -42,15 +45,17 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   }
 }
 
-/**
- * Requires admin or ops role.
- */
-export function requireAdminOrOps(req: AuthRequest, res: Response, next: NextFunction): void {
+export async function requireAdminOrOps(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   if (!req.userId) {
     res.status(401).json({ error: 'No autenticado' });
     return;
   }
-  // Note: Supabase JWT role is 'authenticated' for all users.
-  // We check the actual app role from the database in the route handler.
+  // Consultar rol actual de la BD para reflejar cambios inmediatos
+  const currentRole = await getUserRole(req.userId);
+  req.userRole = currentRole;
+  if (currentRole !== 'admin' && currentRole !== 'ops') {
+    res.status(403).json({ error: 'Se requieren permisos de administrador u OPS' });
+    return;
+  }
   next();
 }

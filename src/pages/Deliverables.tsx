@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import * as api from '@/lib/apiClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -67,6 +68,9 @@ export default function Deliverables() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(0);
+  const [totalDeliverables, setTotalDeliverables] = useState(0);
+  const pageSize = 20;
 
   const [formData, setFormData] = useState({
     task_id: '',
@@ -78,23 +82,20 @@ export default function Deliverables() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [page]);
 
   const fetchData = async () => {
     try {
-      const [delRes, tasksRes, typesRes] = await Promise.all([
-        supabase.from('deliverables').select(`
-          *,
-          tasks (titulo_tarea, brands (nombre)),
-          deliverable_types (nombre)
-        `),
-        supabase.from('tasks').select('id, titulo_tarea, brands (nombre)'),
-        supabase.from('deliverable_types').select('*').eq('activo', true),
+      setLoading(true);
+      const [delRes, tasksRes, typesData] = await Promise.all([
+        api.getDeliverables({ limit: pageSize, offset: page * pageSize }),
+        api.getTasks({ limit: 200 }),
+        api.getDeliverableTypes(),
       ]);
-
-      if (delRes.data) setDeliverables(delRes.data as Deliverable[]);
-      if (tasksRes.data) setTasks(tasksRes.data as Task[]);
-      if (typesRes.data) setTypes(typesRes.data);
+      setDeliverables((delRes.deliverables || []) as Deliverable[]);
+      setTotalDeliverables(delRes.total ?? 0);
+      setTasks((tasksRes.tasks || []) as Task[]);
+      if (Array.isArray(typesData)) setTypes(typesData.filter((t: { activo?: boolean }) => t.activo));
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Error al cargar datos');
@@ -108,15 +109,13 @@ export default function Deliverables() {
     setSaving(true);
 
     try {
-      const { error } = await supabase.from('deliverables').insert({
+      const result: any = await api.createDeliverable({
         task_id: formData.task_id,
         tipo_entregable_id: formData.tipo_entregable_id || null,
         version: formData.version,
         estado: formData.estado,
-        link_final: formData.link_final || null,
       });
-
-      if (error) throw error;
+      if (result?.error) throw new Error(result.error);
       toast.success('Entregable creado');
       setDialogOpen(false);
       setFormData({
@@ -136,18 +135,8 @@ export default function Deliverables() {
 
   const updateStatus = async (id: string, estado: Deliverable['estado']) => {
     try {
-      const updateData: any = { estado };
-      if (estado === 'aprobado' || estado === 'final') {
-        updateData.aprobado_por = profile?.id;
-        updateData.aprobado_en = new Date().toISOString();
-      }
-
-      const { error } = await supabase
-        .from('deliverables')
-        .update(updateData)
-        .eq('id', id);
-
-      if (error) throw error;
+      const result: any = await api.patchDeliverable(id, { estado });
+      if (result?.error) throw new Error(result.error);
       toast.success('Estado actualizado');
       fetchData();
     } catch (error: any) {
@@ -207,9 +196,10 @@ export default function Deliverables() {
               Nuevo Entregable
             </Button>
           </DialogTrigger>
-          <DialogContent className="mx-4 sm:mx-auto">
+          <DialogContent className="mx-4 sm:mx-auto" aria-describedby="deliv-add-desc">
             <DialogHeader>
               <DialogTitle>Nuevo Entregable</DialogTitle>
+              <DialogDescription id="deliv-add-desc">Crea un entregable vinculado a una tarea.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -399,8 +389,8 @@ export default function Deliverables() {
           </div>
           
           {/* Desktop View */}
-          <div className="hidden sm:block overflow-x-auto">
-            <Table>
+          <div className="hidden sm:block overflow-x-auto -mx-px">
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow className="border-border">
                   <TableHead>Tarea</TableHead>
@@ -483,6 +473,31 @@ export default function Deliverables() {
                 )}
               </TableBody>
             </Table>
+            {totalDeliverables > pageSize && (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 px-3 py-3 border-t">
+                <p className="text-xs sm:text-sm text-muted-foreground order-2 sm:order-1">
+                  Página {page + 1} de {Math.max(1, Math.ceil(totalDeliverables / pageSize))}                   ({totalDeliverables} entregables)
+                </p>
+                <div className="flex gap-2 order-1 sm:order-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page === 0 || loading}
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= Math.ceil(totalDeliverables / pageSize) - 1 || loading}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

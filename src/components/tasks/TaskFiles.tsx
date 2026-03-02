@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useState, useEffect, useRef } from 'react';
+import * as api from '@/lib/apiClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -15,7 +16,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Paperclip, Upload, Trash2, FileText, Image, File, Loader2, ExternalLink } from 'lucide-react';
+import { Paperclip, Upload, Trash2, FileText, Image, File, Loader2, ExternalLink, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TaskFile {
@@ -36,6 +37,8 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [addNombre, setAddNombre] = useState('');
+  const [addUrl, setAddUrl] = useState('');
 
   useEffect(() => {
     fetchFiles();
@@ -43,49 +46,40 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
 
   const fetchFiles = async () => {
     try {
-      const { data, error } = await supabase
-        .from('files')
-        .select('id, nombre_archivo, url_storage, created_at')
-        .eq('task_id', taskId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setFiles(data || []);
+      const data = await api.getFiles(taskId);
+      setFiles(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching files:', error);
     }
   };
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleAddFile = async (nombre: string, url: string) => {
+    if (!nombre || !url) return;
     setUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${taskId}/${Date.now()}.${fileExt}`;
+      const result: any = await api.createFile({
+        task_id: taskId,
+        nombre_archivo: nombre,
+        url_storage: url,
+      });
+      if (result?.error) throw new Error(result.error);
+      toast.success('Archivo agregado');
+      fetchFiles();
+    } catch (error: any) {
+      toast.error('Error al agregar archivo', { description: error.message });
+    } finally {
+      setUploading(false);
+    }
+  };
 
-      const { error: uploadError } = await supabase.storage
-        .from('task-files')
-        .upload(fileName, file);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('task-files')
-        .getPublicUrl(fileName);
-
-      const { error: dbError } = await supabase
-        .from('files')
-        .insert({
-          task_id: taskId,
-          nombre_archivo: file.name,
-          url_storage: urlData.publicUrl,
-        });
-
-      if (dbError) throw dbError;
-
-      toast.success('Archivo subido correctamente');
+  const handleUploadFile = async (file: globalThis.File) => {
+    setUploading(true);
+    try {
+      const result: any = await api.uploadFile(taskId, file);
+      if (result?.error) throw new Error(result.error);
+      toast.success('Archivo subido');
       fetchFiles();
     } catch (error: any) {
       toast.error('Error al subir archivo', { description: error.message });
@@ -94,21 +88,16 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
     }
   };
 
-  const handleDelete = async (fileId: string, urlStorage: string) => {
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleUploadFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleDelete = async (fileId: string) => {
     try {
-      // Extract path from URL
-      const path = urlStorage.split('/task-files/')[1];
-      if (path) {
-        await supabase.storage.from('task-files').remove([path]);
-      }
-
-      const { error } = await supabase
-        .from('files')
-        .delete()
-        .eq('id', fileId);
-
-      if (error) throw error;
-
+      const result: any = await api.deleteFile(fileId);
+      if (result?.error) throw new Error(result.error);
       toast.success('Archivo eliminado');
       fetchFiles();
     } catch (error: any) {
@@ -126,6 +115,48 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
     }
     return <File className="h-4 w-4 text-muted-foreground" />;
   };
+
+  const FileActions = () => (
+    <div className="flex items-center gap-1">
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileInputChange}
+        accept=".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.mp4,.mp3,.ai,.psd,.fig,.sketch"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+      >
+        {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+        Subir
+      </Button>
+      <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) { setAddNombre(''); setAddUrl(''); } }}>
+        <DialogTrigger asChild>
+          <Button type="button" variant="ghost" size="sm" className="h-7 gap-1">
+            <Link2 className="h-3 w-3" />
+            URL
+          </Button>
+        </DialogTrigger>
+        <DialogContent aria-describedby="taskfile-add-desc">
+          <DialogHeader>
+            <DialogTitle>Agregar enlace a archivo</DialogTitle>
+            <DialogDescription id="taskfile-add-desc">Introduce el nombre y la URL del archivo externo.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => { e.preventDefault(); handleAddFile(addNombre, addUrl); setDialogOpen(false); setAddNombre(''); setAddUrl(''); }} className="space-y-4">
+            <Input placeholder="Nombre del archivo" value={addNombre} onChange={(e) => setAddNombre(e.target.value)} required />
+            <Input placeholder="URL (ej: Google Drive, Dropbox)" value={addUrl} onChange={(e) => setAddUrl(e.target.value)} required />
+            <Button type="submit" disabled={uploading}>Agregar</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 
   if (compact) {
     return (
@@ -147,26 +178,7 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Archivos</span>
-              {canEdit && (
-                <label className="cursor-pointer">
-                  <input
-                    type="file"
-                    className="hidden"
-                    onChange={handleUpload}
-                    disabled={uploading}
-                  />
-                  <Button variant="ghost" size="sm" className="h-7 gap-1" asChild>
-                    <span>
-                      {uploading ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Upload className="h-3 w-3" />
-                      )}
-                      Subir
-                    </span>
-                  </Button>
-                </label>
-              )}
+              {canEdit && <FileActions />}
             </div>
             {files.length === 0 ? (
               <p className="text-xs text-muted-foreground py-2">Sin archivos</p>
@@ -188,10 +200,11 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
                     </a>
                     {canEdit && (
                       <Button
+                        type="button"
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                        onClick={() => handleDelete(file.id, file.url_storage)}
+                        onClick={() => handleDelete(file.id)}
                       >
                         <Trash2 className="h-3 w-3 text-destructive" />
                       </Button>
@@ -210,26 +223,7 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-medium text-muted-foreground">Archivos Adjuntos</h4>
-        {canEdit && (
-          <label className="cursor-pointer">
-            <input
-              type="file"
-              className="hidden"
-              onChange={handleUpload}
-              disabled={uploading}
-            />
-            <Button variant="outline" size="sm" className="gap-1" asChild>
-              <span>
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
-                Subir Archivo
-              </span>
-            </Button>
-          </label>
-        )}
+        {canEdit && <FileActions />}
       </div>
       
       {files.length === 0 ? (
@@ -253,6 +247,7 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
               </div>
               <div className="flex items-center gap-1">
                 <Button
+                  type="button"
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
@@ -264,10 +259,11 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
                 </Button>
                 {canEdit && (
                   <Button
+                    type="button"
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(file.id, file.url_storage)}
+                    onClick={() => handleDelete(file.id)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
