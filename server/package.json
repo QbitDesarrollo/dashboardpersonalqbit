@@ -12,6 +12,7 @@
     "seed:types": "tsx scripts/seed-task-deliverable-types.ts"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@types/bcryptjs": "^2.4.6",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",

@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Edit, Trash2, Loader2, FileBox, CheckSquare, Image, Mail, Upload, UserPlus, LayoutGrid, Video, Bell, Volume2, VolumeX, MessageCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, Loader2, FileBox, CheckSquare, Image, Mail, Upload, UserPlus, LayoutGrid, Video, Bell, Volume2, VolumeX, MessageCircle, FolderOpen, Sparkles } from 'lucide-react';
 import { playNotificationSound, SOUND_TYPES, SOUND_LABELS, type SoundType } from '@/lib/notificationSound';
 
 interface ItemType {
@@ -179,6 +179,11 @@ export default function AdminConfig() {
   const [chatEnabled, setChatEnabled] = useState(false);
   const [chatSaving, setChatSaving] = useState(false);
 
+  const [driveEnabled, setDriveEnabled] = useState(false);
+  const [driveSaving, setDriveSaving] = useState(false);
+  const [geminiEnabled, setGeminiEnabled] = useState(false);
+  const [geminiSaving, setGeminiSaving] = useState(false);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -237,6 +242,9 @@ export default function AdminConfig() {
         if (st && SOUND_TYPES.includes(st as SoundType)) setNotifSoundType(st as SoundType);
         // Chat setting
         setChatEnabled(settings.chat_enabled === 'true');
+        // Drive + Gemini settings
+        setDriveEnabled(settings.drive_enabled === 'true');
+        setGeminiEnabled(settings.gemini_enabled === 'true');
       }
     } catch (error) {
       toast.error('Error al cargar datos');
@@ -495,6 +503,34 @@ export default function AdminConfig() {
     }
   };
 
+  const handleSaveDrive = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDriveSaving(true);
+    try {
+      await api.patchSiteSettings({ drive_enabled: String(driveEnabled) } as any);
+      toast.success('Configuración de Drive guardada');
+      fetchData();
+    } catch (err: unknown) {
+      toast.error('Error', { description: err instanceof Error ? err.message : 'No se pudo guardar' });
+    } finally {
+      setDriveSaving(false);
+    }
+  };
+
+  const handleSaveGemini = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGeminiSaving(true);
+    try {
+      await api.patchSiteSettings({ gemini_enabled: String(geminiEnabled) } as any);
+      toast.success('Configuración de Gemini guardada');
+      fetchData();
+    } catch (err: unknown) {
+      toast.error('Error', { description: err instanceof Error ? err.message : 'No se pudo guardar' });
+    } finally {
+      setGeminiSaving(false);
+    }
+  };
+
   const closeTypeDialog = () => {
     setFormData({ nombre: '', activo: true });
     setSelectedItem(null);
@@ -517,7 +553,7 @@ export default function AdminConfig() {
 
       <Tabs defaultValue="tipos" className="w-full">
         <div className="overflow-x-auto -mx-1">
-          <TabsList className="grid w-full min-w-max grid-cols-9 max-w-4xl">
+          <TabsList className="grid w-full min-w-max grid-cols-11 max-w-5xl">
             <TabsTrigger value="tipos" className="text-xs sm:text-sm">Tipos</TabsTrigger>
             <TabsTrigger value="apariencia" className="text-xs sm:text-sm">Apariencia</TabsTrigger>
             <TabsTrigger value="permisos" className="text-xs sm:text-sm">Permisos</TabsTrigger>
@@ -527,6 +563,8 @@ export default function AdminConfig() {
             <TabsTrigger value="reuniones" className="text-xs sm:text-sm">Reuniones</TabsTrigger>
             <TabsTrigger value="notificaciones" className="text-xs sm:text-sm">Sonido</TabsTrigger>
             <TabsTrigger value="chat" className="text-xs sm:text-sm">Chat</TabsTrigger>
+            <TabsTrigger value="drive" className="text-xs sm:text-sm">Drive</TabsTrigger>
+            <TabsTrigger value="gemini" className="text-xs sm:text-sm">Gemini</TabsTrigger>
           </TabsList>
         </div>
 
@@ -1136,6 +1174,107 @@ export default function AdminConfig() {
                 <Button type="submit" disabled={chatSaving}>
                   {chatSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                   Guardar configuración de chat
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="drive" className="mt-4">
+          <Card className="glass-card max-w-2xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FolderOpen className="h-5 w-5 text-blue-500" />
+                Google Drive
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Permite a los usuarios navegar su Google Drive y adjuntar archivos a las tareas.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSaveDrive} className="space-y-6">
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="flex items-center gap-3">
+                    <FolderOpen className={cn('h-5 w-5', driveEnabled ? 'text-blue-500' : 'text-muted-foreground')} />
+                    <div>
+                      <p className="font-medium">Google Drive habilitado</p>
+                      <p className="text-xs text-muted-foreground">
+                        {driveEnabled
+                          ? 'Los usuarios pueden explorar su Drive y adjuntar archivos a tareas'
+                          : 'La integración de Google Drive está desactivada'}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={driveEnabled}
+                    onCheckedChange={setDriveEnabled}
+                  />
+                </div>
+                <div className="rounded-lg border p-4 bg-muted/30">
+                  <p className="text-sm text-muted-foreground">
+                    <strong>Requisito:</strong> Los usuarios deben tener su cuenta de Google conectada
+                    y haber otorgado permiso de acceso a Drive durante la autenticación.
+                    Si un usuario ya se autenticó sin el permiso de Drive, deberá reconectar su cuenta desde su perfil.
+                  </p>
+                </div>
+                <Button type="submit" disabled={driveSaving}>
+                  {driveSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Guardar configuración de Drive
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="gemini" className="mt-4">
+          <Card className="glass-card max-w-2xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-500" />
+                Gemini AI
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Asistente de inteligencia artificial integrado con contexto de tareas y proyectos.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSaveGemini} className="space-y-6">
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="flex items-center gap-3">
+                    <Sparkles className={cn('h-5 w-5', geminiEnabled ? 'text-purple-500' : 'text-muted-foreground')} />
+                    <div>
+                      <p className="font-medium">Gemini AI habilitado</p>
+                      <p className="text-xs text-muted-foreground">
+                        {geminiEnabled
+                          ? 'Los usuarios verán el botón de Gemini y podrán interactuar con el asistente AI'
+                          : 'El asistente Gemini está oculto para todos los usuarios'}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={geminiEnabled}
+                    onCheckedChange={setGeminiEnabled}
+                  />
+                </div>
+                <div className="rounded-lg border p-4 bg-muted/30 space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    <strong>Funcionalidades:</strong>
+                  </p>
+                  <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+                    <li>Chat conversacional con contexto de tus tareas y proyectos</li>
+                    <li>Resúmenes automáticos de tareas, comentarios y sprints</li>
+                    <li>Historial de conversaciones por usuario</li>
+                  </ul>
+                </div>
+                <div className="rounded-lg border p-4 bg-muted/30">
+                  <p className="text-sm text-muted-foreground">
+                    <strong>Nota:</strong> Gemini AI utiliza la API de Google Gemini.
+                    La clave API se configura en el servidor. Contacta al administrador del sistema si necesitas actualizar la clave.
+                  </p>
+                </div>
+                <Button type="submit" disabled={geminiSaving}>
+                  {geminiSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Guardar configuración de Gemini
                 </Button>
               </form>
             </CardContent>

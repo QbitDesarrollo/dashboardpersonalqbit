@@ -66,12 +66,15 @@ import {
   Link2,
   Star,
   SlidersHorizontal,
+  FolderOpen,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { TaskTimer } from '@/components/tasks/TaskTimer';
 import { TaskFiles } from '@/components/tasks/TaskFiles';
 import { FileUploader, UploadedFile } from '@/components/tasks/FileUploader';
+import { DriveBrowser } from '@/components/drive/DriveBrowser';
+import type { DriveFile } from '@/lib/apiClient';
 import { DeliverableProgress } from '@/components/tasks/DeliverableProgress';
 import { ResponsableMetrics } from '@/components/tasks/ResponsableMetrics';
 import { CommentsPanel } from '@/components/tasks/CommentsPanel';
@@ -165,6 +168,8 @@ export default function Tasks() {
   const [taskReads, setTaskReads] = useState<{ user_id: string; read_at: string; nombre: string; avatar_url: string | null }[]>([]);
   const [saving, setSaving] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([]);
+  const [pendingDriveFiles, setPendingDriveFiles] = useState<DriveFile[]>([]);
+  const [showDrivePicker, setShowDrivePicker] = useState(false);
   const [page, setPage] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
   const [savedFilters, setSavedFilters] = useState<{ id: string; name: string; filter_config: Record<string, unknown> }[]>([]);
@@ -487,6 +492,16 @@ export default function Tasks() {
           setPendingFiles([]);
         }
 
+        // Attach pending Drive files
+        if (pendingDriveFiles.length > 0 && insertedTask?.id) {
+          for (const df of pendingDriveFiles) {
+            try {
+              await api.attachDriveFile(insertedTask.id, df);
+            } catch { /* silent */ }
+          }
+          setPendingDriveFiles([]);
+        }
+
         toast.success('Tarea creada');
 
         if (formData.responsable_user_id) {
@@ -556,6 +571,8 @@ export default function Tasks() {
     });
     setSelectedTask(null);
     setPendingFiles([]);
+    setPendingDriveFiles([]);
+    setShowDrivePicker(false);
   };
 
   const openEditDialog = (task: Task) => {
@@ -1227,12 +1244,76 @@ export default function Tasks() {
                         canEdit={canEditTask(selectedTask)}
                       />
                     ) : (
-                      <FileUploader
-                        taskId={null}
-                        files={pendingFiles}
-                        onFilesChange={setPendingFiles}
-                        canEdit
-                      />
+                      <div className="space-y-3">
+                        <FileUploader
+                          taskId={null}
+                          files={pendingFiles}
+                          onFilesChange={setPendingFiles}
+                          canEdit
+                        />
+
+                        {/* Drive files section for new tasks */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                              <FolderOpen className="h-4 w-4" />
+                              Google Drive
+                              {pendingDriveFiles.length > 0 && (
+                                <span className="text-xs bg-blue-500/10 text-blue-600 rounded-full px-1.5">{pendingDriveFiles.length}</span>
+                              )}
+                            </h4>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1 text-xs"
+                              onClick={() => setShowDrivePicker(!showDrivePicker)}
+                            >
+                              <FolderOpen className="h-3 w-3" />
+                              {showDrivePicker ? 'Cerrar' : 'Drive'}
+                            </Button>
+                          </div>
+
+                          {/* Pending drive files list */}
+                          {pendingDriveFiles.length > 0 && (
+                            <div className="space-y-1">
+                              {pendingDriveFiles.map((df) => (
+                                <div key={df.id} className="flex items-center gap-2 p-2 rounded-md bg-blue-50 dark:bg-blue-500/10 group text-sm">
+                                  {df.iconLink && <img src={df.iconLink} alt="" className="h-4 w-4" />}
+                                  <span className="text-xs truncate flex-1">{df.name}</span>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 shrink-0"
+                                    onClick={() => setPendingDriveFiles(prev => prev.filter(f => f.id !== df.id))}
+                                  >
+                                    <X className="h-3.5 w-3.5 text-destructive" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Inline Drive browser - wrapped to prevent form submission */}
+                          {showDrivePicker && (
+                            <div
+                              className="border rounded-lg overflow-hidden max-h-[300px] overflow-y-auto"
+                              onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); } }}
+                            >
+                              <DriveBrowser
+                                mode="picker"
+                                onSelect={(file) => {
+                                  if (!pendingDriveFiles.find(f => f.id === file.id)) {
+                                    setPendingDriveFiles(prev => [...prev, file]);
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

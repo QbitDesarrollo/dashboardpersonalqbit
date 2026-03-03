@@ -899,6 +899,8 @@ export async function patchSiteSettings(data: {
   notification_sound_enabled?: string;
   notification_sound_type?: string;
   chat_enabled?: string;
+  drive_enabled?: string;
+  gemini_enabled?: string;
 }) {
   const res = await request('/api/config/site-settings', { method: 'PATCH', body: JSON.stringify(data) });
   return res.json();
@@ -945,6 +947,109 @@ export async function getEmailTemplatePreview(type: string, html?: string | null
   const res = await request('/api/config/email-templates/preview', {
     method: 'POST',
     body: JSON.stringify({ type, html }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== Google Drive ==========
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  iconLink?: string;
+  webViewLink?: string;
+  webContentLink?: string;
+  thumbnailLink?: string;
+  size?: number | null;
+  modifiedTime?: string;
+  isFolder: boolean;
+}
+
+export async function getDriveStatus(): Promise<{ connected: boolean; hasDriveScope: boolean }> {
+  const res = await request('/api/data/google-drive/status');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getDriveFiles(folderId?: string, pageToken?: string, pageSize = 30): Promise<{ files: DriveFile[]; nextPageToken: string | null; folderName: string }> {
+  const params = new URLSearchParams();
+  if (folderId) params.set('folderId', folderId);
+  if (pageToken) params.set('pageToken', pageToken);
+  params.set('pageSize', String(pageSize));
+  const res = await request(`/api/data/google-drive/files?${params}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function searchDriveFiles(q: string): Promise<{ files: DriveFile[] }> {
+  const res = await request(`/api/data/google-drive/files/search?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTaskDriveFiles(taskId: string): Promise<any[]> {
+  const res = await request(`/api/data/google-drive/task-files/${taskId}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function attachDriveFile(taskId: string, file: DriveFile) {
+  const res = await request('/api/data/google-drive/task-files', {
+    method: 'POST',
+    body: JSON.stringify({
+      task_id: taskId,
+      drive_file_id: file.id,
+      name: file.name,
+      mime_type: file.mimeType,
+      icon_url: file.iconLink,
+      web_view_link: file.webViewLink,
+      thumbnail_url: file.thumbnailLink,
+      size_bytes: file.size,
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function detachDriveFile(id: string) {
+  const res = await request(`/api/data/google-drive/task-files/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== Gemini AI ==========
+export async function sendGeminiMessage(message: string, conversationId?: string, context?: { type?: 'tasks' | 'project' | 'general'; entity_ids?: string[] }): Promise<{ response: string; conversation_id: string }> {
+  const res = await request('/api/data/gemini/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message, conversation_id: conversationId, context }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getGeminiConversations(): Promise<any[]> {
+  const res = await request('/api/data/gemini/conversations');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getGeminiConversation(id: string): Promise<{ id: string; title: string; messages: { id: string; role: 'user' | 'model'; content: string; created_at: string }[] }> {
+  const res = await request(`/api/data/gemini/conversations/${id}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteGeminiConversation(id: string) {
+  const res = await request(`/api/data/gemini/conversations/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getGeminiSummary(type: 'tasks' | 'comments' | 'sprint' | 'general', entityIds: string[]): Promise<{ summary: string }> {
+  const res = await request('/api/data/gemini/summarize', {
+    method: 'POST',
+    body: JSON.stringify({ type, entity_ids: entityIds }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

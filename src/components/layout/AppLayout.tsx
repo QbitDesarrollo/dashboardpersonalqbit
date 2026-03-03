@@ -68,6 +68,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { GlobalSearch } from '@/components/GlobalSearch';
 import { ChatBubble } from '@/components/chat/ChatBubble';
+import { GeminiPanel } from '@/components/gemini/GeminiPanel';
 
 interface NavItem {
   title: string;
@@ -129,6 +130,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const notifSoundEnabledRef = useRef(true);
   const notifSoundTypeRef = useRef<SoundType>('chime');
   const [chatEnabled, setChatEnabled] = useState(false);
+  const [geminiEnabled, setGeminiEnabled] = useState(false);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -162,6 +164,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         const st = settings.notification_sound_type;
         if (st && SOUND_TYPES.includes(st as SoundType)) notifSoundTypeRef.current = st as SoundType;
         setChatEnabled(settings.chat_enabled === 'true');
+        setGeminiEnabled(settings.gemini_enabled === 'true');
       }
     };
     fetchData();
@@ -670,6 +673,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {chatEnabled && (
         <ChatBubble soundEnabled={notifSoundEnabledRef.current} soundType={notifSoundTypeRef.current} />
       )}
+
+      {/* Gemini AI panel */}
+      {geminiEnabled && <GeminiPanel />}
     </div>
   );
 }

@@ -69,6 +69,8 @@ const siteSettingsPatchSchema = z.object({
   notification_sound_enabled: z.string().max(10).optional(),
   notification_sound_type: z.string().max(50).optional(),
   chat_enabled: z.string().max(10).optional(),
+  drive_enabled: z.string().max(10).optional(),
+  gemini_enabled: z.string().max(10).optional(),
 }).strict();
 
 // PATCH /api/config/site-settings — admin/ops
@@ -86,6 +88,8 @@ configRouter.patch('/site-settings', requireAuth, requireAdminOrOps, async (req:
       'daily_meetings_desk_ids', 'daily_meetings_roles',
       'notification_sound_enabled', 'notification_sound_type',
       'chat_enabled',
+      'drive_enabled',
+      'gemini_enabled',
     ];
     for (const k of keys) {
       const v = parsed.data[k];

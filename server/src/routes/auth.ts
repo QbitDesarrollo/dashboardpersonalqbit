@@ -368,6 +368,7 @@ authRouter.get('/google', (req, res) => {
       'https://www.googleapis.com/auth/userinfo.email',
       'https://www.googleapis.com/auth/userinfo.profile',
       'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/drive.readonly',
     ],
     state: mode || 'login',
   });
@@ -424,7 +425,7 @@ authRouter.get('/google/callback', async (req, res) => {
           const retryUrl = oauth2Retry.generateAuthUrl({
             access_type: 'offline',
             prompt: 'consent',
-            scope: ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/calendar'],
+            scope: ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/drive.readonly'],
             state: 'link',
           });
           res.redirect(retryUrl);

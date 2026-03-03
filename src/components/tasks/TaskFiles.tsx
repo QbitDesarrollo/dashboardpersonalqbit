@@ -16,8 +16,10 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { toast } from 'sonner';
-import { Paperclip, Upload, Trash2, FileText, Image, File, Loader2, ExternalLink, Link2 } from 'lucide-react';
+import { Paperclip, Upload, Trash2, FileText, Image, File, Loader2, ExternalLink, Link2, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { DriveFilePicker } from '@/components/drive/DriveFilePicker';
+import { DriveFileList } from '@/components/drive/DriveFileList';
 
 interface TaskFile {
   id: string;
@@ -39,6 +41,8 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [addNombre, setAddNombre] = useState('');
   const [addUrl, setAddUrl] = useState('');
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
+  const [driveRefreshKey, setDriveRefreshKey] = useState(0);
 
   useEffect(() => {
     fetchFiles();
@@ -136,6 +140,16 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
         {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
         Subir
       </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1"
+        onClick={() => setDrivePickerOpen(true)}
+      >
+        <FolderOpen className="h-3 w-3" />
+        Drive
+      </Button>
       <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) { setAddNombre(''); setAddUrl(''); } }}>
         <DialogTrigger asChild>
           <Button type="button" variant="ghost" size="sm" className="h-7 gap-1">
@@ -158,8 +172,21 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
     </div>
   );
 
+  const drivePickerElement = (
+    <DriveFilePicker
+      open={drivePickerOpen}
+      onOpenChange={setDrivePickerOpen}
+      taskId={taskId}
+      onAttached={() => {
+        setDriveRefreshKey(k => k + 1);
+        toast.success('Archivo de Drive adjuntado');
+      }}
+    />
+  );
+
   if (compact) {
     return (
+      <>{drivePickerElement}
       <Popover>
         <PopoverTrigger asChild>
           <Button
@@ -216,63 +243,70 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
           </div>
         </PopoverContent>
       </Popover>
+      </>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-muted-foreground">Archivos Adjuntos</h4>
-        {canEdit && <FileActions />}
-      </div>
-      
-      {files.length === 0 ? (
-        <div className="text-center py-4 text-muted-foreground text-sm bg-muted/30 rounded-lg">
-          <Paperclip className="h-6 w-6 mx-auto mb-2 opacity-50" />
-          No hay archivos adjuntos
+    <>
+      {drivePickerElement}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium text-muted-foreground">Archivos Adjuntos</h4>
+          {canEdit && <FileActions />}
         </div>
-      ) : (
-        <div className="space-y-2">
-          {files.map((file) => (
-            <div
-              key={file.id}
-              className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 group hover:bg-muted/70 transition-colors"
-            >
-              {getFileIcon(file.nombre_archivo)}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{file.nombre_archivo}</p>
-                <p className="text-xs text-muted-foreground">
-                  {new Date(file.created_at).toLocaleDateString('es-ES')}
-                </p>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  asChild
-                >
-                  <a href={file.url_storage} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                </Button>
-                {canEdit && (
+
+        {files.length === 0 ? (
+          <div className="text-center py-4 text-muted-foreground text-sm bg-muted/30 rounded-lg">
+            <Paperclip className="h-6 w-6 mx-auto mb-2 opacity-50" />
+            No hay archivos adjuntos
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {files.map((file) => (
+              <div
+                key={file.id}
+                className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 group hover:bg-muted/70 transition-colors"
+              >
+                {getFileIcon(file.nombre_archivo)}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{file.nombre_archivo}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(file.created_at).toLocaleDateString('es-ES')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(file.id)}
+                    className="h-8 w-8"
+                    asChild
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <a href={file.url_storage} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
                   </Button>
-                )}
+                  {canEdit && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => handleDelete(file.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+            ))}
+          </div>
+        )}
+
+        {/* Google Drive attached files */}
+        <DriveFileList taskId={taskId} canEdit={canEdit} refreshKey={driveRefreshKey} />
+      </div>
+    </>
   );
 }
