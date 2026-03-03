@@ -2,14 +2,27 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
-import { hasRole } from '../utils/roles.js';
+import { hasRole, getUserRole } from '../utils/roles.js';
 import { getGlobalOnlineUserIds, getGlobalPresence, type UserPresenceInfo } from '../socket.js';
 
 export const desksRouter = Router();
 
 desksRouter.get('/desks', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const rows = await query<any[]>('SELECT * FROM desks ORDER BY nombre');
+    const role = await getUserRole(req.userId!);
+    let rows: any[];
+    if (role === 'equipo') {
+      // Equipo solo ve las mesas donde es miembro
+      rows = await query<any[]>(
+        `SELECT d.* FROM desks d
+         INNER JOIN desk_members dm ON dm.desk_id = d.id
+         WHERE dm.user_id = ?
+         ORDER BY d.nombre`,
+        [req.userId]
+      );
+    } else {
+      rows = await query<any[]>('SELECT * FROM desks ORDER BY nombre');
+    }
     res.json(rows);
   } catch (e) {
     console.error(e);

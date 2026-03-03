@@ -15,6 +15,18 @@ brandsRouter.get('/brands', requireAuth, async (req: AuthRequest, res) => {
       if (ids.length === 0) { res.json([]); return; }
       const placeholders = ids.map(() => '?').join(',');
       rows = await query<any[]>(`SELECT b.*, c.nombre as cliente_nombre FROM brands b LEFT JOIN clients c ON c.id = b.cliente_id WHERE b.id IN (${placeholders}) ORDER BY b.nombre`, ids);
+    } else if (role === 'equipo') {
+      // Equipo solo ve marcas de las tareas en sus mesas o asignadas a él
+      rows = await query<any[]>(
+        `SELECT DISTINCT b.*, c.nombre as cliente_nombre
+         FROM brands b
+         LEFT JOIN clients c ON c.id = b.cliente_id
+         INNER JOIN tasks t ON t.brand_id = b.id
+         LEFT JOIN desk_members dm ON dm.desk_id = t.desk_id AND dm.user_id = ?
+         WHERE dm.user_id IS NOT NULL OR t.responsable_user_id = ?
+         ORDER BY b.nombre`,
+        [req.userId, req.userId]
+      );
     } else {
       rows = await query<any[]>(`SELECT b.*, c.nombre as cliente_nombre FROM brands b LEFT JOIN clients c ON c.id = b.cliente_id ORDER BY b.nombre`);
     }
