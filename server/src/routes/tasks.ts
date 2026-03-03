@@ -32,6 +32,10 @@ const createTaskSchema = z.object({
     tipo_entregable_id: z.string().min(1),
     cantidad: z.number().int().min(1).max(999).default(1),
   })).max(20).optional(),
+  estimated_hours: z.number().min(0).max(9999).nullable().optional(),
+  recurrence_type: z.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly', 'custom']).optional().default('none'),
+  recurrence_interval: z.number().int().min(1).max(365).nullable().optional(),
+  recurrence_end_date: z.string().nullable().optional(),
 });
 
 /** Fire-and-forget notification. Only sends if userId is a non-empty string. */
@@ -325,12 +329,13 @@ tasksRouter.post('/tasks', requireAuth, async (req: AuthRequest, res) => {
     const primaryResponsable = responsableIds[0] || null;
 
     await query(
-      `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, body.check_done ? 1 : 0, body.brand_id, body.desk_id || null, body.titulo_tarea, body.detalle || null,
         body.cantidad_entregables ?? 1, primaryResponsable, body.departamento || null,
         body.prioridad || 'media', body.estado || 'backlog', body.fecha_inicio || null, body.fecha_entrega,
-        enlaces, body.sprint_id || null, body.story_points ?? null, body.feature_id || null, body.task_type_id || null, body.tipo_entregable_id || null, req.userId ?? null
+        enlaces, body.sprint_id || null, body.story_points ?? null, body.feature_id || null, body.task_type_id || null, body.tipo_entregable_id || null, req.userId ?? null,
+        body.estimated_hours ?? null, body.recurrence_type || 'none', body.recurrence_interval ?? null, body.recurrence_end_date || null
       ]
     );
 
@@ -396,6 +401,8 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       tiempo_trabajado: 'tiempo_trabajado', timer_activo: 'timer_activo', timer_inicio: 'timer_inicio',
       sprint_id: 'sprint_id', story_points: 'story_points', feature_id: 'feature_id',
       task_type_id: 'task_type_id', tipo_entregable_id: 'tipo_entregable_id', is_favorite: 'is_favorite',
+      estimated_hours: 'estimated_hours', recurrence_type: 'recurrence_type',
+      recurrence_interval: 'recurrence_interval', recurrence_end_date: 'recurrence_end_date',
     };
 
     for (const [k, col] of Object.entries(map)) {
@@ -488,6 +495,16 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
     if (body.responsable_user_id !== undefined && !Array.isArray(body.responsable_ids) && oldRow?.responsable_user_id !== newRespId && newRespId && newRespId !== req.userId) {
       const tituloNotif: string = asString(oldRow?.titulo_tarea) || 'Tarea';
       notifyUser(newRespId, `Se te asignó la tarea: ${tituloNotif}`, id);
+    }
+
+    // Recurrence: spawn next instance when a recurring task is completed
+    const isNowCompleted = (
+      (body.check_done === true && !Number(oldRow?.check_done)) ||
+      (body.estado === 'entregado' && oldRow?.estado !== 'entregado')
+    );
+    const recurrenceType = oldRow?.recurrence_type;
+    if (isNowCompleted && recurrenceType && recurrenceType !== 'none') {
+      spawnNextRecurrence(oldRow, req.userId!).catch((e) => console.error('[Recurrence] Error spawning next:', e));
     }
 
     // Log changes
@@ -828,3 +845,66 @@ tasksRouter.post('/tasks/bulk-delete', requireAuth, async (req: AuthRequest, res
     res.status(500).json({ error: 'Error al eliminar tareas' });
   }
 });
+
+// ========== RECURRENCE HELPERS ==========
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + months);
+  return result;
+}
+
+async function spawnNextRecurrence(parentTask: any, userId: string): Promise<void> {
+  if (parentTask.recurrence_end_date) {
+    const endDate = new Date(parentTask.recurrence_end_date);
+    if (new Date() > endDate) return;
+  }
+
+  const currentDue = new Date(parentTask.fecha_entrega);
+  let nextDue: Date;
+  switch (parentTask.recurrence_type) {
+    case 'daily': nextDue = addDays(currentDue, 1); break;
+    case 'weekly': nextDue = addDays(currentDue, 7); break;
+    case 'biweekly': nextDue = addDays(currentDue, 14); break;
+    case 'monthly': nextDue = addMonths(currentDue, 1); break;
+    case 'custom': nextDue = addDays(currentDue, parentTask.recurrence_interval || 7); break;
+    default: return;
+  }
+
+  let nextStart: string | null = null;
+  if (parentTask.fecha_inicio) {
+    const origStart = new Date(parentTask.fecha_inicio);
+    const origDue = new Date(parentTask.fecha_entrega);
+    const diffMs = origDue.getTime() - origStart.getTime();
+    nextStart = new Date(nextDue.getTime() - diffMs).toISOString().slice(0, 10);
+  }
+
+  const newId = uuid();
+  const recurrenceParent = parentTask.recurrence_parent_id || parentTask.id;
+
+  await query(
+    `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle,
+     cantidad_entregables, responsable_user_id, departamento, prioridad, estado,
+     fecha_inicio, fecha_entrega, enlaces, feature_id, task_type_id,
+     tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval,
+     recurrence_end_date, recurrence_parent_id)
+     VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [newId, parentTask.brand_id, parentTask.desk_id, parentTask.titulo_tarea,
+     parentTask.detalle, parentTask.cantidad_entregables, parentTask.responsable_user_id,
+     parentTask.departamento, parentTask.prioridad, nextStart,
+     nextDue.toISOString().slice(0, 10), parentTask.enlaces,
+     parentTask.feature_id, parentTask.task_type_id, parentTask.tipo_entregable_id,
+     userId, parentTask.estimated_hours, parentTask.recurrence_type,
+     parentTask.recurrence_interval, parentTask.recurrence_end_date, recurrenceParent]
+  );
+
+  // Copy responsables
+  const resps = await query<any[]>('SELECT user_id FROM task_responsables WHERE task_id = ?', [parentTask.id]);
+  for (const r of resps) {
+    await query('INSERT IGNORE INTO task_responsables (id, task_id, user_id) VALUES (?, ?, ?)', [uuid(), newId, r.user_id]);
+  }
+}

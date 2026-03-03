@@ -67,6 +67,8 @@ import {
   Star,
   SlidersHorizontal,
   FolderOpen,
+  Repeat,
+  Clock,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -82,6 +84,7 @@ import { BulkActions } from '@/components/tasks/BulkActions';
 import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 import { sendTaskNotification } from '@/lib/api';
 import { RichTextEditor, RichTextViewer } from '@/components/RichTextEditor';
+import { CustomFieldsForm } from '@/components/tasks/CustomFieldsForm';
 
 interface Task {
   id: string;
@@ -125,6 +128,11 @@ interface Task {
   is_read?: boolean;
   read_count?: number;
   deliverable_types_list?: { tipo_entregable_id: string; nombre: string; cantidad: number }[];
+  estimated_hours?: number | null;
+  recurrence_type?: 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
+  recurrence_interval?: number | null;
+  recurrence_end_date?: string | null;
+  recurrence_parent_id?: string | null;
 }
 
 interface Brand {
@@ -169,6 +177,7 @@ export default function Tasks() {
   const [saving, setSaving] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([]);
   const [pendingDriveFiles, setPendingDriveFiles] = useState<DriveFile[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, unknown>>({});
   const [showDrivePicker, setShowDrivePicker] = useState(false);
   const [page, setPage] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
@@ -269,6 +278,10 @@ export default function Tasks() {
     task_type_id: '',
     tipo_entregable_id: '',
     entregables: [{ tipo_entregable_id: '', cantidad: 1 }] as { tipo_entregable_id: string; cantidad: number }[],
+    estimated_hours: '' as string,
+    recurrence_type: 'none' as string,
+    recurrence_interval: 7,
+    recurrence_end_date: '',
   });
 
   useEffect(() => {
@@ -473,11 +486,20 @@ export default function Tasks() {
         task_type_id: formData.task_type_id || null,
         tipo_entregable_id: validEntregables[0]?.tipo_entregable_id || formData.tipo_entregable_id || null,
         entregables: validEntregables.map(e => ({ tipo_entregable_id: e.tipo_entregable_id, cantidad: e.cantidad })),
+        estimated_hours: formData.estimated_hours ? parseFloat(formData.estimated_hours) : null,
+        recurrence_type: formData.recurrence_type || 'none',
+        recurrence_interval: formData.recurrence_type === 'custom' ? formData.recurrence_interval : null,
+        recurrence_end_date: formData.recurrence_end_date || null,
       };
 
       if (selectedTask) {
         const result: any = await api.patchTask(selectedTask.id, taskData);
         if (result?.error) throw new Error(result.error);
+        // Save custom field values
+        const cfEntries = Object.entries(customFieldValues).filter(([, v]) => v !== '' && v != null);
+        if (cfEntries.length > 0) {
+          await api.saveTaskCustomFields(selectedTask.id, cfEntries.map(([field_id, value]) => ({ field_id, value }))).catch(() => {});
+        }
         toast.success('Tarea actualizada');
         setDialogOpen(false);
         resetForm();
@@ -500,6 +522,14 @@ export default function Tasks() {
             } catch { /* silent */ }
           }
           setPendingDriveFiles([]);
+        }
+
+        // Save custom field values
+        if (insertedTask?.id) {
+          const cfEntries = Object.entries(customFieldValues).filter(([, v]) => v !== '' && v != null);
+          if (cfEntries.length > 0) {
+            await api.saveTaskCustomFields(insertedTask.id, cfEntries.map(([field_id, value]) => ({ field_id, value }))).catch(() => {});
+          }
         }
 
         toast.success('Tarea creada');
@@ -568,11 +598,16 @@ export default function Tasks() {
       task_type_id: '',
       tipo_entregable_id: '',
       entregables: [{ tipo_entregable_id: '', cantidad: 1 }],
+      estimated_hours: '',
+      recurrence_type: 'none',
+      recurrence_interval: 7,
+      recurrence_end_date: '',
     });
     setSelectedTask(null);
     setPendingFiles([]);
     setPendingDriveFiles([]);
     setShowDrivePicker(false);
+    setCustomFieldValues({});
   };
 
   const openEditDialog = (task: Task) => {
@@ -606,6 +641,10 @@ export default function Tasks() {
       task_type_id: task.task_type_id || '',
       tipo_entregable_id: task.tipo_entregable_id || '',
       entregables,
+      estimated_hours: task.estimated_hours != null ? String(task.estimated_hours) : '',
+      recurrence_type: task.recurrence_type || 'none',
+      recurrence_interval: task.recurrence_interval || 7,
+      recurrence_end_date: task.recurrence_end_date ? task.recurrence_end_date.substring(0, 10) : '',
     });
     setDialogOpen(true);
   };
@@ -1216,6 +1255,64 @@ export default function Tasks() {
                     />
                   </div>
 
+                  <div className="space-y-2">
+                    <Label htmlFor="estimated_hours">Horas Estimadas</Label>
+                    <Input
+                      id="estimated_hours"
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      placeholder="Ej: 4.5"
+                      value={formData.estimated_hours}
+                      onChange={(e) => setFormData({ ...formData, estimated_hours: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Recurrencia</Label>
+                    <Select
+                      value={formData.recurrence_type}
+                      onValueChange={(value) => setFormData({ ...formData, recurrence_type: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Ninguna</SelectItem>
+                        <SelectItem value="daily">Diaria</SelectItem>
+                        <SelectItem value="weekly">Semanal</SelectItem>
+                        <SelectItem value="biweekly">Quincenal</SelectItem>
+                        <SelectItem value="monthly">Mensual</SelectItem>
+                        <SelectItem value="custom">Personalizada</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {formData.recurrence_type === 'custom' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="recurrence_interval">Intervalo (días)</Label>
+                      <Input
+                        id="recurrence_interval"
+                        type="number"
+                        min="1"
+                        value={formData.recurrence_interval}
+                        onChange={(e) => setFormData({ ...formData, recurrence_interval: parseInt(e.target.value) || 1 })}
+                      />
+                    </div>
+                  )}
+
+                  {formData.recurrence_type !== 'none' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="recurrence_end_date">Fin Recurrencia (opcional)</Label>
+                      <Input
+                        id="recurrence_end_date"
+                        type="date"
+                        value={formData.recurrence_end_date}
+                        onChange={(e) => setFormData({ ...formData, recurrence_end_date: e.target.value })}
+                      />
+                    </div>
+                  )}
+
                   <div className="col-span-1 sm:col-span-2 space-y-2">
                     <Label htmlFor="detalle">Detalle</Label>
                     <RichTextEditor
@@ -1234,6 +1331,15 @@ export default function Tasks() {
                       onChange={(e) => setFormData({ ...formData, enlaces: e.target.value })}
                       rows={2}
                       placeholder="https://..."
+                    />
+                  </div>
+
+                  <div className="col-span-1 sm:col-span-2">
+                    <CustomFieldsForm
+                      taskId={selectedTask?.id}
+                      brandId={formData.brand_id}
+                      values={customFieldValues}
+                      onChange={(fieldId, value) => setCustomFieldValues(prev => ({ ...prev, [fieldId]: value }))}
                     />
                   </div>
 
@@ -1631,6 +1737,14 @@ export default function Tasks() {
                                 >
                                   {task.titulo_tarea}
                                 </span>
+                                {task.recurrence_type && task.recurrence_type !== 'none' && (
+                                  <Repeat className="h-3.5 w-3.5 text-blue-500 shrink-0" title="Tarea recurrente" />
+                                )}
+                                {task.estimated_hours != null && task.estimated_hours > 0 && (
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0" title="Horas estimadas">
+                                    <Clock className="h-3 w-3" />{task.estimated_hours}h
+                                  </span>
+                                )}
                               </div>
                             </TableCell>
                             {visibleCols.marca && <TableCell><span className="text-sm">{task.brands?.nombre || '-'}</span></TableCell>}

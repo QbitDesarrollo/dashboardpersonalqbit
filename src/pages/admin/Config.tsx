@@ -177,6 +177,13 @@ export default function AdminConfig() {
   const [notifSaving, setNotifSaving] = useState(false);
 
   const [chatEnabled, setChatEnabled] = useState(false);
+
+  // Custom Fields state
+  const [customFields, setCustomFields] = useState<{ id: string; name: string; field_type: string; options?: string[]; brand_id?: string | null; is_required: boolean; is_active: boolean; sort_order: number }[]>([]);
+  const [cfDialogOpen, setCfDialogOpen] = useState(false);
+  const [cfSaving, setCfSaving] = useState(false);
+  const [cfForm, setCfForm] = useState({ name: '', field_type: 'text' as string, options: '', is_required: false });
+  const [selectedCf, setSelectedCf] = useState<string | null>(null);
   const [chatSaving, setChatSaving] = useState(false);
 
   const [driveEnabled, setDriveEnabled] = useState(false);
@@ -224,6 +231,8 @@ export default function AdminConfig() {
       }
       if (Array.isArray(templates)) setEmailTemplates(templates);
       if (Array.isArray(desksData)) setDesks(desksData);
+      // Custom fields
+      api.getCustomFieldDefinitions().then((cf: any[]) => { if (Array.isArray(cf)) setCustomFields(cf); }).catch(() => {});
       if (settings && typeof settings === 'object') {
         setScrumDeskId(settings.scrum_desk_id ?? '');
         // Parse daily meetings settings
@@ -553,7 +562,7 @@ export default function AdminConfig() {
 
       <Tabs defaultValue="tipos" className="w-full">
         <div className="overflow-x-auto -mx-1">
-          <TabsList className="grid w-full min-w-max grid-cols-11 max-w-5xl">
+          <TabsList className="grid w-full min-w-max grid-cols-12 max-w-5xl">
             <TabsTrigger value="tipos" className="text-xs sm:text-sm">Tipos</TabsTrigger>
             <TabsTrigger value="apariencia" className="text-xs sm:text-sm">Apariencia</TabsTrigger>
             <TabsTrigger value="permisos" className="text-xs sm:text-sm">Permisos</TabsTrigger>
@@ -561,6 +570,7 @@ export default function AdminConfig() {
             <TabsTrigger value="correos" className="text-xs sm:text-sm">Correos</TabsTrigger>
             <TabsTrigger value="scrum" className="text-xs sm:text-sm">Scrum</TabsTrigger>
             <TabsTrigger value="reuniones" className="text-xs sm:text-sm">Reuniones</TabsTrigger>
+            <TabsTrigger value="campos" className="text-xs sm:text-sm">Campos</TabsTrigger>
             <TabsTrigger value="notificaciones" className="text-xs sm:text-sm">Sonido</TabsTrigger>
             <TabsTrigger value="chat" className="text-xs sm:text-sm">Chat</TabsTrigger>
             <TabsTrigger value="drive" className="text-xs sm:text-sm">Drive</TabsTrigger>
@@ -1361,6 +1371,133 @@ export default function AdminConfig() {
               </form>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="campos" className="mt-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-lg">Campos Personalizados</CardTitle>
+              <Button size="sm" variant="outline" onClick={() => {
+                setSelectedCf(null);
+                setCfForm({ name: '', field_type: 'text', options: '', is_required: false });
+                setCfDialogOpen(true);
+              }}>
+                <Plus className="h-4 w-4 mr-1" />
+                Añadir
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {customFields.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No hay campos personalizados definidos.</p>
+              ) : (
+                <div className="space-y-2">
+                  {customFields.map((cf) => (
+                    <div key={cf.id} className="flex items-center justify-between gap-2 p-3 rounded-lg border border-border bg-muted/20">
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="text-[10px]">{cf.field_type}</Badge>
+                        <span className="font-medium text-sm">{cf.name}</span>
+                        {cf.is_required && <Badge variant="secondary" className="text-[10px]">Requerido</Badge>}
+                        {!cf.is_active && <Badge variant="destructive" className="text-[10px]">Inactivo</Badge>}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                          setSelectedCf(cf.id);
+                          setCfForm({
+                            name: cf.name,
+                            field_type: cf.field_type,
+                            options: cf.options?.join(', ') || '',
+                            is_required: cf.is_required,
+                          });
+                          setCfDialogOpen(true);
+                        }}>
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={async () => {
+                          if (!confirm('¿Eliminar este campo?')) return;
+                          try {
+                            await api.deleteCustomFieldDefinition(cf.id);
+                            setCustomFields(prev => prev.filter(f => f.id !== cf.id));
+                            toast.success('Campo eliminado');
+                          } catch { toast.error('Error al eliminar'); }
+                        }}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Dialog open={cfDialogOpen} onOpenChange={setCfDialogOpen}>
+            <DialogContent aria-describedby="cf-dialog-desc">
+              <DialogHeader>
+                <DialogTitle>{selectedCf ? 'Editar' : 'Nuevo'} Campo Personalizado</DialogTitle>
+                <DialogDescription id="cf-dialog-desc">Define un campo personalizado para tareas.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setCfSaving(true);
+                try {
+                  const payload: Record<string, unknown> = {
+                    name: cfForm.name,
+                    field_type: cfForm.field_type,
+                    is_required: cfForm.is_required,
+                  };
+                  if (cfForm.field_type === 'select') {
+                    payload.options = cfForm.options.split(',').map(o => o.trim()).filter(Boolean);
+                  }
+                  if (selectedCf) {
+                    await api.patchCustomFieldDefinition(selectedCf, payload);
+                    toast.success('Campo actualizado');
+                  } else {
+                    await api.createCustomFieldDefinition(payload);
+                    toast.success('Campo creado');
+                  }
+                  setCfDialogOpen(false);
+                  api.getCustomFieldDefinitions().then((cf: any[]) => { if (Array.isArray(cf)) setCustomFields(cf); }).catch(() => {});
+                } catch { toast.error('Error al guardar'); }
+                finally { setCfSaving(false); }
+              }} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Nombre *</Label>
+                  <Input value={cfForm.name} onChange={(e) => setCfForm(prev => ({ ...prev, name: e.target.value }))} required />
+                </div>
+                <div className="space-y-2">
+                  <Label>Tipo</Label>
+                  <Select value={cfForm.field_type} onValueChange={(v) => setCfForm(prev => ({ ...prev, field_type: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="text">Texto</SelectItem>
+                      <SelectItem value="number">Número</SelectItem>
+                      <SelectItem value="date">Fecha</SelectItem>
+                      <SelectItem value="select">Selección</SelectItem>
+                      <SelectItem value="checkbox">Checkbox</SelectItem>
+                      <SelectItem value="url">URL</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {cfForm.field_type === 'select' && (
+                  <div className="space-y-2">
+                    <Label>Opciones (separadas por coma)</Label>
+                    <Input value={cfForm.options} onChange={(e) => setCfForm(prev => ({ ...prev, options: e.target.value }))} placeholder="Opción 1, Opción 2, ..." />
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <Label>¿Requerido?</Label>
+                  <Switch checked={cfForm.is_required} onCheckedChange={(checked) => setCfForm(prev => ({ ...prev, is_required: checked }))} />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setCfDialogOpen(false)}>Cancelar</Button>
+                  <Button type="submit" disabled={cfSaving}>
+                    {cfSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                    {selectedCf ? 'Guardar' : 'Crear'}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

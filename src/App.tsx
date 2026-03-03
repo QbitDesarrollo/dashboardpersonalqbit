@@ -48,6 +48,7 @@ const Automations = lazy(() => import("./pages/admin/Automations"));
 const Integrations = lazy(() => import("./pages/admin/Integrations"));
 const GoogleAuthSuccess = lazy(() => import("./pages/GoogleAuthSuccess"));
 const MiPerfil = lazy(() => import("./pages/MiPerfil"));
+const CustomDashboard = lazy(() => import("./pages/CustomDashboard"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -93,6 +94,12 @@ const App = () => (
             <Route path="/perfil" element={
               <ProtectedRoute>
                 <AppLayout><MiPerfil /></AppLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/mi-dashboard" element={
+              <ProtectedRoute>
+                <AppLayout><CustomDashboard /></AppLayout>
               </ProtectedRoute>
             } />
 

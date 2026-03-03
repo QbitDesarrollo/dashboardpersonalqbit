@@ -1054,3 +1054,86 @@ export async function getGeminiSummary(type: 'tasks' | 'comments' | 'sprint' | '
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+// ========== Custom Fields ==========
+export async function getCustomFieldDefinitions(brandId?: string) {
+  const url = brandId
+    ? `/api/data/custom-fields/definitions?brand_id=${encodeURIComponent(brandId)}`
+    : '/api/data/custom-fields/definitions';
+  const res = await request(url);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function createCustomFieldDefinition(data: Record<string, unknown>) {
+  const res = await request('/api/data/custom-fields/definitions', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function patchCustomFieldDefinition(id: string, data: Record<string, unknown>) {
+  const res = await request(`/api/data/custom-fields/definitions/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteCustomFieldDefinition(id: string) {
+  const res = await request(`/api/data/custom-fields/definitions/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTaskCustomFields(taskId: string) {
+  const res = await request(`/api/data/tasks/${taskId}/custom-fields`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function saveTaskCustomFields(taskId: string, fields: { field_id: string; value: unknown }[]) {
+  const res = await request(`/api/data/tasks/${taskId}/custom-fields`, {
+    method: 'PUT',
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== Custom Dashboards ==========
+export async function getDashboards() {
+  const res = await request('/api/data/dashboards');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getDashboard(id: string) {
+  const res = await request(`/api/data/dashboards/${id}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function createDashboard(data: Record<string, unknown>) {
+  const res = await request('/api/data/dashboards', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function patchDashboard(id: string, data: Record<string, unknown>) {
+  const res = await request(`/api/data/dashboards/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteDashboard(id: string) {
+  const res = await request(`/api/data/dashboards/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getWidgetData(type: string, brandId?: string) {
+  const url = brandId
+    ? `/api/data/dashboards/widget-data/${type}?brand_id=${encodeURIComponent(brandId)}`
+    : `/api/data/dashboards/widget-data/${type}`;
+  const res = await request(url);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}

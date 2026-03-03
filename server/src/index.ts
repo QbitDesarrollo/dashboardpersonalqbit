@@ -36,6 +36,8 @@ import { integrationsRouter } from './routes/integrations.js';
 import { googleCalendarRouter } from './routes/google-calendar.js';
 import { googleDriveRouter } from './routes/google-drive.js';
 import { geminiRouter } from './routes/gemini.js';
+import { customFieldsRouter } from './routes/custom-fields.js';
+import { dashboardsRouter } from './routes/dashboards.js';
 
 // --- Validate required env vars at startup ---
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'tiusdei-secret-change-me') {
@@ -142,6 +144,8 @@ app.use('/api/data', integrationsRouter);
 app.use('/api/data', googleCalendarRouter);
 app.use('/api/data', googleDriveRouter);
 app.use('/api/data', geminiRouter);
+app.use('/api/data', customFieldsRouter);
+app.use('/api/data', dashboardsRouter);
 app.use('/api/config', configRouter);
 app.use('/api/email', emailRouter);
 app.use('/api/notifications', notificationsRouter);

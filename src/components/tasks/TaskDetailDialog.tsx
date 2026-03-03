@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Eye, Calendar, Loader2 } from 'lucide-react';
+import { Eye, Calendar, Loader2, Clock, Repeat } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, getInitials } from '@/lib/utils';
 import { TaskTimer } from '@/components/tasks/TaskTimer';
@@ -46,6 +46,10 @@ interface TaskData {
   task_type?: { nombre: string } | null;
   deliverable_type?: { nombre: string } | null;
   created_by_profile?: { nombre: string; avatar_url: string | null } | null;
+  estimated_hours?: number | null;
+  recurrence_type?: string;
+  recurrence_interval?: number | null;
+  recurrence_end_date?: string | null;
 }
 
 const getPriorityColor = (prioridad: string) => {
@@ -167,6 +171,12 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
               {task.task_type && <Badge variant="outline">{task.task_type.nombre}</Badge>}
               {task.deliverable_type && <Badge variant="outline" className="text-xs">{task.deliverable_type.nombre}</Badge>}
               {task.sprint && <Badge variant="outline" className="text-xs">{task.sprint.name}</Badge>}
+              {task.recurrence_type && task.recurrence_type !== 'none' && (
+                <Badge variant="outline" className="text-xs text-blue-600 border-blue-300 gap-1">
+                  <Repeat className="h-3 w-3" />
+                  Recurrente
+                </Badge>
+              )}
             </div>
 
             {/* Two-column layout */}
@@ -203,6 +213,39 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                     <div>
                       <span className="text-muted-foreground text-xs block">Story Points</span>
                       <span className="font-medium">{task.story_points}</span>
+                    </div>
+                  )}
+                  {task.estimated_hours != null && task.estimated_hours > 0 && (
+                    <div>
+                      <span className="text-muted-foreground text-xs block">Estimado vs Real</span>
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="font-medium">{task.estimated_hours}h est.</span>
+                        <span className="text-muted-foreground">/</span>
+                        <span className={cn("font-medium", (task.tiempo_trabajado || 0) > task.estimated_hours * 3600 ? "text-destructive" : "text-green-600")}>
+                          {((task.tiempo_trabajado || 0) / 3600).toFixed(1)}h real
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {task.recurrence_type && task.recurrence_type !== 'none' && (
+                    <div>
+                      <span className="text-muted-foreground text-xs block">Recurrencia</span>
+                      <div className="flex items-center gap-1.5">
+                        <Repeat className="h-3.5 w-3.5 text-blue-500" />
+                        <span className="font-medium capitalize">
+                          {task.recurrence_type === 'daily' ? 'Diaria' :
+                           task.recurrence_type === 'weekly' ? 'Semanal' :
+                           task.recurrence_type === 'biweekly' ? 'Quincenal' :
+                           task.recurrence_type === 'monthly' ? 'Mensual' :
+                           `Cada ${task.recurrence_interval || '?'} días`}
+                        </span>
+                        {task.recurrence_end_date && (
+                          <span className="text-xs text-muted-foreground">
+                            hasta {parseLocalDate(task.recurrence_end_date).toLocaleDateString('es-ES')}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
                   {task.feature && (

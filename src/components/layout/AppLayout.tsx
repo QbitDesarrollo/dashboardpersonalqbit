@@ -40,6 +40,7 @@ import {
   PanelLeftOpen,
   Bell,
   Briefcase,
+  BarChart3,
   Pin,
   PinOff,
   Check,
@@ -85,6 +86,7 @@ const navigation: NavItem[] = [
   { title: 'Archivos', href: '/archivos', icon: <Files className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
   { title: 'Plantillas', href: '/plantillas', icon: <LayoutTemplate className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
   { title: 'Informes', href: '/informes', icon: <FileText className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
+  { title: 'Mi Dashboard', href: '/mi-dashboard', icon: <BarChart3 className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
   { title: 'Portal Cliente', href: '/cliente', icon: <Briefcase className="h-5 w-5" />, roles: ['cliente'] },
 ];
 
