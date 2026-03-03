@@ -49,6 +49,7 @@ const Integrations = lazy(() => import("./pages/admin/Integrations"));
 const GoogleAuthSuccess = lazy(() => import("./pages/GoogleAuthSuccess"));
 const MiPerfil = lazy(() => import("./pages/MiPerfil"));
 const CustomDashboard = lazy(() => import("./pages/CustomDashboard"));
+const TeamMonitor = lazy(() => import("./pages/admin/TeamMonitor"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -255,6 +256,11 @@ const App = () => (
             <Route path="/admin/configuracion" element={
               <ProtectedRoute allowedRoles={['admin', 'ops']}>
                 <AppLayout><AdminConfig /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/monitor" element={
+              <ProtectedRoute allowedRoles={['admin', 'ops']}>
+                <AppLayout><TeamMonitor /></AppLayout>
               </ProtectedRoute>
             } />
 

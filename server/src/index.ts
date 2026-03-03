@@ -38,6 +38,10 @@ import { googleDriveRouter } from './routes/google-drive.js';
 import { geminiRouter } from './routes/gemini.js';
 import { customFieldsRouter } from './routes/custom-fields.js';
 import { dashboardsRouter } from './routes/dashboards.js';
+import { timeSessionsRouter } from './routes/time-sessions.js';
+import { activityTrackingRouter } from './routes/activity-tracking.js';
+import { attendanceRouter } from './routes/attendance.js';
+import { teamMonitorRouter } from './routes/team-monitor.js';
 
 // --- Validate required env vars at startup ---
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'tiusdei-secret-change-me') {
@@ -146,6 +150,10 @@ app.use('/api/data', googleDriveRouter);
 app.use('/api/data', geminiRouter);
 app.use('/api/data', customFieldsRouter);
 app.use('/api/data', dashboardsRouter);
+app.use('/api/data', timeSessionsRouter);
+app.use('/api/data', activityTrackingRouter);
+app.use('/api/data', attendanceRouter);
+app.use('/api/data', teamMonitorRouter);
 app.use('/api/config', configRouter);
 app.use('/api/email', emailRouter);
 app.use('/api/notifications', notificationsRouter);
@@ -161,6 +169,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 import { runDeadlineWarning } from './jobs/deadlineWarning.js';
+import { runInactivityMonitor } from './jobs/inactivityMonitor.js';
 
 const httpServer = http.createServer(app);
 setupSocket(httpServer);
@@ -173,5 +182,8 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   const INTERVAL_MS = 24 * 60 * 60 * 1000;
   setTimeout(() => runDeadlineWarning(), 60 * 1000);
   setInterval(runDeadlineWarning, INTERVAL_MS);
+
+  // Job: monitor de inactividad (cada 60 segundos)
+  setInterval(runInactivityMonitor, 60 * 1000);
   console.log('[TIUSDEI API] WebSocket (comentarios en tiempo real) activo');
 });

@@ -41,6 +41,7 @@ import {
   Bell,
   Briefcase,
   BarChart3,
+  MonitorCheck,
   Pin,
   PinOff,
   Check,
@@ -70,6 +71,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { GlobalSearch } from '@/components/GlobalSearch';
 import { ChatBubble } from '@/components/chat/ChatBubble';
 import { GeminiPanel } from '@/components/gemini/GeminiPanel';
+import { TimeSessionProvider, useTimeSession } from '@/contexts/TimeSessionContext';
+import { CheckInWidget } from '@/components/time-doctor/CheckInWidget';
 
 interface NavItem {
   title: string;
@@ -98,6 +101,7 @@ const adminNavigation: NavItem[] = [
   { title: 'Integraciones', href: '/admin/integraciones', icon: <MessageCircle className="h-5 w-5" /> },
   { title: 'Automatizaciones', href: '/admin/automatizaciones', icon: <Zap className="h-5 w-5" /> },
   { title: 'Formularios públicos', href: '/admin/formularios', icon: <FileText className="h-5 w-5" /> },
+  { title: 'Monitor Equipo', href: '/admin/monitor', icon: <MonitorCheck className="h-5 w-5" /> },
   { title: 'Configuración', href: '/admin/configuracion', icon: <Settings className="h-5 w-5" /> },
 ];
 
@@ -295,6 +299,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
+    <TimeSessionProvider>
     <div className="min-h-screen bg-background flex flex-col lg:flex-row w-full overflow-x-hidden">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
@@ -509,6 +514,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </ScrollArea>
 
+          {/* Check-in widget */}
+          {profile?.rol && ['admin', 'ops', 'equipo'].includes(profile.rol) && (
+            <div className="px-3 pb-2">
+              <CheckInWidget />
+            </div>
+          )}
+
           {/* User section */}
           <div className="p-4 border-t border-sidebar-border">
             <DropdownMenu>
@@ -679,5 +691,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Gemini AI panel */}
       {geminiEnabled && <GeminiPanel />}
     </div>
+    </TimeSessionProvider>
   );
 }

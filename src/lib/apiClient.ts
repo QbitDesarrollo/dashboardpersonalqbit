@@ -1137,3 +1137,133 @@ export async function getWidgetData(type: string, brandId?: string) {
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+// ========== Time Sessions (Time Doctor) ==========
+export async function getActiveTimeSession() {
+  const res = await request('/api/data/time-sessions/active');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function startTimeSession(taskId: string) {
+  const res = await request('/api/data/time-sessions/start', { method: 'POST', body: JSON.stringify({ task_id: taskId }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function stopTimeSession(sessionId: string) {
+  const res = await request(`/api/data/time-sessions/${sessionId}/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function pauseTimeSession(sessionId: string) {
+  const res = await request(`/api/data/time-sessions/${sessionId}/pause`, { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function resumeTimeSession(sessionId: string) {
+  const res = await request(`/api/data/time-sessions/${sessionId}/resume`, { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTimeSessions(params: Record<string, string> = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await request(`/api/data/time-sessions?${qs}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== Activity Tracking ==========
+export async function postActivitySnapshot(timeEntryId: string, counts: { keyboard: number; mouse: number; scroll: number; click: number }) {
+  const res = await request('/api/data/activity-tracking/snapshot', {
+    method: 'POST',
+    body: JSON.stringify({ time_entry_id: timeEntryId, keyboard_events: counts.keyboard, mouse_events: counts.mouse, scroll_events: counts.scroll, click_events: counts.click }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function uploadScreenshot(timeEntryId: string, taskId: string, imageBase64: string) {
+  const res = await request('/api/data/activity-tracking/screenshot', {
+    method: 'POST',
+    body: JSON.stringify({ time_entry_id: timeEntryId, task_id: taskId, image_base64: imageBase64 }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getScreenshots(params: Record<string, string> = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await request(`/api/data/activity-tracking/screenshots?${qs}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== Attendance ==========
+export async function checkIn(notes?: string) {
+  const res = await request('/api/data/attendance/check-in', { method: 'POST', body: JSON.stringify({ notes }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function checkOut() {
+  const res = await request('/api/data/attendance/check-out', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTodayAttendance() {
+  const res = await request('/api/data/attendance/today');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getAttendanceRecords(params: Record<string, string> = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await request(`/api/data/attendance?${qs}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== Team Monitor (Admin) ==========
+export async function getTeamLiveStatus() {
+  const res = await request('/api/data/team-monitor/live');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTeamDailySummary(date?: string) {
+  const qs = date ? `?date=${date}` : '';
+  const res = await request(`/api/data/team-monitor/daily-summary${qs}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTeamScreenshots(userId: string, date?: string) {
+  const params = new URLSearchParams({ user_id: userId });
+  if (date) params.set('date', date);
+  const res = await request(`/api/data/team-monitor/screenshots?${params}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTeamProductivity(dateFrom?: string, dateTo?: string) {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo) params.set('date_to', dateTo);
+  const res = await request(`/api/data/team-monitor/productivity?${params}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTeamAttendance(dateFrom?: string, dateTo?: string) {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo) params.set('date_to', dateTo);
+  const res = await request(`/api/data/team-monitor/attendance?${params}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
