@@ -157,6 +157,9 @@ timeSessionsRouter.get('/time-sessions', requireAuth, async (req: AuthRequest, r
     if (date_from) { where += ' AND te.start_time >= ?'; params.push(date_from); }
     if (date_to) { where += ' AND te.start_time <= ?'; params.push(date_to + ' 23:59:59'); }
 
+    const limitNum = Math.min(Math.max(1, parseInt(limit) || 50), 200);
+    const offsetNum = Math.max(0, parseInt(offset) || 0);
+
     const rows = await query<any[]>(
       `SELECT te.*, t.titulo_tarea, b.nombre as brand_nombre
        FROM time_entries te
@@ -164,8 +167,8 @@ timeSessionsRouter.get('/time-sessions', requireAuth, async (req: AuthRequest, r
        LEFT JOIN brands b ON b.id = t.brand_id
        ${where}
        ORDER BY te.start_time DESC
-       LIMIT ? OFFSET ?`,
-      [...params, parseInt(limit), parseInt(offset)]
+       LIMIT ${limitNum} OFFSET ${offsetNum}`,
+      params
     );
 
     const countRow = await queryOne<{ total: number }>(

@@ -514,13 +514,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </ScrollArea>
 
-          {/* Check-in widget */}
-          {profile?.rol && ['admin', 'ops', 'equipo'].includes(profile.rol) && (
-            <div className="px-3 pb-2">
-              <CheckInWidget />
-            </div>
-          )}
-
           {/* User section */}
           <div className="p-4 border-t border-sidebar-border">
             <DropdownMenu>
@@ -594,8 +587,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2">
               <GlobalSearch />
+              {profile?.rol && ['admin', 'ops', 'equipo'].includes(profile.rol) && (
+                <CheckInWidget />
+              )}
               <Button
                 variant="ghost"
                 size="icon"

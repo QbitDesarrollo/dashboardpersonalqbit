@@ -86,13 +86,16 @@ attendanceRouter.get('/attendance', requireAuth, async (req: AuthRequest, res) =
     if (date_from) { where += ' AND DATE(a.check_in) >= ?'; params.push(date_from); }
     if (date_to) { where += ' AND DATE(a.check_in) <= ?'; params.push(date_to); }
 
+    const limitNum = Math.min(Math.max(1, parseInt(limit) || 50), 200);
+    const offsetNum = Math.max(0, parseInt(offset) || 0);
+
     const rows = await query<any[]>(
       `SELECT a.*, p.nombre, p.avatar_url
        FROM attendance a
        JOIN profiles p ON p.id = a.user_id
        ${where}
-       ORDER BY a.check_in DESC LIMIT ? OFFSET ?`,
-      [...params, parseInt(limit), parseInt(offset)]
+       ORDER BY a.check_in DESC LIMIT ${limitNum} OFFSET ${offsetNum}`,
+      params
     );
 
     res.json({ records: rows });

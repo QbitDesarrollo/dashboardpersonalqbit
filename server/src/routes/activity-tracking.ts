@@ -128,14 +128,17 @@ activityTrackingRouter.get('/activity-tracking/screenshots', requireAuth, async 
       params.push(task_id);
     }
 
+    const limitNum = Math.min(Math.max(1, parseInt(limit) || 50), 200);
+    const offsetNum = Math.max(0, parseInt(offset) || 0);
+
     const rows = await query<any[]>(
       `SELECT s.*, t.titulo_tarea
        FROM screenshots s
        JOIN tasks t ON t.id = s.task_id
        ${where}
        ORDER BY s.captured_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, parseInt(limit), parseInt(offset)]
+       LIMIT ${limitNum} OFFSET ${offsetNum}`,
+      params
     );
 
     res.json({ screenshots: rows });
