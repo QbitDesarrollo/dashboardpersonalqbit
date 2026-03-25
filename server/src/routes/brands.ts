@@ -8,25 +8,67 @@ export const brandsRouter = Router();
 brandsRouter.get('/brands', requireAuth, async (req: AuthRequest, res) => {
   try {
     const role = await getUserRole(req.userId!);
+    const deskId = req.query.desk_id as string | undefined;
     let rows: any[];
-    if (role === 'cliente') {
+
+    if (deskId) {
+      // Filter brands by desk: only brands assigned to this desk via desk_brands
+      // If the desk has NO brands assigned, return ALL brands (backwards compatible)
+      const deskBrandCount = await queryOne<{ cnt: number }>(
+        'SELECT COUNT(*) as cnt FROM desk_brands WHERE desk_id = ?', [deskId]
+      );
+      if (Number(deskBrandCount?.cnt) > 0) {
+        rows = await query<any[]>(
+          `SELECT b.*, c.nombre as cliente_nombre FROM brands b
+           INNER JOIN desk_brands db ON db.brand_id = b.id
+           LEFT JOIN clients c ON c.id = b.cliente_id
+           WHERE db.desk_id = ? ORDER BY b.nombre`,
+          [deskId]
+        );
+      } else {
+        rows = await query<any[]>(
+          `SELECT b.*, c.nombre as cliente_nombre FROM brands b LEFT JOIN clients c ON c.id = b.cliente_id ORDER BY b.nombre`
+        );
+      }
+    } else if (role === 'cliente') {
       const brandIds = await query<{ brand_id: string }[]>('SELECT brand_id FROM client_brands WHERE user_id = ?', [req.userId]);
       const ids = brandIds.map((r) => r.brand_id);
       if (ids.length === 0) { res.json([]); return; }
       const placeholders = ids.map(() => '?').join(',');
       rows = await query<any[]>(`SELECT b.*, c.nombre as cliente_nombre FROM brands b LEFT JOIN clients c ON c.id = b.cliente_id WHERE b.id IN (${placeholders}) ORDER BY b.nombre`, ids);
     } else if (role === 'equipo') {
-      // Equipo solo ve marcas de las tareas en sus mesas o asignadas a él
-      rows = await query<any[]>(
-        `SELECT DISTINCT b.*, c.nombre as cliente_nombre
-         FROM brands b
-         LEFT JOIN clients c ON c.id = b.cliente_id
-         INNER JOIN tasks t ON t.brand_id = b.id
-         LEFT JOIN desk_members dm ON dm.desk_id = t.desk_id AND dm.user_id = ?
-         WHERE dm.user_id IS NOT NULL OR t.responsable_user_id = ?
-         ORDER BY b.nombre`,
-        [req.userId, req.userId]
-      );
+      // Equipo: marcas asignadas a sus mesas via desk_brands, o si no hay desk_brands, todas las de sus tareas
+      const deskRows = await query<{ desk_id: string }[]>('SELECT desk_id FROM desk_members WHERE user_id = ?', [req.userId]);
+      const deskIds = deskRows.map((r) => r.desk_id);
+      if (deskIds.length > 0) {
+        const ph = deskIds.map(() => '?').join(',');
+        const hasDeskBrands = await queryOne<{ cnt: number }>(
+          `SELECT COUNT(*) as cnt FROM desk_brands WHERE desk_id IN (${ph})`, deskIds
+        );
+        if (Number(hasDeskBrands?.cnt) > 0) {
+          rows = await query<any[]>(
+            `SELECT DISTINCT b.*, c.nombre as cliente_nombre FROM brands b
+             INNER JOIN desk_brands db ON db.brand_id = b.id
+             LEFT JOIN clients c ON c.id = b.cliente_id
+             WHERE db.desk_id IN (${ph}) ORDER BY b.nombre`,
+            deskIds
+          );
+        } else {
+          // No desk_brands configured: fallback to brands from tasks
+          rows = await query<any[]>(
+            `SELECT DISTINCT b.*, c.nombre as cliente_nombre
+             FROM brands b
+             LEFT JOIN clients c ON c.id = b.cliente_id
+             INNER JOIN tasks t ON t.brand_id = b.id
+             LEFT JOIN desk_members dm ON dm.desk_id = t.desk_id AND dm.user_id = ?
+             WHERE dm.user_id IS NOT NULL OR t.responsable_user_id = ?
+             ORDER BY b.nombre`,
+            [req.userId, req.userId]
+          );
+        }
+      } else {
+        rows = [];
+      }
     } else {
       rows = await query<any[]>(`SELECT b.*, c.nombre as cliente_nombre FROM brands b LEFT JOIN clients c ON c.id = b.cliente_id ORDER BY b.nombre`);
     }
@@ -40,7 +82,7 @@ brandsRouter.get('/brands', requireAuth, async (req: AuthRequest, res) => {
 
 brandsRouter.post('/brands', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { nombre, cliente_id, activo } = req.body;
     const id = uuid();
@@ -53,9 +95,28 @@ brandsRouter.post('/brands', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+brandsRouter.delete('/brands/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const { id } = req.params;
+    // Desvincular tareas (conservar el registro)
+    await query('UPDATE tasks SET brand_id = NULL WHERE brand_id = ?', [id]);
+    // Eliminar relaciones
+    await query('DELETE FROM desk_brands WHERE brand_id = ?', [id]);
+    await query('DELETE FROM client_brands WHERE brand_id = ?', [id]);
+    // Eliminar marca
+    await query('DELETE FROM brands WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al eliminar marca' });
+  }
+});
+
 brandsRouter.patch('/brands/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const { nombre, cliente_id, activo } = req.body;

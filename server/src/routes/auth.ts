@@ -42,7 +42,7 @@ const registerSchema = z.object({
     .regex(/[A-Za-z]/, 'Al menos una letra')
     .regex(/[0-9]/, 'Al menos un número'),
   nombre: z.string().min(1),
-  rol: z.enum(['admin', 'ops', 'equipo', 'cliente']).optional().default('equipo'),
+  rol: z.enum(['admin', 'ejecutivo', 'equipo', 'cliente']).optional().default('equipo'),
 });
 
 function signToken(userId: string, rol: string): string {
@@ -369,6 +369,8 @@ authRouter.get('/google', (req, res) => {
       'https://www.googleapis.com/auth/userinfo.profile',
       'https://www.googleapis.com/auth/calendar',
       'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/chat.spaces.readonly',
+      'https://www.googleapis.com/auth/chat.messages.readonly',
     ],
     state: mode || 'login',
   });
@@ -401,8 +403,10 @@ authRouter.get('/google/callback', async (req, res) => {
 
     // Actualizar avatar con foto de Google si el usuario no tiene avatar propio
     if (user && gPicture && !user.avatar_url) {
-      await query('UPDATE profiles SET avatar_url = ? WHERE id = ?', [gPicture, user.id]);
-      await query('UPDATE users SET avatar_url = ? WHERE id = ?', [gPicture, user.id]);
+      await Promise.all([
+        query('UPDATE profiles SET avatar_url = ? WHERE id = ?', [gPicture, user.id]),
+        query('UPDATE users SET avatar_url = ? WHERE id = ?', [gPicture, user.id]),
+      ]);
     }
 
     // Try find by email and link Google account
@@ -412,12 +416,14 @@ authRouter.get('/google/callback', async (req, res) => {
         'SELECT id, email, nombre, rol, activo, avatar_url FROM users WHERE email = ? AND activo = 1', [gEmail]
       );
       if (user) {
-        await query('UPDATE users SET google_id = ? WHERE id = ?', [gId, user.id]);
-        // Poner foto de Google como avatar si no tiene uno
+        const linkUpdates: Promise<any>[] = [query('UPDATE users SET google_id = ? WHERE id = ?', [gId, user.id])];
         if (gPicture && !user.avatar_url) {
-          await query('UPDATE profiles SET avatar_url = ? WHERE id = ?', [gPicture, user.id]);
-          await query('UPDATE users SET avatar_url = ? WHERE id = ?', [gPicture, user.id]);
+          linkUpdates.push(
+            query('UPDATE profiles SET avatar_url = ? WHERE id = ?', [gPicture, user.id]),
+            query('UPDATE users SET avatar_url = ? WHERE id = ?', [gPicture, user.id]),
+          );
         }
+        await Promise.all(linkUpdates);
         justLinked = true;
         // If we just linked and there's no refresh_token, redirect to consent flow
         if (!tokens.refresh_token) {
@@ -425,7 +431,7 @@ authRouter.get('/google/callback', async (req, res) => {
           const retryUrl = oauth2Retry.generateAuthUrl({
             access_type: 'offline',
             prompt: 'consent',
-            scope: ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/drive.readonly'],
+            scope: ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/chat.spaces.readonly', 'https://www.googleapis.com/auth/chat.messages.readonly'],
             state: 'link',
           });
           res.redirect(retryUrl);
@@ -448,24 +454,25 @@ authRouter.get('/google/callback', async (req, res) => {
       const rol = 'equipo';
       const randomPass = await bcrypt.hash(uuid(), 10);
       await query('INSERT INTO users (id, email, password_hash, nombre, rol, google_id, avatar_url) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, gEmail, randomPass, gName, rol, gId, gPicture]);
-      await query('INSERT INTO profiles (id, email, nombre, rol, avatar_url) VALUES (?, ?, ?, ?, ?)', [id, gEmail, gName, rol, gPicture]);
-      await query('INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, ?)', [uuid(), id, rol]);
+      await Promise.all([
+        query('INSERT INTO profiles (id, email, nombre, rol, avatar_url) VALUES (?, ?, ?, ?, ?)', [id, gEmail, gName, rol, gPicture]),
+        query('INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, ?)', [uuid(), id, rol]),
+      ]);
       user = { id, email: gEmail, nombre: gName, rol, activo: 1, avatar_url: gPicture };
       console.log('[AUTH] New Google user created:', gEmail);
     }
 
-    // Save Google tokens
+    // Save Google tokens (non-blocking) and generate JWT in parallel
+    const token = signToken(user.id, user.rol);
+    const authExchangeCode = uuid();
     if (tokens.access_token) {
       const expiry = tokens.expiry_date ? new Date(tokens.expiry_date) : null;
-      await query(
+      query(
         `INSERT INTO google_tokens (user_id, access_token, refresh_token, token_expiry, scope) VALUES (?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE access_token = VALUES(access_token), refresh_token = COALESCE(VALUES(refresh_token), refresh_token), token_expiry = VALUES(token_expiry), scope = VALUES(scope)`,
         [user.id, tokens.access_token, tokens.refresh_token || null, expiry, tokens.scope || null]
-      );
+      ).catch(e => console.error('[AUTH] Error saving google tokens:', e));
     }
-
-    const token = signToken(user.id, user.rol);
-    const authExchangeCode = uuid();
     authCodeStore.set(authExchangeCode, { token, expires: Date.now() + 60_000 });
     res.redirect(FRONTEND_URL + '/auth/google/success?code=' + encodeURIComponent(authExchangeCode));
   } catch (error) {

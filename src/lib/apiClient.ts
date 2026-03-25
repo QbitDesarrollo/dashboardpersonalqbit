@@ -117,6 +117,25 @@ export async function removeDeskMember(deskId: string, userId: string) {
   return res.json();
 }
 
+export async function getDeskBrands(deskId: string) {
+  const res = await request(`/api/data/desks/${deskId}/brands`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function addDeskBrands(deskId: string, brandIds: string[]) {
+  const res = await request(`/api/data/desks/${deskId}/brands`, {
+    method: 'POST',
+    body: JSON.stringify({ brand_ids: brandIds }),
+  });
+  return res.json();
+}
+
+export async function removeDeskBrand(deskId: string, brandId: string) {
+  const res = await request(`/api/data/desks/${deskId}/brands/${brandId}`, { method: 'DELETE' });
+  return res.json();
+}
+
 export async function patchProfile(id: string, data: { nombre: string; rol: string; activo: boolean }) {
   const res = await request(`/api/data/profiles/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
   return res.json();
@@ -138,8 +157,14 @@ export async function patchClient(id: string, data: { nombre?: string; email_con
   return res.json();
 }
 
-export async function getBrands() {
-  const res = await request('/api/data/brands');
+export async function deleteClient(id: string) {
+  const res = await request(`/api/data/clients/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
+export async function getBrands(deskId?: string) {
+  const url = deskId ? `/api/data/brands?desk_id=${encodeURIComponent(deskId)}` : '/api/data/brands';
+  const res = await request(url);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -151,6 +176,11 @@ export async function createBrand(data: { nombre: string; cliente_id?: string; a
 
 export async function patchBrand(id: string, data: { nombre?: string; cliente_id?: string; activo?: boolean }) {
   const res = await request(`/api/data/brands/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  return res.json();
+}
+
+export async function deleteBrand(id: string) {
+  const res = await request(`/api/data/brands/${id}`, { method: 'DELETE' });
   return res.json();
 }
 
@@ -481,6 +511,19 @@ export async function uploadFile(taskId: string | null, file: File, nombreArchiv
     xhr.onerror = () => reject(new Error('Error de red'));
     xhr.send(fd);
   });
+}
+
+export async function uploadChatImage(file: File): Promise<{ image_url: string }> {
+  const token = getToken();
+  const fd = new FormData();
+  fd.append('image', file);
+  const res = await fetch(`${API_URL}/api/data/chat/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export async function assignFilesToTask(fileIds: string[], taskId: string) {
@@ -830,6 +873,28 @@ export async function getDeskMeetings(deskId: string, start: string, end: string
   const params = new URLSearchParams({ start, end });
   if (deskId && deskId !== 'all') params.set('desk_id', deskId);
   const res = await request(`/api/data/google-calendar/desk-meetings?${params}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== Google Chat Import ==========
+export async function getGoogleChatSpaces(): Promise<{ spaces: { id: string; displayName: string; type: string }[] }> {
+  const res = await request('/api/data/google-chat/spaces');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function importGoogleChatSpace(spaceId: string, deskId: string): Promise<{ success: boolean; status: string; imported: number; skipped: number; total: number }> {
+  const res = await request('/api/data/google-chat/import', {
+    method: 'POST',
+    body: JSON.stringify({ spaceId, deskId }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getGoogleChatImportStatus(spaceId: string, deskId: string): Promise<{ status: string; imported: number; skipped: number; total: number; error?: string }> {
+  const res = await request(`/api/data/google-chat/import/status?spaceId=${encodeURIComponent(spaceId)}&deskId=${encodeURIComponent(deskId)}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

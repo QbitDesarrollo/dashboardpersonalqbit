@@ -294,7 +294,7 @@ export default function Scrum() {
               {sprint.goal && <span className="truncate max-w-[200px]">{sprint.goal}</span>}
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             {sprint.status === 'planned' && (
               <Button size="sm" variant="default" onClick={(e) => { e.stopPropagation(); handleStatusChange(sprint.id, 'active'); }}>
                 <Play className="h-3 w-3 mr-1" /> Iniciar
@@ -569,7 +569,7 @@ export default function Scrum() {
                     ) : (
                       <div className="divide-y">
                         {sprintStats.tasks.map((task) => (
-                          <div key={task.id} className="flex items-center gap-3 py-2.5">
+                          <div key={task.id} className="flex items-center gap-3 py-2.5 flex-wrap">
                             {task.check_done || ['entregado', 'aprobado'].includes(task.estado) ? (
                               <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
                             ) : task.estado === 'bloqueado' ? (
@@ -641,7 +641,7 @@ export default function Scrum() {
           <h2 className="text-xl font-bold text-foreground">Scrum</h2>
           <p className="text-sm text-muted-foreground">Sprints, backlog y tablero para metodología ágil</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="sm" className="border-primary/30 text-primary" asChild>
             <Link to="/scrum/daily"><Users className="h-4 w-4 mr-1.5" /> Daily</Link>
           </Button>
@@ -669,7 +669,7 @@ export default function Scrum() {
             <DialogTrigger asChild>
               <Button className="gradient-primary"><Plus className="h-4 w-4 mr-2" /> Nuevo Sprint</Button>
             </DialogTrigger>
-            <DialogContent aria-describedby="scrum-sprint-desc">
+            <DialogContent className="max-w-[95vw] sm:max-w-lg" aria-describedby="scrum-sprint-desc">
               <DialogHeader>
                 <DialogTitle>Crear Sprint</DialogTitle>
                 <DialogDescription id="scrum-sprint-desc">Define un nuevo sprint con fechas y objetivo.</DialogDescription>
@@ -683,7 +683,7 @@ export default function Scrum() {
                   <Label>Objetivo (goal)</Label>
                   <Textarea value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} placeholder="Objetivo del sprint" rows={2} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div><Label>Inicio *</Label><Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} required /></div>
                   <div><Label>Fin *</Label><Input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} required /></div>
                 </div>

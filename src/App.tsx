@@ -105,27 +105,27 @@ const App = () => (
             } />
 
             <Route path="/tareas" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Tasks /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/tareas/kanban" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><TasksKanban /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/tareas/gantt" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><TasksGantt /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/tareas/calendario" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><TasksCalendar /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/tareas/workload" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><TasksWorkload /></AppLayout>
               </ProtectedRoute>
             } />
@@ -135,47 +135,47 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/informes" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Reports /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/scrum" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Scrum /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/scrum/features" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><ScrumFeatures /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/scrum/backlog" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><ScrumBacklog /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/scrum/board" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><ScrumBoard /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/scrum/releases" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><ReleasePlanning /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/scrum/tasks" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><ScrumTasks /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/scrum/planning" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><SprintPlanning /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/scrum/daily" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><ScrumDaily /></AppLayout>
               </ProtectedRoute>
             } />
@@ -186,24 +186,24 @@ const App = () => (
             } />
 
             <Route path="/entregables" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Deliverables /></AppLayout>
               </ProtectedRoute>
             } />
 
             <Route path="/daily-mesas" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><DailyMesas /></AppLayout>
               </ProtectedRoute>
             } />
 
             <Route path="/plantillas" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Templates /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/archivos" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops', 'equipo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Files /></AppLayout>
               </ProtectedRoute>
             } />
@@ -221,13 +221,13 @@ const App = () => (
             } />
 
             <Route path="/admin/clientes" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><AdminClients /></AppLayout>
               </ProtectedRoute>
             } />
 
             <Route path="/admin/marcas" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><AdminBrands /></AppLayout>
               </ProtectedRoute>
             } />
@@ -239,27 +239,27 @@ const App = () => (
             } />
 
             <Route path="/admin/integraciones" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><Integrations /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/admin/automatizaciones" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><Automations /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/admin/formularios" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><PublicForms /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/admin/configuracion" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><AdminConfig /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/admin/monitor" element={
-              <ProtectedRoute allowedRoles={['admin', 'ops']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><TeamMonitor /></AppLayout>
               </ProtectedRoute>
             } />

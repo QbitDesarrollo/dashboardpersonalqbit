@@ -170,7 +170,8 @@ export default function TeamMonitor() {
                 className={cn(
                   "transition-all hover:shadow-md",
                   user.session_status === 'active' && "border-green-500/40 bg-green-500/[0.03]",
-                  user.session_status === 'paused' && "border-yellow-500/40 bg-yellow-500/[0.03]"
+                  user.session_status === 'paused' && "border-yellow-500/40 bg-yellow-500/[0.03]",
+                  !user.session_status && user.checked_in_at && !user.checked_out_at && "border-blue-500/40 bg-blue-500/[0.03]"
                 )}
               >
                 <CardContent className="p-4">
@@ -193,7 +194,7 @@ export default function TeamMonitor() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{user.nombre}</span>
-                        <StatusBadge status={user.session_status} hasSession={!!user.session_id} />
+                        <StatusBadge status={user.session_status} hasSession={!!user.session_id} checkedIn={!!user.checked_in_at && !user.checked_out_at} />
                       </div>
 
                       {user.titulo_tarea && (
@@ -575,9 +576,9 @@ function LoadingState() {
   );
 }
 
-function StatusBadge({ status, hasSession }: { status?: string; hasSession: boolean }) {
+function StatusBadge({ status, hasSession, checkedIn }: { status?: string; hasSession: boolean; checkedIn?: boolean }) {
   if (status === 'active') return <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0">Activo</Badge>;
   if (status === 'paused') return <Badge className="bg-yellow-500 text-white text-[10px] px-1.5 py-0">Pausado</Badge>;
-  if (!hasSession) return <Badge variant="outline" className="text-[10px] px-1.5 py-0">Offline</Badge>;
-  return null;
+  if (checkedIn) return <Badge className="bg-blue-500 text-white text-[10px] px-1.5 py-0">Conectado</Badge>;
+  return <Badge variant="outline" className="text-[10px] px-1.5 py-0">Offline</Badge>;
 }

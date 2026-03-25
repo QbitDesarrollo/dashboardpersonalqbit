@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { google } from 'googleapis';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
-import { requireAdminOrOps } from '../middleware/auth.js';
+import { requireAdminOrEjecutivo } from '../middleware/auth.js';
 import { query, queryOne } from '../db/mysql.js';
 import { getAuthedClient, handleExpiredToken } from '../utils/googleAuth.js';
 
@@ -141,7 +141,7 @@ googleCalendarRouter.get('/google-calendar/desk-meetings', requireAuth, async (r
     const rolesRow = await queryOne<{ value: string | null }>(
       "SELECT value FROM site_settings WHERE `key` = 'daily_meetings_roles'"
     );
-    const allowedRoles = (rolesRow?.value || 'admin,ops').split(',').map(r => r.trim()).filter(Boolean);
+    const allowedRoles = (rolesRow?.value || 'admin,ejecutivo').split(',').map(r => r.trim()).filter(Boolean);
     if (!allowedRoles.includes(currentRole)) {
       return res.status(403).json({ error: 'Sin permisos para ver reuniones' });
     }

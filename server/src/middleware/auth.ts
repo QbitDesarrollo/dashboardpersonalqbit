@@ -45,7 +45,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   }
 }
 
-export async function requireAdminOrOps(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+export async function requireAdminOrEjecutivo(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   if (!req.userId) {
     res.status(401).json({ error: 'No autenticado' });
     return;
@@ -53,8 +53,8 @@ export async function requireAdminOrOps(req: AuthRequest, res: Response, next: N
   // Consultar rol actual de la BD para reflejar cambios inmediatos
   const currentRole = await getUserRole(req.userId);
   req.userRole = currentRole;
-  if (currentRole !== 'admin' && currentRole !== 'ops') {
-    res.status(403).json({ error: 'Se requieren permisos de administrador u OPS' });
+  if (currentRole !== 'admin' && currentRole !== 'ejecutivo') {
+    res.status(403).json({ error: 'Se requieren permisos de administrador o ejecutivo' });
     return;
   }
   next();

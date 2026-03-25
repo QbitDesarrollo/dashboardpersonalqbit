@@ -78,18 +78,18 @@ interface NavItem {
   title: string;
   href: string;
   icon: React.ReactNode;
-  roles?: ('admin' | 'ops' | 'equipo' | 'cliente')[];
+  roles?: ('admin' | 'ejecutivo' | 'equipo' | 'cliente')[];
 }
 
 const navigation: NavItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
-  { title: 'Tareas', href: '/tareas', icon: <CheckSquare className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
-  { title: 'Scrum', href: '/scrum', icon: <Target className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
-  { title: 'Daily Mesas', href: '/daily-mesas', icon: <Users className="h-5 w-5" />, roles: ['admin', 'ops'] },
-  { title: 'Archivos', href: '/archivos', icon: <Files className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
-  { title: 'Plantillas', href: '/plantillas', icon: <LayoutTemplate className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
-  { title: 'Informes', href: '/informes', icon: <FileText className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
-  // { title: 'Mi Dashboard', href: '/mi-dashboard', icon: <BarChart3 className="h-5 w-5" />, roles: ['admin', 'ops', 'equipo'] },
+  { title: 'Tareas', href: '/tareas', icon: <CheckSquare className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Scrum', href: '/scrum', icon: <Target className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Daily Mesas', href: '/daily-mesas', icon: <Users className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
+  { title: 'Archivos', href: '/archivos', icon: <Files className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Plantillas', href: '/plantillas', icon: <LayoutTemplate className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Informes', href: '/informes', icon: <FileText className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  // { title: 'Mi Dashboard', href: '/mi-dashboard', icon: <BarChart3 className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Portal Cliente', href: '/cliente', icon: <Briefcase className="h-5 w-5" />, roles: ['cliente'] },
 ];
 
@@ -118,7 +118,7 @@ interface Brand {
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, signOut, isAdmin, isOps } = useAuth();
+  const { profile, signOut, isAdmin, isEjecutivo } = useAuth();
   const { pinnedDeskId, pinnedBrandId, pinnedDeskName, pinnedBrandName, setPinnedDesk, setPinnedBrand, clearFilters, hasActiveFilter } = useGlobalFilter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -288,10 +288,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { setTheme, resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
 
+  // Auto theme by Guayaquil time (UTC-5): dark 18:00-06:00, light 06:00-18:00
+  useEffect(() => {
+    const getGyeHour = () => {
+      const now = new Date();
+      const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+      return new Date(utc - 5 * 3600000).getHours();
+    };
+    const apply = () => {
+      try {
+        const h = getGyeHour();
+        setTheme(h >= 18 || h < 6 ? 'dark' : 'light');
+      } catch {}
+    };
+    const timeout = setTimeout(apply, 500);
+    const interval = setInterval(apply, 60000);
+    return () => { clearTimeout(timeout); clearInterval(interval); };
+  }, []);
+
   const getRoleBadge = (rol: string) => {
     const colors: Record<string, string> = {
       admin: 'bg-primary text-primary-foreground',
-      ops: 'bg-info text-info-foreground',
+      ejecutivo: 'bg-info text-info-foreground',
       equipo: 'bg-success text-success-foreground',
       cliente: 'bg-warning text-warning-foreground',
     };
@@ -419,7 +437,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                             setPinnedDesk(null, null);
                           } else {
                             setPinnedDesk(desk.id, desk.nombre);
+                            navigate('/dashboard');
                           }
+                          setSidebarOpen(false);
                         }}
                         className={cn(
                           "flex items-center justify-between w-full px-3 py-2 rounded-lg text-sm transition-colors",
@@ -476,7 +496,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Admin section */}
-            {(isAdmin || isOps) && (
+            {(isAdmin || isEjecutivo) && (
               <div className="mt-6 px-3">
                 <button
                   onClick={() => setAdminMenuOpen(!adminMenuOpen)}
@@ -589,7 +609,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
             <div className="flex items-center gap-1 sm:gap-2">
               <GlobalSearch />
-              {profile?.rol && ['admin', 'ops', 'equipo'].includes(profile.rol) && (
+              {profile?.rol && ['admin', 'ejecutivo', 'equipo'].includes(profile.rol) && (
                 <CheckInWidget />
               )}
               <Button

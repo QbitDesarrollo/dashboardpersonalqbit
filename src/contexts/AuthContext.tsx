@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as api from '@/lib/apiClient';
 
-type AppRole = 'admin' | 'ops' | 'equipo' | 'cliente';
+type AppRole = 'admin' | 'ejecutivo' | 'equipo' | 'cliente';
 
 interface Profile {
   id: string;
@@ -23,7 +23,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   isAdmin: boolean;
-  isOps: boolean;
+  isEjecutivo: boolean;
   isEquipo: boolean;
   isCliente: boolean;
   canManageTasks: boolean;
@@ -112,11 +112,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isAdmin = profile?.rol === 'admin';
-  const isOps = profile?.rol === 'ops';
+  const isEjecutivo = profile?.rol === 'ejecutivo';
   const isEquipo = profile?.rol === 'equipo';
   const isCliente = profile?.rol === 'cliente';
-  const canManageTasks = isAdmin || isOps || isEquipo;
-  const canViewAll = isAdmin || isOps;
+  const canManageTasks = isAdmin || isEjecutivo || isEquipo;
+  const canViewAll = isAdmin;
 
   return (
     <AuthContext.Provider value={{
@@ -129,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut,
       refreshProfile,
       isAdmin,
-      isOps,
+      isEjecutivo,
       isEquipo,
       isCliente,
       canManageTasks,

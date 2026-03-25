@@ -28,7 +28,8 @@ import {
 } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Plus, Loader2, Trash2, MessageCircle, Calendar, Github } from 'lucide-react';
+import { Plus, Loader2, Trash2, MessageCircle, Calendar, Github, Download, MessageSquare } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 const TYPE_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
   slack: { label: 'Slack', icon: <MessageCircle className="h-4 w-4" /> },
@@ -44,6 +45,14 @@ export default function Integrations() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ type: 'slack' as string, name: '', brand_id: '', webhook_url: '' });
   const [saving, setSaving] = useState(false);
+
+  // Google Chat Import state
+  const [gcSpaces, setGcSpaces] = useState<{ id: string; displayName: string }[]>([]);
+  const [gcDesks, setGcDesks] = useState<{ id: string; nombre: string }[]>([]);
+  const [gcLoading, setGcLoading] = useState(false);
+  const [gcImporting, setGcImporting] = useState<string | null>(null);
+  const [gcMapping, setGcMapping] = useState<Record<string, string>>({}); // spaceId -> deskId
+  const [gcResults, setGcResults] = useState<Record<string, { imported: number; skipped: number; total: number }>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -100,6 +109,74 @@ export default function Integrations() {
       toast.success('Eliminada');
     } catch {
       toast.error('Error');
+    }
+  };
+
+  const loadGoogleSpaces = async () => {
+    setGcLoading(true);
+    try {
+      const [spacesData, desksData] = await Promise.all([
+        api.getGoogleChatSpaces(),
+        api.getDesks(),
+      ]);
+      setGcSpaces(spacesData.spaces || []);
+      setGcDesks(Array.isArray(desksData) ? desksData : []);
+
+      // Auto-map by name similarity
+      const autoMap: Record<string, string> = {};
+      for (const space of (spacesData.spaces || [])) {
+        const sName = space.displayName.toLowerCase();
+        const match = (Array.isArray(desksData) ? desksData : []).find((d: any) => {
+          const dName = d.nombre.toLowerCase();
+          return sName.includes(dName) || dName.includes(sName) ||
+            sName.replace(/\s+/g, '').includes(dName.replace(/\s+/g, '')) ||
+            dName.replace(/\s+/g, '').includes(sName.replace(/\s+/g, ''));
+        });
+        if (match) autoMap[space.id] = match.id;
+      }
+      setGcMapping(autoMap);
+    } catch (e: any) {
+      toast.error(e.message || 'Error al cargar espacios de Google Chat');
+    } finally {
+      setGcLoading(false);
+    }
+  };
+
+  const pollImportStatus = async (spaceId: string, deskId: string) => {
+    const poll = async () => {
+      try {
+        const status = await api.getGoogleChatImportStatus(spaceId, deskId);
+        if (status.status === 'done') {
+          setGcResults(prev => ({ ...prev, [spaceId]: { imported: status.imported, skipped: status.skipped, total: status.total } }));
+          setGcImporting(null);
+          toast.success(`Importados ${status.imported} mensajes (${status.skipped} omitidos)`);
+        } else if (status.status === 'error') {
+          setGcImporting(null);
+          toast.error(status.error || 'Error al importar');
+        } else {
+          // Still in progress — update partial results and poll again
+          setGcResults(prev => ({ ...prev, [spaceId]: { imported: status.imported, skipped: status.skipped, total: status.total } }));
+          setTimeout(poll, 2000);
+        }
+      } catch {
+        setGcImporting(null);
+        toast.error('Error al verificar estado');
+      }
+    };
+    setTimeout(poll, 2000);
+  };
+
+  const handleGcImport = async (spaceId: string) => {
+    const deskId = gcMapping[spaceId];
+    if (!deskId) { toast.error('Selecciona una mesa para este espacio'); return; }
+    setGcImporting(spaceId);
+    try {
+      await api.importGoogleChatSpace(spaceId, deskId);
+      // Start polling for progress
+      pollImportStatus(spaceId, deskId);
+    } catch (e: any) {
+      toast.error(e.message || 'Error al importar');
+      setGcImporting(null);
     }
   };
 
@@ -162,6 +239,72 @@ export default function Integrations() {
                 ))}
               </TableBody>
             </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Google Chat Spaces Import */}
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <MessageSquare className="h-5 w-5 text-blue-500" />
+              <div>
+                <h3 className="font-semibold">Importar Google Chat Spaces</h3>
+                <p className="text-sm text-muted-foreground">Importa el historial de mensajes de tus Espacios de Google Chat a las mesas de Tiusdei</p>
+              </div>
+            </div>
+            <Button onClick={loadGoogleSpaces} disabled={gcLoading} variant="outline">
+              {gcLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+              {gcSpaces.length > 0 ? 'Recargar' : 'Cargar Espacios'}
+            </Button>
+          </div>
+
+          {gcSpaces.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">Mapea cada espacio de Google Chat con la mesa correspondiente y haz click en Importar:</p>
+              {gcSpaces.map(space => (
+                <div key={space.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{space.displayName}</p>
+                  </div>
+                  <Select
+                    value={gcMapping[space.id] || '__none__'}
+                    onValueChange={(v) => setGcMapping(prev => ({ ...prev, [space.id]: v === '__none__' ? '' : v }))}
+                  >
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="Seleccionar mesa..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sin asignar</SelectItem>
+                      {gcDesks.map(d => (
+                        <SelectItem key={d.id} value={d.id}>{d.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {gcResults[space.id]?.imported && gcImporting !== space.id ? (
+                    <Badge variant="secondary" className="whitespace-nowrap">
+                      {gcResults[space.id].imported} importados
+                    </Badge>
+                  ) : gcImporting === space.id ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="whitespace-nowrap">
+                        {gcResults[space.id]?.total ? `${gcResults[space.id].imported}/${gcResults[space.id].total}` : 'Obteniendo...'}
+                      </span>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => handleGcImport(space.id)}
+                      disabled={!gcMapping[space.id]}
+                    >
+                      Importar
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

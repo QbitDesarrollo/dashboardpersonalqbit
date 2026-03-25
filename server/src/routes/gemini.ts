@@ -104,8 +104,8 @@ geminiRouter.post('/gemini/chat', requireAuth, async (req: AuthRequest, res) => 
       }
       additionalContext = buildTaskContext(tasks);
     } else if (context?.type === 'project') {
-      // Get overview of all active tasks (admin/ops see all)
-      const isAdmin = userRole === 'admin' || userRole === 'ops';
+      // Get overview of all active tasks (admin/ejecutivo see all)
+      const isAdmin = userRole === 'admin' || userRole === 'ejecutivo';
       let tasks: any[];
       if (isAdmin) {
         tasks = await query<any[]>(

@@ -12,12 +12,10 @@
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root"><p style="text-align:center;padding:40px;font-family:sans-serif;color:#888">Cargando...</p></div>
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-          navigator.serviceWorker.register('/sw.js');
-        });
+        navigator.serviceWorker.register('/sw.js');
       }
     </script>
     <script type="module" src="/src/main.tsx"></script>

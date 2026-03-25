@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   nombre VARCHAR(255) NOT NULL,
-  rol ENUM('admin', 'ops', 'equipo', 'cliente') NOT NULL DEFAULT 'equipo',
+  rol ENUM('admin', 'ejecutivo', 'equipo', 'cliente') NOT NULL DEFAULT 'equipo',
   activo TINYINT(1) NOT NULL DEFAULT 1,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 );
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   id CHAR(36) PRIMARY KEY,
   nombre VARCHAR(255) NOT NULL,
   email VARCHAR(255) NOT NULL,
-  rol ENUM('admin', 'ops', 'equipo', 'cliente') NOT NULL DEFAULT 'equipo',
+  rol ENUM('admin', 'ejecutivo', 'equipo', 'cliente') NOT NULL DEFAULT 'equipo',
   activo TINYINT(1) NOT NULL DEFAULT 1,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   FOREIGN KEY (id) REFERENCES users(id) ON DELETE CASCADE
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 CREATE TABLE IF NOT EXISTS user_roles (
   id CHAR(36) PRIMARY KEY,
   user_id CHAR(36) NOT NULL,
-  role ENUM('admin', 'ops', 'equipo', 'cliente') NOT NULL,
+  role ENUM('admin', 'ejecutivo', 'equipo', 'cliente') NOT NULL,
   UNIQUE KEY uq_user_role (user_id, role),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

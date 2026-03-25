@@ -37,7 +37,7 @@ interface User {
   id: string;
   nombre: string;
   email: string;
-  rol: 'admin' | 'ops' | 'equipo' | 'cliente';
+  rol: 'admin' | 'ejecutivo' | 'equipo' | 'cliente';
   activo: boolean;
   created_at: string;
 }
@@ -121,7 +121,7 @@ export default function AdminUsers() {
   const getRoleBadge = (rol: string) => {
     const colors: Record<string, string> = {
       admin: 'bg-primary text-primary-foreground',
-      ops: 'bg-info text-info-foreground',
+      ejecutivo: 'bg-info text-info-foreground',
       equipo: 'bg-success text-success-foreground',
       cliente: 'bg-warning text-warning-foreground',
     };
@@ -265,7 +265,7 @@ export default function AdminUsers() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="ops">OPS</SelectItem>
+                  <SelectItem value="ejecutivo">Ejecutivo</SelectItem>
                   <SelectItem value="equipo">Equipo</SelectItem>
                   <SelectItem value="cliente">Cliente</SelectItem>
                 </SelectContent>

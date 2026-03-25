@@ -46,6 +46,8 @@ interface TaskData {
   task_type?: { nombre: string } | null;
   deliverable_type?: { nombre: string } | null;
   created_by_profile?: { nombre: string; avatar_url: string | null } | null;
+  created_by?: string | null;
+  created_by_rol?: string | null;
   estimated_hours?: number | null;
   recurrence_type?: string;
   recurrence_interval?: number | null;
@@ -92,7 +94,7 @@ const parseLocalDate = (dateStr: string) => {
 };
 
 export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialogProps) {
-  const { profile, isAdmin, isOps, isEquipo } = useAuth();
+  const { profile, isAdmin, isEjecutivo, isEquipo } = useAuth();
   const [task, setTask] = useState<TaskData | null>(null);
   const [loading, setLoading] = useState(false);
   const [taskReads, setTaskReads] = useState<{ user_id: string; read_at: string; nombre: string; avatar_url: string | null }[]>([]);
@@ -122,8 +124,10 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
 
   const canEdit = () => {
     if (!task) return false;
-    if (isAdmin || isOps) return true;
-    if (isEquipo && (task.responsable_user_id === profile?.id || task.responsables?.some(r => r.user_id === profile?.id))) return true;
+    if (isAdmin) return true;
+    const isProtected = task.created_by_rol === 'admin' || task.created_by_rol === 'ejecutivo';
+    if (isEjecutivo) return !isProtected || task.created_by === profile?.id;
+    if (isEquipo) return !isProtected && (task.responsable_user_id === profile?.id || task.responsables?.some(r => r.user_id === profile?.id));
     return false;
   };
 
@@ -146,7 +150,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto" aria-describedby="task-detail-standalone-desc">
+      <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto p-4 sm:p-6" aria-describedby="task-detail-standalone-desc">
         <DialogHeader>
           <DialogTitle className="text-xl">{task?.titulo_tarea || 'Detalle de Tarea'}</DialogTitle>
           <DialogDescription id="task-detail-standalone-desc">Información completa, timer, comentarios y entregables.</DialogDescription>

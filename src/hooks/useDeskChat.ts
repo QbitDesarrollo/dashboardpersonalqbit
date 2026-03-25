@@ -15,6 +15,7 @@ export interface ChatMessage {
   desk_id: string;
   user_id: string;
   mensaje: string;
+  image_url?: string | null;
   created_at: string;
   user: { nombre: string; avatar_url: string | null };
   read_by: { user_id: string; nombre: string; read_at: string }[];
@@ -187,11 +188,11 @@ export function useDeskChat({ deskId, currentUserId, soundEnabled = true, soundT
     };
   }, [deskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const sendMessage = useCallback((text: string) => {
-    if (!deskId || !socketRef.current?.connected || !text.trim()) return null;
+  const sendMessage = useCallback((text: string, image_url?: string) => {
+    if (!deskId || !socketRef.current?.connected || (!text.trim() && !image_url)) return null;
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Timeout')), 8000);
-      socketRef.current!.emit('desk:message', { deskId, mensaje: text.trim() }, (err?: { message: string }) => {
+      socketRef.current!.emit('desk:message', { deskId, mensaje: text.trim(), image_url }, (err?: { message: string }) => {
         clearTimeout(timer);
         if (err) reject(new Error(err.message));
         else resolve();

@@ -4,7 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Loader2, Send, ChevronUp, Check, CheckCheck, Circle, SmilePlus, Smile, AtSign } from 'lucide-react';
+import { Loader2, Send, ChevronUp, Check, CheckCheck, Circle, SmilePlus, Smile, AtSign, ImagePlus, X } from 'lucide-react';
+import * as api from '@/lib/apiClient';
 import {
   Popover,
   PopoverContent,
@@ -232,6 +233,10 @@ export function DeskChat({ deskId, deskName, soundEnabled = true, soundType = 'c
   const currentUserId = profile?.id || '';
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -352,17 +357,62 @@ export function DeskChat({ deskId, deskName, soundEnabled = true, soundType = 'c
     setEmojiOpen(false);
   }, [text]);
 
+  const processImageFile = useCallback((file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      alert('La imagen no puede superar 5MB');
+      return;
+    }
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setImagePreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processImageFile(file);
+    e.target.value = '';
+  }, [processImageFile]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) processImageFile(file);
+        return;
+      }
+    }
+  }, [processImageFile]);
+
+  const clearImage = useCallback(() => {
+    setImageFile(null);
+    setImagePreview(null);
+  }, []);
+
   const handleSend = async () => {
-    if (!text.trim() || sending) return;
+    if ((!text.trim() && !imageFile) || sending) return;
     setMentionQuery(null);
     setSending(true);
     try {
-      await sendMessage(text);
+      let uploadedImageUrl: string | undefined;
+      if (imageFile) {
+        setUploading(true);
+        const res = await api.uploadChatImage(imageFile);
+        uploadedImageUrl = res.image_url;
+        setUploading(false);
+      }
+      await sendMessage(text, uploadedImageUrl);
       setText('');
+      clearImage();
       setAutoScroll(true);
       textareaRef.current?.focus();
     } catch (e) {
       console.error('[DeskChat] Send error:', e);
+      setUploading(false);
     } finally {
       setSending(false);
     }
@@ -544,7 +594,15 @@ export function DeskChat({ deskId, deskName, soundEnabled = true, soundType = 'c
                             {msg.user?.nombre || 'Usuario'}
                           </p>
                         )}
-                        <p className="whitespace-pre-wrap">{highlightMentions(msg.mensaje, memberNames, isOwn)}</p>
+                        {msg.image_url && (
+                          <img
+                            src={msg.image_url}
+                            alt="Imagen"
+                            className="rounded max-w-[260px] max-h-[200px] object-cover cursor-pointer mb-1"
+                            onClick={() => window.open(msg.image_url!, '_blank')}
+                          />
+                        )}
+                        {msg.mensaje && <p className="whitespace-pre-wrap">{highlightMentions(msg.mensaje, memberNames, isOwn)}</p>}
                         <div className={cn('flex items-center justify-end gap-1 mt-0.5', isOwn ? 'text-primary-foreground/60' : 'text-muted-foreground')}>
                           <span className="text-[10px]">{formatTime(msg.created_at)}</span>
                           <ReadReceipts msg={msg} currentUserId={currentUserId} members={members} />
@@ -611,6 +669,25 @@ export function DeskChat({ deskId, deskName, soundEnabled = true, soundType = 'c
         {emojiOpen && (
           <div className="fixed inset-0 z-40" onClick={() => setEmojiOpen(false)} />
         )}
+        {/* Image preview */}
+        {imagePreview && (
+          <div className="mb-2 relative inline-block">
+            <img src={imagePreview} alt="Preview" className="max-h-24 rounded-lg border border-border" />
+            <button
+              onClick={clearImage}
+              className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          className="hidden"
+          onChange={handleImageSelect}
+        />
         <div className="flex items-end gap-1.5 relative">
           <Button
             variant="ghost"
@@ -623,11 +700,23 @@ export function DeskChat({ deskId, deskName, soundEnabled = true, soundType = 'c
           >
             <Smile className="h-5 w-5 text-muted-foreground" />
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-[38px] w-[38px] shrink-0"
+            title="Enviar imagen"
+            disabled={!connected}
+            onClick={() => fileInputRef.current?.click()}
+            type="button"
+          >
+            <ImagePlus className="h-5 w-5 text-muted-foreground" />
+          </Button>
           <textarea
             ref={textareaRef}
             value={text}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="Escribe un mensaje... (@mencionar)"
             rows={1}
             className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 max-h-32"
@@ -637,10 +726,10 @@ export function DeskChat({ deskId, deskName, soundEnabled = true, soundType = 'c
           <Button
             size="icon"
             onClick={handleSend}
-            disabled={!text.trim() || sending || !connected}
+            disabled={(!text.trim() && !imageFile) || sending || !connected}
             className="h-[38px] w-[38px] shrink-0"
           >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {sending || uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth, AuthRequest, requireAdminOrOps } from '../middleware/auth.js';
+import { requireAuth, AuthRequest, requireAdminOrEjecutivo } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
 
 export const customFieldsRouter = Router();
@@ -36,8 +36,8 @@ customFieldsRouter.get('/custom-fields/definitions', requireAuth, async (req: Au
   }
 });
 
-// POST definition (admin/ops)
-customFieldsRouter.post('/custom-fields/definitions', requireAuth, requireAdminOrOps, async (req: AuthRequest, res) => {
+// POST definition (admin/ejecutivo)
+customFieldsRouter.post('/custom-fields/definitions', requireAuth, requireAdminOrEjecutivo, async (req: AuthRequest, res) => {
   try {
     const parsed = fieldDefSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Datos inválidos', details: parsed.error.flatten() });
@@ -56,8 +56,8 @@ customFieldsRouter.post('/custom-fields/definitions', requireAuth, requireAdminO
   }
 });
 
-// PATCH definition (admin/ops)
-customFieldsRouter.patch('/custom-fields/definitions/:id', requireAuth, requireAdminOrOps, async (req: AuthRequest, res) => {
+// PATCH definition (admin/ejecutivo)
+customFieldsRouter.patch('/custom-fields/definitions/:id', requireAuth, requireAdminOrEjecutivo, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const updates: string[] = [];
@@ -81,7 +81,7 @@ customFieldsRouter.patch('/custom-fields/definitions/:id', requireAuth, requireA
 });
 
 // DELETE definition (soft delete)
-customFieldsRouter.delete('/custom-fields/definitions/:id', requireAuth, requireAdminOrOps, async (req: AuthRequest, res) => {
+customFieldsRouter.delete('/custom-fields/definitions/:id', requireAuth, requireAdminOrEjecutivo, async (req: AuthRequest, res) => {
   try {
     await query('UPDATE custom_field_definitions SET is_active = 0 WHERE id = ?', [req.params.id]);
     res.json({ success: true });

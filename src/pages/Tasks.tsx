@@ -125,6 +125,7 @@ interface Task {
   deliverable_type?: { nombre: string } | null;
   created_by?: string | null;
   created_by_profile?: { nombre: string; avatar_url?: string | null } | null;
+  created_by_rol?: string | null;
   is_read?: boolean;
   read_count?: number;
   deliverable_types_list?: { tipo_entregable_id: string; nombre: string; cantidad: number }[];
@@ -153,7 +154,7 @@ interface Profile {
 
 export default function Tasks() {
   const [searchParams] = useSearchParams();
-  const { profile, isAdmin, isOps, isEquipo } = useAuth();
+  const { profile, isAdmin, isEjecutivo, isEquipo } = useAuth();
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -162,6 +163,7 @@ export default function Tasks() {
   const [taskTypes, setTaskTypes] = useState<{ id: string; nombre: string; activo?: boolean }[]>([]);
   const [deliverableTypes, setDeliverableTypes] = useState<{ id: string; nombre: string; activo?: boolean }[]>([]);
   const [deskMembers, setDeskMembers] = useState<Profile[]>([]);
+  const [deskBrandsForForm, setDeskBrandsForForm] = useState<Brand[] | null>(null);
   const [filterDeskMembers, setFilterDeskMembers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -259,7 +261,7 @@ export default function Tasks() {
   }, [searchTerm]);
 
   const canDeleteTasks =
-    (siteSettings.can_delete_tasks_roles || 'admin,ops').split(',').map((r) => r.trim()).includes(profile?.rol || '') ?? false;
+    (siteSettings.can_delete_tasks_roles || 'admin,ejecutivo').split(',').map((r) => r.trim()).includes(profile?.rol || '') ?? false;
 
   const [formData, setFormData] = useState({
     titulo_tarea: '',
@@ -335,10 +337,10 @@ export default function Tasks() {
   }, [filterDesk, pinnedDeskId]);
 
   useEffect(() => {
-    if (isAdmin || isOps || isEquipo) {
+    if (isAdmin || isEjecutivo || isEquipo) {
       api.getSavedFilters().then((data) => setSavedFilters(Array.isArray(data) ? data : [])).catch(() => {});
     }
-  }, [isAdmin, isOps, isEquipo]);
+  }, [isAdmin, isEjecutivo, isEquipo]);
 
   useEffect(() => {
     api.getSiteSettings().then((s) => setSiteSettings(s || {})).catch(() => {});
@@ -411,15 +413,33 @@ export default function Tasks() {
     }
   };
 
-  // Cuando se selecciona una mesa, cargar el equipo de esa mesa
+  // Cuando se selecciona una mesa, cargar el equipo y marcas de esa mesa
   const isEditingRef = useRef(false);
   useEffect(() => {
     if (formData.desk_id) {
       api.getProfiles(formData.desk_id)
         .then((data) => setDeskMembers(Array.isArray(data) ? data : []))
         .catch(() => setDeskMembers([]));
+      api.getDeskBrands(formData.desk_id)
+        .then((data) => {
+          const list = Array.isArray(data) ? data : [];
+          if (list.length > 0) {
+            setDeskBrandsForForm(list);
+            // Clear brand if not in desk brands
+            setFormData((prev) => {
+              if (prev.brand_id && !list.some((b: Brand) => b.id === prev.brand_id)) {
+                return { ...prev, brand_id: '' };
+              }
+              return prev;
+            });
+          } else {
+            setDeskBrandsForForm(null);
+          }
+        })
+        .catch(() => setDeskBrandsForForm(null));
     } else {
       setDeskMembers([]);
+      setDeskBrandsForForm(null);
     }
     if (isEditingRef.current) {
       isEditingRef.current = false;
@@ -563,13 +583,9 @@ export default function Tasks() {
           }
         }
 
-        // Switch to edit mode so the user can attach files
-        if (insertedTask?.id) {
-          setSelectedTask(insertedTask as Task);
-        } else {
-          setDialogOpen(false);
-          resetForm();
-        }
+        // Close dialog and reset form after creation
+        setDialogOpen(false);
+        resetForm();
       }
 
       fetchData();
@@ -581,11 +597,12 @@ export default function Tasks() {
   };
 
   const resetForm = () => {
+    const defaultDeskId = filterDesk !== 'all' ? filterDesk : (pinnedDeskId || '');
     setFormData({
       titulo_tarea: '',
       detalle: '',
       brand_id: '',
-      desk_id: '',
+      desk_id: defaultDeskId,
       responsable_user_id: '',
       responsable_ids: [],
       departamento: '',
@@ -921,8 +938,10 @@ export default function Tasks() {
   };
 
   const canEditTask = (task: Task) => {
-    if (isAdmin || isOps) return true;
-    if (isEquipo && (task.responsable_user_id === profile?.id || task.responsables?.some(r => r.user_id === profile?.id))) return true;
+    if (isAdmin) return true;
+    const isProtected = task.created_by_rol === 'admin' || task.created_by_rol === 'ejecutivo';
+    if (isEjecutivo) return !isProtected || task.created_by === profile?.id;
+    if (isEquipo) return !isProtected && (task.responsable_user_id === profile?.id || task.responsables?.some(r => r.user_id === profile?.id));
     return false;
   };
 
@@ -994,7 +1013,7 @@ export default function Tasks() {
               </Button>
             </div>
             </div>
-            {(isAdmin || isOps || isEquipo) && (
+            {(isAdmin || isEjecutivo || isEquipo) && (
           <Dialog open={dialogOpen} onOpenChange={(open) => {
             setDialogOpen(open);
             if (!open) resetForm();
@@ -1005,7 +1024,7 @@ export default function Tasks() {
                 Nueva Tarea
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto mx-4 sm:mx-auto" aria-describedby="task-form-desc">
+            <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-y-auto" aria-describedby="task-form-desc">
               <DialogHeader>
                 <DialogTitle>
                   {selectedTask ? 'Editar Tarea' : 'Nueva Tarea'}
@@ -1026,25 +1045,32 @@ export default function Tasks() {
 
                   <div className="space-y-2">
                     <Label htmlFor="brand">Marca *</Label>
-                    <Select
-                      value={formData.brand_id}
-                      onValueChange={(value) => setFormData({ ...formData, brand_id: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={brands.length ? 'Seleccionar marca' : 'No hay marcas. Crea una en Admin → Marcas'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {brands.length === 0 ? (
-                          <div className="px-2 py-3 text-sm text-muted-foreground">No hay marcas. Crea una en Admin → Marcas</div>
-                        ) : (
-                          brands.map((brand) => (
-                            <SelectItem key={brand.id} value={brand.id}>
-                              {brand.nombre}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
+                    {(() => {
+                      const availableBrands = deskBrandsForForm ? brands.filter(b => deskBrandsForForm.some(db => db.id === b.id)) : brands;
+                      return (
+                        <Select
+                          value={formData.brand_id}
+                          onValueChange={(value) => setFormData({ ...formData, brand_id: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={availableBrands.length ? 'Seleccionar marca' : 'No hay marcas. Crea una en Admin → Marcas'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableBrands.length === 0 ? (
+                              <div className="px-2 py-3 text-sm text-muted-foreground">
+                                {deskBrandsForForm ? 'Sin marcas asignadas a esta mesa' : 'No hay marcas. Crea una en Admin → Marcas'}
+                              </div>
+                            ) : (
+                              availableBrands.map((brand) => (
+                                <SelectItem key={brand.id} value={brand.id}>
+                                  {brand.nombre}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      );
+                    })()}
                   </div>
 
                   <div className="space-y-2">
@@ -1526,7 +1552,7 @@ export default function Tasks() {
             </div>
           </div>
           <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-[180px]">
+            <div className="flex-1 min-w-0 sm:min-w-[180px] w-full sm:w-auto">
               <Label className="text-xs text-muted-foreground block mb-1.5">Buscar</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1538,10 +1564,10 @@ export default function Tasks() {
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 w-full sm:w-auto">
               <Label className="text-xs text-muted-foreground block">Agrupar por</Label>
               <Select value={groupBy} onValueChange={(v: 'estado' | 'mes') => setGroupBy(v)}>
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className="w-full sm:w-[140px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1551,7 +1577,7 @@ export default function Tasks() {
               </Select>
             </div>
             <div className="flex flex-wrap gap-2 shrink-0">
-              {(isAdmin || isOps || isEquipo) && savedFilters.length > 0 && (
+              {(isAdmin || isEjecutivo || isEquipo) && savedFilters.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm">
@@ -1568,7 +1594,7 @@ export default function Tasks() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              {(isAdmin || isOps || isEquipo) && (
+              {(isAdmin || isEjecutivo || isEquipo) && (
                 <Button variant="outline" size="sm" onClick={() => setSaveFilterOpen(true)}>
                   <BookmarkPlus className="h-4 w-4 mr-1" />
                   Guardar filtro
@@ -1610,7 +1636,7 @@ export default function Tasks() {
                 Columnas
               </Button>
               {showColumnsMenu && (
-                <div className="absolute right-0 top-8 z-50 bg-popover border border-border rounded-lg shadow-lg p-3 min-w-[180px]">
+                <div className="absolute right-0 sm:right-0 top-8 z-50 bg-popover border border-border rounded-lg shadow-lg p-3 min-w-[180px] max-w-[calc(100vw-2rem)]">
                   <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Mostrar columnas</p>
                   <div className="space-y-1">
                     {ALL_COLUMNS.map(col => (
@@ -2077,7 +2103,7 @@ export default function Tasks() {
                     </React.Fragment>
                   ))
                 )}
-                {(isAdmin || isOps || isEquipo) && (
+                {(isAdmin || isEjecutivo || isEquipo) && (
                   <TableRow
                     className="border-border hover:bg-muted/50 cursor-pointer group"
                     onClick={() => { resetForm(); setDialogOpen(true); }}

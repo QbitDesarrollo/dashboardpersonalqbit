@@ -3,8 +3,8 @@ import { getUserRole } from './roles.js';
 
 /**
  * Verifica si un usuario puede acceder a una tarea (ver/comentar).
- * admin/ops: acceso total.
- * equipo: solo tareas de sus mesas o asignadas a él.
+ * admin: acceso total.
+ * ejecutivo/equipo: solo tareas de sus mesas o asignadas a él.
  * cliente: solo si la tarea está en una marca asignada al cliente.
  */
 export async function canAccessTask(userId: string, taskId: string): Promise<boolean> {
@@ -14,9 +14,9 @@ export async function canAccessTask(userId: string, taskId: string): Promise<boo
   if (!task) return false;
 
   const role = await getUserRole(userId);
-  if (['admin', 'ops'].includes(role)) return true;
+  if (role === 'admin') return true;
 
-  if (role === 'equipo') {
+  if (role === 'ejecutivo' || role === 'equipo') {
     // Asignado directamente
     if (task.responsable_user_id === userId) return true;
     // Miembro de la mesa de la tarea

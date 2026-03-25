@@ -21,6 +21,16 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     console.error('[ErrorBoundary]', error, errorInfo);
+    // Auto-reload on chunk loading errors (stale cache after deploy)
+    const msg = error.message || '';
+    if (msg.includes('Failed to fetch') || msg.includes('module script') || msg.includes('Loading chunk') || msg.includes('Importing a module')) {
+      const key = 'tiusdei_chunk_reload';
+      const last = sessionStorage.getItem(key);
+      if (!last || Date.now() - Number(last) > 10000) {
+        sessionStorage.setItem(key, String(Date.now()));
+        window.location.reload();
+      }
+    }
   }
 
   render(): ReactNode {
@@ -34,7 +44,7 @@ export class ErrorBoundary extends Component<Props, State> {
             {this.state.error.message}
           </p>
           <Button
-            onClick={() => this.setState({ hasError: false, error: null })}
+            onClick={() => window.location.reload()}
             variant="outline"
           >
             Reintentar

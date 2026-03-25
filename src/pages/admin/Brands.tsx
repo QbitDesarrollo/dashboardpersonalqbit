@@ -30,7 +30,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Edit, Loader2, Tags } from 'lucide-react';
+import { Plus, Edit, Loader2, Tags, Trash2 } from 'lucide-react';
 
 interface Brand {
   id: string;
@@ -109,6 +109,18 @@ export default function AdminBrands() {
   const resetForm = () => {
     setFormData({ nombre: '', cliente_id: '', activo: true });
     setSelectedBrand(null);
+  };
+
+  const handleDelete = async (brand: Brand) => {
+    if (!confirm(`¿Eliminar la marca "${brand.nombre}"? Las tareas asociadas se conservarán.`)) return;
+    try {
+      const result: any = await api.deleteBrand(brand.id);
+      if (result?.error) throw new Error(result.error);
+      toast.success('Marca eliminada');
+      fetchData();
+    } catch (error: any) {
+      toast.error('Error al eliminar', { description: error.message });
+    }
   };
 
   const openEditDialog = (brand: Brand) => {
@@ -214,9 +226,14 @@ export default function AdminBrands() {
                 <div key={brand.id} className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{brand.nombre}</span>
-                    <Button variant="ghost" size="icon" onClick={() => openEditDialog(brand)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(brand)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(brand)} className="text-destructive hover:text-destructive">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   <p className="text-sm text-muted-foreground">{brand.clients?.nombre || '-'}</p>
                   <Badge variant={brand.activo ? "default" : "secondary"}>
@@ -257,9 +274,14 @@ export default function AdminBrands() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(brand)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(brand)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(brand)} className="text-destructive hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

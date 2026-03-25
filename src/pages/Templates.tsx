@@ -393,7 +393,7 @@ export default function Templates() {
 
       {/* Detalle / tareas de plantilla */}
       <Dialog open={detailOpen} onOpenChange={(o) => { setDetailOpen(o); if (!o) setSelectedTemplate(null); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby="template-detail-desc">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto mx-4 sm:mx-auto" aria-describedby="template-detail-desc">
           <DialogHeader>
             <DialogTitle>{selectedTemplate?.name}</DialogTitle>
             <DialogDescription id="template-detail-desc" className="mt-1 block text-foreground/90 min-h-[1.5rem]">
@@ -472,7 +472,7 @@ export default function Templates() {
               </Button>
             </div>
             <div className="overflow-x-auto -mx-px">
-            <Table>
+            <Table className="min-w-[500px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Tarea</TableHead>

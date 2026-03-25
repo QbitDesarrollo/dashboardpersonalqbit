@@ -29,7 +29,7 @@ profilesRouter.get('/profiles', requireAuth, async (req: AuthRequest, res) => {
 
 const profilePatchSchema = z.object({
   nombre: z.string().min(1).optional(),
-  rol: z.preprocess((v) => (typeof v === 'string' ? v.toLowerCase() : v), z.enum(['admin', 'ops', 'equipo', 'cliente']).optional()),
+  rol: z.preprocess((v) => (typeof v === 'string' ? v.toLowerCase() : v), z.enum(['admin', 'ejecutivo', 'equipo', 'cliente']).optional()),
   activo: z.preprocess((v) => (v === undefined ? undefined : !!(v === 1 || v === '1' || v === true || v === 'true')), z.boolean().optional()),
 }).strict();
 

@@ -145,7 +145,7 @@ export default function AdminConfig() {
 
   const [permissionsForm, setPermissionsForm] = useState({
     can_delete_admin: true,
-    can_delete_ops: true,
+    can_delete_ejecutivo: true,
     can_delete_equipo: false,
   });
   const [permissionsSaving, setPermissionsSaving] = useState(false);
@@ -167,7 +167,7 @@ export default function AdminConfig() {
   const [meetingsDeskIds, setMeetingsDeskIds] = useState<Set<string>>(new Set());
   const [meetingsRoles, setMeetingsRoles] = useState({
     meetings_admin: true,
-    meetings_ops: true,
+    meetings_ejecutivo: true,
     meetings_equipo: false,
   });
   const [meetingsSaving, setMeetingsSaving] = useState(false);
@@ -221,11 +221,11 @@ export default function AdminConfig() {
           registration_allowed_domains: settings.registration_allowed_domains ?? 'qbit.com.ec',
           registration_max_users: parseInt(settings.registration_max_users ?? '0', 10) || 0,
         });
-        const rolesStr = settings.can_delete_tasks_roles ?? 'admin,ops';
+        const rolesStr = settings.can_delete_tasks_roles ?? 'admin,ejecutivo';
         const roles = rolesStr.split(',').map((r) => r.trim()).filter(Boolean);
         setPermissionsForm({
           can_delete_admin: roles.includes('admin'),
-          can_delete_ops: roles.includes('ops'),
+          can_delete_ejecutivo: roles.includes('ejecutivo'),
           can_delete_equipo: roles.includes('equipo'),
         });
       }
@@ -238,11 +238,11 @@ export default function AdminConfig() {
         // Parse daily meetings settings
         const deskIdsStr = settings.daily_meetings_desk_ids ?? '';
         setMeetingsDeskIds(new Set(deskIdsStr.split(',').map((s: string) => s.trim()).filter(Boolean)));
-        const meetRolesStr = settings.daily_meetings_roles ?? 'admin,ops';
+        const meetRolesStr = settings.daily_meetings_roles ?? 'admin,ejecutivo';
         const meetRoles = meetRolesStr.split(',').map((r: string) => r.trim()).filter(Boolean);
         setMeetingsRoles({
           meetings_admin: meetRoles.includes('admin'),
-          meetings_ops: meetRoles.includes('ops'),
+          meetings_ejecutivo: meetRoles.includes('ejecutivo'),
           meetings_equipo: meetRoles.includes('equipo'),
         });
         // Notification sound settings
@@ -314,7 +314,7 @@ export default function AdminConfig() {
     try {
       const roles: string[] = [];
       if (permissionsForm.can_delete_admin) roles.push('admin');
-      if (permissionsForm.can_delete_ops) roles.push('ops');
+      if (permissionsForm.can_delete_ejecutivo) roles.push('ejecutivo');
       if (permissionsForm.can_delete_equipo) roles.push('equipo');
       const rolesStr = roles.length > 0 ? roles.join(',') : 'admin';
       await api.patchSiteSettings({ can_delete_tasks_roles: rolesStr });
@@ -466,7 +466,7 @@ export default function AdminConfig() {
       const deskIdsStr = Array.from(meetingsDeskIds).join(',');
       const roles: string[] = [];
       if (meetingsRoles.meetings_admin) roles.push('admin');
-      if (meetingsRoles.meetings_ops) roles.push('ops');
+      if (meetingsRoles.meetings_ejecutivo) roles.push('ejecutivo');
       if (meetingsRoles.meetings_equipo) roles.push('equipo');
       await api.patchSiteSettings({
         daily_meetings_desk_ids: deskIdsStr,
@@ -561,8 +561,8 @@ export default function AdminConfig() {
       </div>
 
       <Tabs defaultValue="tipos" className="w-full">
-        <div className="overflow-x-auto -mx-1">
-          <TabsList className="grid w-full min-w-max grid-cols-12 max-w-5xl">
+        <div className="overflow-x-auto -mx-1 pb-1">
+          <TabsList className="inline-flex w-auto min-w-full sm:grid sm:w-full sm:min-w-max sm:grid-cols-12 sm:max-w-5xl">
             <TabsTrigger value="tipos" className="text-xs sm:text-sm">Tipos</TabsTrigger>
             <TabsTrigger value="apariencia" className="text-xs sm:text-sm">Apariencia</TabsTrigger>
             <TabsTrigger value="permisos" className="text-xs sm:text-sm">Permisos</TabsTrigger>
@@ -821,10 +821,10 @@ export default function AdminConfig() {
                       />
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-4">
-                      <span className="font-medium">OPS</span>
+                      <span className="font-medium">Ejecutivo</span>
                       <Switch
-                        checked={permissionsForm.can_delete_ops}
-                        onCheckedChange={(v) => setPermissionsForm({ ...permissionsForm, can_delete_ops: v })}
+                        checked={permissionsForm.can_delete_ejecutivo}
+                        onCheckedChange={(v) => setPermissionsForm({ ...permissionsForm, can_delete_ejecutivo: v })}
                       />
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-4">
@@ -942,7 +942,7 @@ export default function AdminConfig() {
           </Card>
 
           <Dialog open={templateEditOpen} onOpenChange={(o) => { setTemplateEditOpen(o); if (!o) setTemplatePreviewTab('codigo'); setTemplatePreviewHtml(null); }}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" aria-describedby="config-template-desc">
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col mx-4 sm:mx-auto" aria-describedby="config-template-desc">
               <DialogHeader>
                 <DialogTitle>Editar plantilla: {selectedTemplate ? TEMPLATE_LABELS[selectedTemplate.type] || selectedTemplate.type : ''}</DialogTitle>
                 <DialogDescription id="config-template-desc" className="sr-only">
@@ -1120,10 +1120,10 @@ export default function AdminConfig() {
                       />
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-4">
-                      <span className="font-medium">OPS</span>
+                      <span className="font-medium">Ejecutivo</span>
                       <Switch
-                        checked={meetingsRoles.meetings_ops}
-                        onCheckedChange={(v) => setMeetingsRoles({ ...meetingsRoles, meetings_ops: v })}
+                        checked={meetingsRoles.meetings_ejecutivo}
+                        onCheckedChange={(v) => setMeetingsRoles({ ...meetingsRoles, meetings_ejecutivo: v })}
                       />
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-4">
@@ -1178,7 +1178,7 @@ export default function AdminConfig() {
                   <p className="text-sm text-muted-foreground">
                     <strong>Nota:</strong> Los miembros de cada mesa se gestionan desde{' '}
                     <a href="/admin/mesas" className="text-primary underline">Administración &rarr; Mesas</a>.
-                    Solo los miembros de una mesa pueden ver y enviar mensajes en su chat. Los admin y ops pueden ver todos los chats.
+                    Solo los miembros de una mesa pueden ver y enviar mensajes en su chat. Los admin y ejecutivos pueden ver todos los chats.
                   </p>
                 </div>
                 <Button type="submit" disabled={chatSaving}>

@@ -35,6 +35,7 @@ import { automationsRouter } from './routes/automations.js';
 import { integrationsRouter } from './routes/integrations.js';
 import { googleCalendarRouter } from './routes/google-calendar.js';
 import { googleDriveRouter } from './routes/google-drive.js';
+import { googleChatRouter } from './routes/google-chat.js';
 import { geminiRouter } from './routes/gemini.js';
 import { customFieldsRouter } from './routes/custom-fields.js';
 import { dashboardsRouter } from './routes/dashboards.js';
@@ -112,10 +113,10 @@ const authLimiter = rateLimit({
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
-// General API: scale for 100 concurrent users
+// General API: ~20 users per IP (office/shared network)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 500,
+  max: 5000,
   message: { error: 'Demasiadas peticiones, intenta más tarde' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -147,6 +148,7 @@ app.use('/api/data', automationsRouter);
 app.use('/api/data', integrationsRouter);
 app.use('/api/data', googleCalendarRouter);
 app.use('/api/data', googleDriveRouter);
+app.use('/api/data', googleChatRouter);
 app.use('/api/data', geminiRouter);
 app.use('/api/data', customFieldsRouter);
 app.use('/api/data', dashboardsRouter);

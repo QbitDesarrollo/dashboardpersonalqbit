@@ -30,7 +30,7 @@ const prioridades = [
 ];
 
 export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }: Props) {
-  const { isAdmin, isOps } = useAuth();
+  const { isAdmin, isEjecutivo } = useAuth();
   const [saving, setSaving] = useState(false);
   const count = selectedIds.size;
 
@@ -77,7 +77,7 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
   };
 
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-card border border-border shadow-2xl rounded-xl px-4 py-3 flex items-center gap-2 flex-wrap animate-in slide-in-from-bottom-4 duration-200">
+    <div className="fixed bottom-4 sm:bottom-6 left-2 right-2 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-50 bg-card border border-border shadow-2xl rounded-xl px-3 sm:px-4 py-3 flex items-center gap-2 flex-wrap sm:max-w-[calc(100vw-3rem)] w-auto animate-in slide-in-from-bottom-4 duration-200">
       {/* Contador */}
       <div className="flex items-center gap-2 pr-3 border-r border-border">
         <span className="text-sm font-semibold text-foreground">{count} seleccionada{count !== 1 ? 's' : ''}</span>
@@ -85,7 +85,7 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
 
       {/* Cambiar estado en bulk */}
       <Select disabled={saving} onValueChange={(v) => handleBulkUpdate({ estado: v })}>
-        <SelectTrigger className="h-8 w-[140px] text-xs">
+        <SelectTrigger className="h-8 w-full sm:w-[140px] text-xs">
           <SelectValue placeholder="Cambiar estado" />
         </SelectTrigger>
         <SelectContent>
@@ -95,7 +95,7 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
 
       {/* Cambiar prioridad en bulk */}
       <Select disabled={saving} onValueChange={(v) => handleBulkUpdate({ prioridad: v })}>
-        <SelectTrigger className="h-8 w-[130px] text-xs">
+        <SelectTrigger className="h-8 w-full sm:w-[130px] text-xs">
           <SelectValue placeholder="Prioridad" />
         </SelectTrigger>
         <SelectContent>
@@ -106,7 +106,7 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
       {/* Asignar responsable */}
       {users && users.length > 0 && (
         <Select disabled={saving} onValueChange={(v) => handleBulkUpdate({ responsable_user_id: v })}>
-          <SelectTrigger className="h-8 w-[150px] text-xs">
+          <SelectTrigger className="h-8 w-full sm:w-[150px] text-xs">
             <SelectValue placeholder="Asignar a…" />
           </SelectTrigger>
           <SelectContent>
@@ -118,7 +118,7 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
       {/* Sprints */}
       {sprints && sprints.length > 0 && (
         <Select disabled={saving} onValueChange={(v) => handleBulkUpdate({ sprint_id: v })}>
-          <SelectTrigger className="h-8 w-[140px] text-xs">
+          <SelectTrigger className="h-8 w-full sm:w-[140px] text-xs">
             <SelectValue placeholder="Sprint" />
           </SelectTrigger>
           <SelectContent>
@@ -127,7 +127,7 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
         </Select>
       )}
 
-      <div className="w-px h-6 bg-border mx-1" />
+      <div className="hidden sm:block w-px h-6 bg-border mx-1" />
 
       {/* Marcar como hecho */}
       <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleMarkDone} disabled={saving}>
@@ -136,7 +136,7 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
       </Button>
 
       {/* Archivar = pasar a estado entregado */}
-      {(isAdmin || isOps) && (
+      {(isAdmin || isEjecutivo) && (
         <Button
           variant="outline"
           size="sm"
@@ -150,7 +150,7 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
       )}
 
       {/* Eliminar */}
-      {(isAdmin || isOps) && (
+      {(isAdmin || isEjecutivo) && (
         <Button variant="destructive" size="sm" className="h-8 text-xs gap-1.5" onClick={handleBulkDelete} disabled={saving}>
           <Trash2 className="w-3.5 h-3.5" />
           Eliminar

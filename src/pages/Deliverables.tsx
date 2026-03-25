@@ -59,7 +59,7 @@ interface DeliverableType {
 }
 
 export default function Deliverables() {
-  const { profile, isAdmin, isOps } = useAuth();
+  const { profile, isAdmin, isEjecutivo } = useAuth();
   const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [types, setTypes] = useState<DeliverableType[]>([]);
@@ -364,7 +364,7 @@ export default function Deliverables() {
                       ) : (
                         <span className="text-muted-foreground text-sm">-</span>
                       )}
-                      {(isAdmin || isOps) && del.estado !== 'final' && (
+                      {(isAdmin || isEjecutivo) && del.estado !== 'final' && (
                         <Select
                           value={del.estado}
                           onValueChange={(value: Deliverable['estado']) => updateStatus(del.id, value)}
@@ -440,7 +440,7 @@ export default function Deliverables() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {(isAdmin || isOps) && del.estado !== 'final' && (
+                        {(isAdmin || isEjecutivo) && del.estado !== 'final' && (
                           <div className="flex gap-1">
                             <Button
                               variant="ghost"

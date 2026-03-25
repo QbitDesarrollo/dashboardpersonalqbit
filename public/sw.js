@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tiusdei-v1';
+const CACHE_NAME = 'tiusdei-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

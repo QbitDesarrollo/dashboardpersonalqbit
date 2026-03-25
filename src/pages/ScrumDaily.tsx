@@ -282,9 +282,9 @@ export default function ScrumDaily() {
             <p className="text-sm text-muted-foreground">Revision diaria del sprint activo</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <Select value={activeSprint} onValueChange={setActiveSprint}>
-            <SelectTrigger className="w-56">
+            <SelectTrigger className="w-full sm:w-56">
               <SelectValue placeholder="Sprint" />
             </SelectTrigger>
             <SelectContent>
@@ -346,20 +346,20 @@ export default function ScrumDaily() {
 
                 {/* KPIs */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:w-auto shrink-0">
-                  <div className="border rounded-lg p-3 text-center min-w-[100px]">
+                  <div className="border rounded-lg p-3 text-center min-w-0">
                     <div className="text-2xl font-bold text-primary">{progressPct}%</div>
                     <div className="text-[11px] text-muted-foreground">Progreso</div>
                     <Progress value={progressPct} className="h-1.5 mt-1" />
                   </div>
-                  <div className="border rounded-lg p-3 text-center min-w-[100px]">
+                  <div className="border rounded-lg p-3 text-center min-w-0">
                     <div className="text-2xl font-bold text-emerald-500">{stats.completedTasks}<span className="text-sm text-muted-foreground font-normal">/{stats.totalTasks}</span></div>
                     <div className="text-[11px] text-muted-foreground">Tareas</div>
                   </div>
-                  <div className="border rounded-lg p-3 text-center min-w-[100px]">
+                  <div className="border rounded-lg p-3 text-center min-w-0">
                     <div className="text-2xl font-bold text-blue-500">{stats.completedPoints}<span className="text-sm text-muted-foreground font-normal">/{stats.totalPoints}</span></div>
                     <div className="text-[11px] text-muted-foreground">Puntos</div>
                   </div>
-                  <div className="border rounded-lg p-3 text-center min-w-[100px]">
+                  <div className="border rounded-lg p-3 text-center min-w-0">
                     <div className={cn('text-2xl font-bold', blockedCount > 0 ? 'text-red-500' : 'text-muted-foreground')}>{blockedCount}</div>
                     <div className="text-[11px] text-muted-foreground">Bloqueadas</div>
                   </div>
@@ -387,7 +387,7 @@ export default function ScrumDaily() {
                           <span className="text-xs text-muted-foreground">{t.responsable || 'Sin asignar'}</span>
                         </div>
                         <Select value={t.estado} onValueChange={(v) => updateTaskStatus(t.id, v)}>
-                          <SelectTrigger className="h-6 w-28 text-[10px] border-red-300">
+                          <SelectTrigger className="h-6 w-24 sm:w-28 text-[10px] border-red-300">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -420,7 +420,7 @@ export default function ScrumDaily() {
                           </span>
                         </div>
                         <Select value={t.estado} onValueChange={(v) => updateTaskStatus(t.id, v)}>
-                          <SelectTrigger className="h-6 w-28 text-[10px] border-amber-300">
+                          <SelectTrigger className="h-6 w-24 sm:w-28 text-[10px] border-amber-300">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -509,7 +509,7 @@ export default function ScrumDaily() {
                                     <div className="flex-1 min-w-0">
                                       <Link to={`/tareas?task=${task.id}`} className="text-sm hover:underline truncate block">{task.titulo_tarea}</Link>
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0">
+                                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
                                       <Badge className={cn('text-[10px] px-1.5 py-0', PRIORITY_COLORS[task.prioridad])}>{task.prioridad}</Badge>
                                       {task.story_points != null && <span className="text-xs text-muted-foreground">{task.story_points}pts</span>}
                                       {task.fecha_entrega && (
@@ -522,7 +522,7 @@ export default function ScrumDaily() {
                                         onValueChange={(v) => updateTaskStatus(task.id, v)}
                                         disabled={updatingTaskId === task.id}
                                       >
-                                        <SelectTrigger className={cn('h-6 w-[110px] text-[10px] font-medium', STATUS_COLORS[task.estado], 'text-white border-0')}>
+                                        <SelectTrigger className={cn('h-6 w-[90px] sm:w-[110px] text-[10px] font-medium', STATUS_COLORS[task.estado], 'text-white border-0')}>
                                           {updatingTaskId === task.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <SelectValue />}
                                         </SelectTrigger>
                                         <SelectContent>

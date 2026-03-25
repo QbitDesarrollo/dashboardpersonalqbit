@@ -451,7 +451,7 @@ sprintsRouter.get('/sprints', requireAuth, async (req: AuthRequest, res) => {
 
 sprintsRouter.post('/sprints', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const body = req.body;
     const id = uuid();
@@ -469,7 +469,7 @@ sprintsRouter.post('/sprints', requireAuth, async (req: AuthRequest, res) => {
 
 sprintsRouter.patch('/sprints/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const body = req.body;
@@ -608,7 +608,7 @@ sprintsRouter.get('/sprints/:id/planning', requireAuth, async (req: AuthRequest,
 
 sprintsRouter.delete('/sprints/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const sprintId = String(req.params.id);
     await query("UPDATE tasks SET sprint_id = NULL WHERE sprint_id = ?", [sprintId]);

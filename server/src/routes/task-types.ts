@@ -18,7 +18,7 @@ taskTypesRouter.get('/task-types', requireAuth, async (_req, res) => {
 
 taskTypesRouter.post('/task-types', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { nombre } = req.body;
     const id = uuid();
@@ -32,7 +32,7 @@ taskTypesRouter.post('/task-types', requireAuth, async (req: AuthRequest, res) =
 
 taskTypesRouter.patch('/task-types/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const { nombre, activo } = req.body;
@@ -46,7 +46,7 @@ taskTypesRouter.patch('/task-types/:id', requireAuth, async (req: AuthRequest, r
 
 taskTypesRouter.delete('/task-types/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     await query('DELETE FROM task_types WHERE id = ?', [id]);
@@ -70,7 +70,7 @@ taskTypesRouter.get('/deliverable-types', requireAuth, async (_req, res) => {
 
 taskTypesRouter.post('/deliverable-types', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { nombre } = req.body;
     const id = uuid();
@@ -84,7 +84,7 @@ taskTypesRouter.post('/deliverable-types', requireAuth, async (req: AuthRequest,
 
 taskTypesRouter.patch('/deliverable-types/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const { nombre, activo } = req.body;
@@ -98,7 +98,7 @@ taskTypesRouter.patch('/deliverable-types/:id', requireAuth, async (req: AuthReq
 
 taskTypesRouter.delete('/deliverable-types/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     await query('DELETE FROM deliverable_types WHERE id = ?', [id]);

@@ -164,15 +164,15 @@ export default function CustomDashboard() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
           <h2 className="text-lg font-semibold">Mi Dashboard</h2>
           {dashboards.length > 0 && (
             <Select
               value={activeDashboard?.id || ''}
               onValueChange={(id) => loadDashboard(id)}
             >
-              <SelectTrigger className="w-48 h-8">
+              <SelectTrigger className="w-full sm:w-48 h-8">
                 <SelectValue placeholder="Seleccionar..." />
               </SelectTrigger>
               <SelectContent>
@@ -183,7 +183,7 @@ export default function CustomDashboard() {
             </Select>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {activeDashboard && !editMode && (
             <Button variant="outline" size="sm" onClick={() => setEditMode(true)}>
               <Settings2 className="h-4 w-4 mr-1" />

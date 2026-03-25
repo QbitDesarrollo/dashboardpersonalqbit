@@ -7,7 +7,7 @@ export const automationsRouter = Router();
 
 automationsRouter.get('/automations', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const brandId = req.query.brand_id as string | undefined;
     const where = brandId ? ' WHERE a.brand_id = ?' : '';
@@ -29,7 +29,7 @@ automationsRouter.get('/automations', requireAuth, async (req: AuthRequest, res)
 
 automationsRouter.get('/automations/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const row = await queryOne<any>(
@@ -48,7 +48,7 @@ automationsRouter.get('/automations/:id', requireAuth, async (req: AuthRequest, 
 
 automationsRouter.post('/automations', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { name, brand_id, desk_id, trigger_type, trigger_config, action_type, action_config } = req.body;
     if (!name || !trigger_type || !action_type) return res.status(400).json({ error: 'name, trigger_type y action_type requeridos' });
@@ -72,7 +72,7 @@ automationsRouter.post('/automations', requireAuth, async (req: AuthRequest, res
 
 automationsRouter.patch('/automations/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const { name, brand_id, desk_id, is_active, trigger_type, trigger_config, action_type, action_config } = req.body;
@@ -98,7 +98,7 @@ automationsRouter.patch('/automations/:id', requireAuth, async (req: AuthRequest
 
 automationsRouter.delete('/automations/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     await query('DELETE FROM automations WHERE id = ?', [id]);
@@ -111,7 +111,7 @@ automationsRouter.delete('/automations/:id', requireAuth, async (req: AuthReques
 
 automationsRouter.get('/automations/:id/logs', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const rows = await query<any[]>(

@@ -341,7 +341,7 @@ export default function ReleasePlanning() {
               {release.description && <span className="truncate max-w-[200px]">{release.description}</span>}
             </div>
           </div>
-          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-1 shrink-0 flex-wrap" onClick={(e) => e.stopPropagation()}>
             {release.status === 'planning' && (
               <Button size="sm" variant="default" onClick={() => handleStatusChange(release.id, 'in_progress')}>
                 <Rocket className="h-3 w-3 mr-1" /> Iniciar
@@ -493,8 +493,8 @@ export default function ReleasePlanning() {
                               : <Badge variant="secondary" className="text-xs">Planificado</Badge>;
                           return (
                             <div key={sprint.id} className="border rounded-lg p-3">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-medium text-sm">{sprint.name}</span>
                                   {sprintBadge}
                                 </div>
@@ -579,7 +579,7 @@ export default function ReleasePlanning() {
           <DialogTrigger asChild>
             <Button className="gradient-primary"><Plus className="h-4 w-4 mr-2" /> Nuevo Release</Button>
           </DialogTrigger>
-          <DialogContent aria-describedby="release-desc">
+          <DialogContent className="max-w-[95vw] sm:max-w-lg" aria-describedby="release-desc">
             <DialogHeader>
               <DialogTitle>Crear Release</DialogTitle>
               <DialogDescription id="release-desc">Define una nueva versión o release del producto.</DialogDescription>
@@ -589,7 +589,7 @@ export default function ReleasePlanning() {
                 <Label>Nombre *</Label>
                 <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Release v1.0" required />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>Versión</Label>
                   <Input value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} placeholder="v1.0.0" />
@@ -673,7 +673,7 @@ export default function ReleasePlanning() {
 
       {/* Edit Release Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent aria-describedby="edit-release-desc">
+        <DialogContent className="max-w-[95vw] sm:max-w-lg" aria-describedby="edit-release-desc">
           <DialogHeader>
             <DialogTitle>Editar Release</DialogTitle>
             <DialogDescription id="edit-release-desc">Modifica los datos del release.</DialogDescription>
@@ -683,7 +683,7 @@ export default function ReleasePlanning() {
               <Label>Nombre *</Label>
               <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Versión</Label>
                 <Input value={editForm.version} onChange={(e) => setEditForm({ ...editForm, version: e.target.value })} placeholder="v1.0.0" />
@@ -729,7 +729,7 @@ export default function ReleasePlanning() {
 
       {/* Assign Sprints Dialog */}
       <Dialog open={sprintDialogOpen} onOpenChange={setSprintDialogOpen}>
-        <DialogContent aria-describedby="assign-sprints-desc" className="max-w-lg">
+        <DialogContent aria-describedby="assign-sprints-desc" className="max-w-[95vw] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Asignar Sprints al Release</DialogTitle>
             <DialogDescription id="assign-sprints-desc">Selecciona los sprints que forman parte de este release.</DialogDescription>

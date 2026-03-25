@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
-import { requireAdminOrOps } from '../middleware/auth.js';
+import { requireAdminOrEjecutivo } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
 
 export const configRouter = Router();
@@ -73,8 +73,8 @@ const siteSettingsPatchSchema = z.object({
   gemini_enabled: z.string().max(10).optional(),
 }).strict();
 
-// PATCH /api/config/site-settings — admin/ops
-configRouter.patch('/site-settings', requireAuth, requireAdminOrOps, async (req: AuthRequest, res) => {
+// PATCH /api/config/site-settings — admin/ejecutivo
+configRouter.patch('/site-settings', requireAuth, requireAdminOrEjecutivo, async (req: AuthRequest, res) => {
   try {
     const parsed = siteSettingsPatchSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -113,7 +113,7 @@ const registrationSettingsSchema = z.object({
   registration_allowed_domains: z.string().max(500),
   registration_max_users: z.number().int().min(0),
 });
-configRouter.patch('/registration-settings', requireAuth, requireAdminOrOps, async (req: AuthRequest, res) => {
+configRouter.patch('/registration-settings', requireAuth, requireAdminOrEjecutivo, async (req: AuthRequest, res) => {
   try {
     const parsed = registrationSettingsSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -139,8 +139,8 @@ configRouter.patch('/registration-settings', requireAuth, requireAdminOrOps, asy
   }
 });
 
-// POST /api/config/upload-favicon — admin/ops
-configRouter.post('/upload-favicon', requireAuth, requireAdminOrOps, upload.single('favicon'), async (req: AuthRequest, res) => {
+// POST /api/config/upload-favicon — admin/ejecutivo
+configRouter.post('/upload-favicon', requireAuth, requireAdminOrEjecutivo, upload.single('favicon'), async (req: AuthRequest, res) => {
   try {
     if (!req.file) {
       console.warn('[CONFIG] upload-favicon: no file received');
@@ -169,7 +169,7 @@ configRouter.post('/upload-favicon', requireAuth, requireAdminOrOps, upload.sing
 });
 
 // POST /api/config/email-templates/preview — devuelve HTML renderizado con datos de ejemplo
-configRouter.post('/email-templates/preview', requireAuth, requireAdminOrOps, async (req: AuthRequest, res) => {
+configRouter.post('/email-templates/preview', requireAuth, requireAdminOrEjecutivo, async (req: AuthRequest, res) => {
   try {
     const { type, html } = req.body || {};
     const frontendUrl = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
@@ -229,8 +229,8 @@ configRouter.post('/email-templates/preview', requireAuth, requireAdminOrOps, as
   }
 });
 
-// GET /api/config/email-templates — admin/ops
-configRouter.get('/email-templates', requireAuth, requireAdminOrOps, async (_req, res) => {
+// GET /api/config/email-templates — admin/ejecutivo
+configRouter.get('/email-templates', requireAuth, requireAdminOrEjecutivo, async (_req, res) => {
   try {
     const rows = await query<any[]>(
       'SELECT id, type, subject_template, html_template, updated_at FROM email_templates ORDER BY type'
@@ -247,8 +247,8 @@ const emailTemplatePatchSchema = z.object({
   html_template: z.string().nullable().optional(),
 }).strict();
 
-// PATCH /api/config/email-templates/:type — admin/ops
-configRouter.patch('/email-templates/:type', requireAuth, requireAdminOrOps, async (req: AuthRequest, res) => {
+// PATCH /api/config/email-templates/:type — admin/ejecutivo
+configRouter.patch('/email-templates/:type', requireAuth, requireAdminOrEjecutivo, async (req: AuthRequest, res) => {
   try {
     const parsed = emailTemplatePatchSchema.safeParse(req.body);
     if (!parsed.success) {

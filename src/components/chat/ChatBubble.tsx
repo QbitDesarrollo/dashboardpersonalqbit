@@ -215,7 +215,7 @@ export function ChatBubble({ soundEnabled = true, soundType = 'chime' }: ChatBub
           onClick={handlePreviewClick}
           className={cn(
             'fixed z-50 bottom-20 right-4 sm:right-6',
-            'w-[320px] sm:w-[360px]',
+            'w-[calc(100vw-2rem)] sm:w-[360px]',
             'bg-card border border-border rounded-xl shadow-2xl',
             'cursor-pointer hover:shadow-3xl transition-all duration-300',
             'animate-slide-up'

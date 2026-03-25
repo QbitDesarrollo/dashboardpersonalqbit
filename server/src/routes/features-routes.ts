@@ -23,7 +23,7 @@ featuresRouter.get('/features', requireAuth, async (req: AuthRequest, res) => {
 
 featuresRouter.post('/features', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const body = req.body;
     const id = uuid();
@@ -41,7 +41,7 @@ featuresRouter.post('/features', requireAuth, async (req: AuthRequest, res) => {
 
 featuresRouter.patch('/features/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const body = req.body;

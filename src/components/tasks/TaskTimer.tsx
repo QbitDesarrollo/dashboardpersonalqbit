@@ -2,6 +2,7 @@ import { Play, Pause, RotateCcw, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTaskTimer } from '@/hooks/useTaskTimer';
 import { cn } from '@/lib/utils';
+import * as api from '@/lib/apiClient';
 
 interface TaskTimerProps {
   taskId: string;
@@ -13,14 +14,14 @@ interface TaskTimerProps {
   onUpdate?: () => void;
 }
 
-export function TaskTimer({ 
-  taskId, 
-  initialTime, 
-  isActive, 
-  startTime, 
+export function TaskTimer({
+  taskId,
+  initialTime,
+  isActive,
+  startTime,
   canEdit,
   compact = false,
-  onUpdate 
+  onUpdate
 }: TaskTimerProps) {
   const { formattedTime, isRunning, startTimer, stopTimer, resetTimer } = useTaskTimer({
     taskId,
@@ -28,19 +29,45 @@ export function TaskTimer({
     isActive,
     startTime,
   });
-
   const handleStart = async () => {
     await startTimer();
+    // Also start Time Doctor session for screenshots & activity tracking
+    try {
+      const { session: active } = await api.getActiveTimeSession();
+      if (active && active.task_id !== taskId) {
+        await api.stopTimeSession(active.id);
+      }
+      if (!active || active.task_id !== taskId) {
+        await api.startTimeSession(taskId);
+      }
+    } catch {
+      // Time session is optional, don't block timer
+    }
     onUpdate?.();
   };
 
   const handleStop = async () => {
     await stopTimer();
+    // Also stop Time Doctor session
+    try {
+      const { session: active } = await api.getActiveTimeSession();
+      if (active && active.task_id === taskId) {
+        await api.stopTimeSession(active.id);
+      }
+    } catch {
+      // Time session is optional
+    }
     onUpdate?.();
   };
 
   const handleReset = async () => {
     await resetTimer();
+    try {
+      const { session: active } = await api.getActiveTimeSession();
+      if (active && active.task_id === taskId) {
+        await api.stopTimeSession(active.id);
+      }
+    } catch {}
     onUpdate?.();
   };
 
@@ -49,8 +76,8 @@ export function TaskTimer({
       <div className="flex items-center gap-2">
         <div className={cn(
           "flex items-center gap-1 font-mono text-sm px-2 py-1 rounded",
-          isRunning 
-            ? "bg-primary/20 text-primary animate-pulse" 
+          isRunning
+            ? "bg-primary/20 text-primary animate-pulse"
             : "bg-muted text-muted-foreground"
         )}>
           <Timer className="h-3 w-3" />
@@ -88,7 +115,7 @@ export function TaskTimer({
           {formattedTime}
         </span>
       </div>
-      
+
       {canEdit && (
         <div className="flex items-center gap-1 ml-auto">
           {isRunning ? (

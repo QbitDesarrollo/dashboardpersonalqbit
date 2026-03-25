@@ -24,7 +24,7 @@ clientsRouter.get('/clients', requireAuth, async (req: AuthRequest, res) => {
 
 clientsRouter.post('/clients', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { nombre, email_contacto, activo } = req.body;
     const id = uuid();
@@ -37,9 +37,25 @@ clientsRouter.post('/clients', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+clientsRouter.delete('/clients/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const { id } = req.params;
+    // Desvincular marcas del cliente (conservar marcas, solo quitar referencia)
+    await query('UPDATE brands SET cliente_id = NULL WHERE cliente_id = ?', [id]);
+    // Eliminar cliente
+    await query('DELETE FROM clients WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al eliminar cliente' });
+  }
+});
+
 clientsRouter.patch('/clients/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const parsed = clientPatchSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Datos inválidos', details: parsed.error.flatten() });

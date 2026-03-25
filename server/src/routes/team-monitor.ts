@@ -6,7 +6,7 @@ import { hasRole } from '../utils/roles.js';
 export const teamMonitorRouter = Router();
 
 const requireAdminOps = async (req: AuthRequest): Promise<boolean> => {
-  return hasRole(req.userId!, ['admin', 'ops']);
+  return hasRole(req.userId!, ['admin', 'ejecutivo']);
 };
 
 // Live team status
@@ -27,7 +27,7 @@ teamMonitorRouter.get('/team-monitor/live', requireAuth, async (req: AuthRequest
        LEFT JOIN time_entries te ON te.user_id = p.id AND te.status IN ('active','paused')
        LEFT JOIN tasks t ON t.id = te.task_id
        LEFT JOIN attendance att ON att.user_id = p.id AND DATE(att.check_in) = ? AND att.check_out IS NULL
-       WHERE p.activo = 1 AND p.rol IN ('admin','ops','equipo')
+       WHERE p.activo = 1 AND p.rol IN ('admin','ejecutivo','equipo')
        ORDER BY te.status DESC, p.nombre`,
       [today, today]
     );
@@ -76,7 +76,7 @@ teamMonitorRouter.get('/team-monitor/daily-summary', requireAuth, async (req: Au
        FROM profiles p
        LEFT JOIN time_entries te ON te.user_id = p.id AND DATE(te.start_time) = ? AND te.status = 'completed'
        LEFT JOIN attendance att ON att.user_id = p.id AND DATE(att.check_in) = ?
-       WHERE p.activo = 1 AND p.rol IN ('admin','ops','equipo')
+       WHERE p.activo = 1 AND p.rol IN ('admin','ejecutivo','equipo')
        GROUP BY p.id, p.nombre, p.avatar_url, att.check_in, att.check_out, att.total_seconds
        ORDER BY total_seconds DESC`,
       [date, date]
@@ -134,7 +134,7 @@ teamMonitorRouter.get('/team-monitor/productivity', requireAuth, async (req: Aut
        LEFT JOIN time_entries te ON te.user_id = p.id
          AND DATE(te.start_time) >= ? AND DATE(te.start_time) <= ?
          AND te.status = 'completed'
-       WHERE p.activo = 1 AND p.rol IN ('admin','ops','equipo')
+       WHERE p.activo = 1 AND p.rol IN ('admin','ejecutivo','equipo')
        GROUP BY p.id, p.nombre, p.avatar_url
        HAVING total_seconds > 0
        ORDER BY total_seconds DESC`,

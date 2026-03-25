@@ -30,7 +30,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Edit, Loader2, LayoutDashboard, Users, Trash2 } from 'lucide-react';
+import { Plus, Edit, Loader2, LayoutDashboard, Users, Trash2, Tag } from 'lucide-react';
 
 interface Desk {
   id: string;
@@ -44,6 +44,12 @@ interface Profile {
   email: string;
 }
 
+interface Brand {
+  id: string;
+  nombre: string;
+  clients?: { nombre: string } | null;
+}
+
 export default function AdminDesks() {
   const [desks, setDesks] = useState<Desk[]>([]);
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
@@ -54,6 +60,11 @@ export default function AdminDesks() {
   const [selectedDesk, setSelectedDesk] = useState<Desk | null>(null);
   const [deskMembers, setDeskMembers] = useState<Profile[]>([]);
   const [userToAdd, setUserToAdd] = useState<string>('');
+
+  const [allBrands, setAllBrands] = useState<Brand[]>([]);
+  const [deskBrands, setDeskBrands] = useState<Brand[]>([]);
+  const [brandToAdd, setBrandToAdd] = useState<string>('');
+  const [configTab, setConfigTab] = useState<'members' | 'brands'>('members');
 
   const [formData, setFormData] = useState({
     nombre: '',
@@ -66,9 +77,10 @@ export default function AdminDesks() {
 
   const fetchDesks = async () => {
     try {
-      const [data, users] = await Promise.all([api.getDesks(), api.getProfiles()]);
+      const [data, users, brands] = await Promise.all([api.getDesks(), api.getProfiles(), api.getBrands()]);
       if (Array.isArray(data)) setDesks(data);
       if (Array.isArray(users)) setAllUsers(users);
+      if (Array.isArray(brands)) setAllBrands(brands);
     } catch (error) {
       toast.error('Error al cargar mesas');
     } finally {
@@ -79,11 +91,18 @@ export default function AdminDesks() {
   const openMembersDialog = async (desk: Desk) => {
     setSelectedDesk(desk);
     setUserToAdd('');
+    setBrandToAdd('');
+    setConfigTab('members');
     try {
-      const members = await api.getDeskMembers(desk.id);
+      const [members, brands] = await Promise.all([
+        api.getDeskMembers(desk.id),
+        api.getDeskBrands(desk.id),
+      ]);
       setDeskMembers(Array.isArray(members) ? members : []);
+      setDeskBrands(Array.isArray(brands) ? brands : []);
     } catch {
       setDeskMembers([]);
+      setDeskBrands([]);
     }
     setMembersDialogOpen(true);
   };
@@ -114,7 +133,34 @@ export default function AdminDesks() {
     }
   };
 
+  const handleAddBrand = async () => {
+    if (!selectedDesk || !brandToAdd) return;
+    try {
+      const result: any = await api.addDeskBrands(selectedDesk.id, [brandToAdd]);
+      if (result?.error) throw new Error(result.error);
+      const brands = await api.getDeskBrands(selectedDesk.id);
+      setDeskBrands(Array.isArray(brands) ? brands : []);
+      setBrandToAdd('');
+      toast.success('Marca asignada a la mesa');
+    } catch (err: any) {
+      toast.error(err.message || 'Error al asignar');
+    }
+  };
+
+  const handleRemoveBrand = async (brandId: string) => {
+    if (!selectedDesk) return;
+    try {
+      const result: any = await api.removeDeskBrand(selectedDesk.id, brandId);
+      if (result?.error) throw new Error(result.error);
+      setDeskBrands((prev) => prev.filter((b) => b.id !== brandId));
+      toast.success('Marca quitada de la mesa');
+    } catch (err: any) {
+      toast.error(err.message || 'Error al quitar');
+    }
+  };
+
   const usersNotInDesk = allUsers.filter((u) => !deskMembers.some((m) => m.id === u.id));
+  const brandsNotInDesk = allBrands.filter((b) => !deskBrands.some((db) => db.id === b.id));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -293,55 +339,118 @@ export default function AdminDesks() {
       </Card>
 
       <Dialog open={membersDialogOpen} onOpenChange={(o) => { setMembersDialogOpen(o); if (!o) setSelectedDesk(null); }}>
-        <DialogContent className="max-w-md" aria-describedby="desk-members-desc">
+        <DialogContent className="max-w-md mx-4 sm:mx-auto" aria-describedby="desk-config-desc">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Equipo de trabajo: {selectedDesk?.nombre}
+              Configurar: {selectedDesk?.nombre}
             </DialogTitle>
-            <DialogDescription id="desk-members-desc">
-              Los usuarios asignados a esta mesa aparecerán como responsables al crear tareas.
+            <DialogDescription id="desk-config-desc">
+              Gestiona el equipo y las marcas asignadas a esta mesa.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <Select value={userToAdd || '__none__'} onValueChange={(v) => setUserToAdd(v === '__none__' ? '' : v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Añadir usuario..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__" disabled>
-                    {usersNotInDesk.length ? 'Seleccionar usuario...' : 'Todos asignados'}
-                  </SelectItem>
-                  {usersNotInDesk.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.nombre} ({u.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button onClick={handleAddMember} disabled={!userToAdd}>
-                Añadir
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label>Equipo asignado</Label>
-              {deskMembers.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">Ningún usuario asignado</p>
-              ) : (
-                <div className="space-y-1">
-                  {deskMembers.map((m) => (
-                    <div key={m.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
-                      <span className="font-medium text-sm">{m.nombre}</span>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRemoveMember(m.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="flex gap-1 border-b border-border mb-4">
+            <button
+              onClick={() => setConfigTab('members')}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${configTab === 'members' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            >
+              <Users className="h-4 w-4" /> Miembros
+            </button>
+            <button
+              onClick={() => setConfigTab('brands')}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${configTab === 'brands' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            >
+              <Tag className="h-4 w-4" /> Marcas
+            </button>
           </div>
+
+          {configTab === 'members' && (
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Select value={userToAdd || '__none__'} onValueChange={(v) => setUserToAdd(v === '__none__' ? '' : v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Añadir usuario..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__" disabled>
+                      {usersNotInDesk.length ? 'Seleccionar usuario...' : 'Todos asignados'}
+                    </SelectItem>
+                    {usersNotInDesk.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.nombre} ({u.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleAddMember} disabled={!userToAdd}>
+                  Añadir
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <Label>Equipo asignado</Label>
+                {deskMembers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">Ningún usuario asignado</p>
+                ) : (
+                  <div className="space-y-1">
+                    {deskMembers.map((m) => (
+                      <div key={m.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                        <span className="font-medium text-sm">{m.nombre}</span>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRemoveMember(m.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {configTab === 'brands' && (
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Select value={brandToAdd || '__none__'} onValueChange={(v) => setBrandToAdd(v === '__none__' ? '' : v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Añadir marca..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__" disabled>
+                      {brandsNotInDesk.length ? 'Seleccionar marca...' : 'Todas asignadas'}
+                    </SelectItem>
+                    {brandsNotInDesk.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        {b.nombre}{b.clients?.nombre ? ` (${b.clients.nombre})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleAddBrand} disabled={!brandToAdd}>
+                  Añadir
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <Label>Marcas asignadas</Label>
+                {deskBrands.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">Sin marcas asignadas (la mesa ve todas las marcas)</p>
+                ) : (
+                  <div className="space-y-1">
+                    {deskBrands.map((b) => (
+                      <div key={b.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                        <div>
+                          <span className="font-medium text-sm">{b.nombre}</span>
+                          {b.clients?.nombre && (
+                            <span className="text-xs text-muted-foreground ml-1">({b.clients.nombre})</span>
+                          )}
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRemoveBrand(b.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

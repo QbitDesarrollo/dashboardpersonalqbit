@@ -111,7 +111,7 @@ activityTrackingRouter.post('/activity-tracking/screenshot', requireAuth, async 
 activityTrackingRouter.get('/activity-tracking/screenshots', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { user_id, date, task_id, limit = '50', offset = '0' } = req.query as Record<string, string>;
-    const isAdminOps = await hasRole(req.userId!, ['admin', 'ops']);
+    const isAdminOps = await hasRole(req.userId!, ['admin', 'ejecutivo']);
 
     // Equipo can only see their own
     const effectiveUserId = (isAdminOps && user_id) ? user_id : req.userId!;
@@ -169,7 +169,7 @@ activityTrackingRouter.get('/activity-tracking/snapshots', requireAuth, async (r
 // Admin: delete screenshot
 activityTrackingRouter.delete('/activity-tracking/screenshots/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const ss = await queryOne<any>('SELECT file_path, thumbnail_path FROM screenshots WHERE id = ?', [req.params.id]);

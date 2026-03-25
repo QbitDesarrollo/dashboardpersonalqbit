@@ -182,7 +182,7 @@ export function GeminiPanel() {
 
       {/* Panel */}
       {open && (
-        <div className="fixed z-50 bottom-20 right-20 w-[380px] h-[520px] bg-card border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
+        <div className="fixed z-50 bottom-20 right-4 sm:right-20 w-[calc(100vw-2rem)] sm:w-[380px] h-[70vh] sm:h-[520px] bg-card border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-blue-500/10 to-purple-500/10 shrink-0">
             <div className="flex items-center gap-2">

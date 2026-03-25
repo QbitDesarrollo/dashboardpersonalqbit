@@ -66,7 +66,7 @@ deliverablesRouter.get('/deliverables', requireAuth, async (req: AuthRequest, re
 
 deliverablesRouter.post('/deliverables', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { task_id, tipo_entregable_id, version, estado } = req.body;
     const id = uuid();
@@ -81,7 +81,7 @@ deliverablesRouter.post('/deliverables', requireAuth, async (req: AuthRequest, r
 
 deliverablesRouter.patch('/deliverables/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const { estado, link_final } = req.body;

@@ -7,7 +7,7 @@ export const integrationsRouter = Router();
 
 integrationsRouter.get('/integrations', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const brandId = req.query.brand_id as string | undefined;
     const where = brandId ? ' WHERE i.brand_id = ?' : '';
@@ -26,7 +26,7 @@ integrationsRouter.get('/integrations', requireAuth, async (req: AuthRequest, re
 
 integrationsRouter.post('/integrations', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { type, name, config, brand_id } = req.body;
     if (!type || !name) return res.status(400).json({ error: 'type y name requeridos' });
@@ -45,7 +45,7 @@ integrationsRouter.post('/integrations', requireAuth, async (req: AuthRequest, r
 
 integrationsRouter.patch('/integrations/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const { name, config, brand_id, is_active } = req.body;
@@ -68,7 +68,7 @@ integrationsRouter.patch('/integrations/:id', requireAuth, async (req: AuthReque
 
 integrationsRouter.delete('/integrations/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     await query('DELETE FROM integrations WHERE id = ?', [id]);

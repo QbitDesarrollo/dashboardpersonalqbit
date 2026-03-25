@@ -69,7 +69,7 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        'flex-shrink-0 w-72 rounded-lg border bg-muted/30 flex flex-col min-h-[300px]',
+        'flex-shrink-0 w-64 sm:w-72 rounded-lg border bg-muted/30 flex flex-col min-h-[280px] sm:min-h-[300px]',
         isOver && 'ring-2 ring-primary bg-muted/50'
       )}
     >
@@ -209,7 +209,7 @@ export default function ScrumBoard() {
   }
 
   return (
-    <div className="space-y-4 animate-fade-in">
+    <div className="space-y-4 animate-fade-in w-full overflow-hidden">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild><Link to="/scrum"><ArrowLeft className="h-4 w-4" /></Link></Button>
@@ -224,8 +224,8 @@ export default function ScrumBoard() {
       </div>
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <ScrollArea className="w-full whitespace-nowrap">
-          <div className="flex gap-4 pb-4">
+        <ScrollArea className="w-full whitespace-nowrap overflow-x-auto">
+          <div className="flex gap-4 pb-4" style={{ touchAction: 'pan-x' }}>
             {STATUS_ORDER.map((status) => (
               <div key={status} className="flex-shrink-0">
                 <DroppableColumn status={status} tasks={tasksByStatus[status]} />

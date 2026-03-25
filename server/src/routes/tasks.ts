@@ -86,7 +86,7 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
          LEFT JOIN task_types tt ON tt.id = t.task_type_id
          LEFT JOIN deliverable_types dt ON dt.id = t.tipo_entregable_id
          LEFT JOIN profiles cb ON cb.id = t.created_by`;
-    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url ${baseFrom}`;
+    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol ${baseFrom}`;
     const orderBy = ' ORDER BY t.created_at DESC';
 
     let countSql: string;
@@ -146,8 +146,8 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
       listSql = `${baseSelect}${where}${orderBy} LIMIT ? OFFSET ?`;
       countParams = [...ids, ...sprintParam, ...extraParams];
       listParams = [...ids, ...sprintParam, ...extraParams, String(limit), String(offset)];
-    } else if (role === 'equipo') {
-      // Equipo solo ve tareas de su mesa o asignadas a él (admin y ops ven todo)
+    } else if (role === 'equipo' || role === 'ejecutivo') {
+      // Equipo y ejecutivo solo ven tareas de su mesa o asignadas a ellos
       const deskRows = await query<{ desk_id: string }[]>('SELECT desk_id FROM desk_members WHERE user_id = ?', [req.userId]);
       const deskIds = deskRows.map((r) => r.desk_id);
       const where = deskIds.length > 0
@@ -158,7 +158,7 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
       countSql = `SELECT COUNT(*) as total ${baseFrom}${where}`;
       listSql = `${baseSelect}${where}${orderBy} LIMIT ? OFFSET ?`;
     } else {
-      // admin, ops: ven todas las tareas (solo primer nivel)
+      // admin: ve todas las tareas (solo primer nivel)
       const baseWhere = ' WHERE (t.parent_task_id IS NULL OR t.parent_task_id = \'\')';
       const where = baseWhere + (backlogOnly ? ' AND (t.sprint_id IS NULL OR t.sprint_id = \'\')' : sprintId ? ' AND t.sprint_id = ?' : '') + extraConditions;
       countSql = `SELECT COUNT(*) as total ${baseFrom}${where}`;
@@ -240,6 +240,7 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
       deliverable_type: r.deliverable_type_nombre ? { nombre: r.deliverable_type_nombre } : null,
       deliverable_types_list: taskDelTypesMap[r.id] || [],
       created_by_profile: r.created_by_nombre ? { nombre: r.created_by_nombre, avatar_url: r.created_by_avatar_url || null } : null,
+      created_by_rol: r.created_by_rol || null,
       is_read: readMap[r.id] || false,
       read_count: readCountMap[r.id] || 0,
     }));
@@ -259,7 +260,7 @@ tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
               p.nombre as resp_nombre, p.avatar_url as resp_avatar_url,
               f.name as feature_name, sp.name as sprint_name,
               tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre,
-              cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url
+              cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol
        FROM tasks t
        LEFT JOIN brands b ON b.id = t.brand_id
        LEFT JOIN desks d ON d.id = t.desk_id
@@ -303,6 +304,7 @@ tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       deliverable_type: row.deliverable_type_nombre ? { nombre: row.deliverable_type_nombre } : null,
       deliverable_types_list: tdtRows.map((r: any) => ({ tipo_entregable_id: r.tipo_entregable_id, nombre: r.nombre, cantidad: r.cantidad })),
       created_by_profile: row.created_by_nombre ? { nombre: row.created_by_nombre, avatar_url: row.created_by_avatar_url || null } : null,
+      created_by_rol: row.created_by_rol || null,
       is_read: Number(readRow?.cnt ?? 0) > 0,
       read_count: Number(readCountRow?.cnt ?? 0),
     };
@@ -315,13 +317,29 @@ tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
 
 tasksRouter.post('/tasks', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const parsed = createTaskSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Datos de tarea inválidos', details: parsed.error.flatten().fieldErrors });
     }
     const body = parsed.data;
+
+    // Validate desk+brand compatibility if desk has brands assigned
+    if (body.desk_id && body.brand_id) {
+      const deskBrandCount = await queryOne<{ cnt: number }>(
+        'SELECT COUNT(*) as cnt FROM desk_brands WHERE desk_id = ?', [body.desk_id]
+      );
+      if (Number(deskBrandCount?.cnt) > 0) {
+        const match = await queryOne<{ id: string }>(
+          'SELECT id FROM desk_brands WHERE desk_id = ? AND brand_id = ?', [body.desk_id, body.brand_id]
+        );
+        if (!match) {
+          return res.status(400).json({ error: 'La marca seleccionada no está asignada a esta mesa' });
+        }
+      }
+    }
+
     const id = uuid();
     const enlaces = body.enlaces ? (Array.isArray(body.enlaces) ? JSON.stringify(body.enlaces) : body.enlaces) : null;
     // Support both single responsable_user_id and array responsable_ids
@@ -386,9 +404,24 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
 
     const oldRow = await queryOne<any>('SELECT * FROM tasks WHERE id = ?', [id]);
     const onlyFavorite = Object.keys(body).length === 1 && body.is_favorite !== undefined;
-    const allowed =
-      ['admin', 'ops'].includes(role) ||
-      (role === 'equipo' && (onlyFavorite || body.responsable_user_id === req.userId || oldRow?.responsable_user_id === req.userId));
+
+    // Tasks created by admin or ejecutivo are protected: only admin or the creator can edit
+    let creatorRole: string | null = null;
+    if (oldRow?.created_by) {
+      creatorRole = await getUserRole(oldRow.created_by);
+    }
+    const isProtected = creatorRole === 'admin' || creatorRole === 'ejecutivo';
+
+    let allowed = false;
+    if (role === 'admin') {
+      allowed = true;
+    } else if (role === 'ejecutivo') {
+      // Ejecutivo can edit tasks they created; not tasks from admin or other ejecutivos
+      allowed = !isProtected || oldRow?.created_by === req.userId;
+    } else if (role === 'equipo') {
+      // Equipo can edit if responsible, but NOT if task was created by admin/ejecutivo
+      allowed = !isProtected && (onlyFavorite || body.responsable_user_id === req.userId || oldRow?.responsable_user_id === req.userId);
+    }
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const fields: string[] = [];
@@ -584,7 +617,7 @@ tasksRouter.get('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, res
 
 tasksRouter.post('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const parentId = req.params.id;
     const parent = await queryOne<any>('SELECT brand_id, desk_id, fecha_entrega FROM tasks WHERE id = ?', [parentId]);
@@ -637,7 +670,7 @@ tasksRouter.get('/tasks/:id/dependencies', requireAuth, async (req: AuthRequest,
 
 tasksRouter.post('/tasks/:id/dependencies', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const taskId = req.params.id;
     const { depends_on_task_id, dependency_type } = req.body;
@@ -659,7 +692,7 @@ tasksRouter.post('/tasks/:id/dependencies', requireAuth, async (req: AuthRequest
 
 tasksRouter.delete('/tasks/:id/dependencies/:depId', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     await query('DELETE FROM task_dependencies WHERE id = ?', [req.params.depId]);
     res.json({ success: true });
@@ -780,7 +813,7 @@ tasksRouter.post('/comments/:commentId/like', requireAuth, async (req: AuthReque
 // ========== BULK ACTIONS ==========
 tasksRouter.post('/tasks/bulk-update', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { task_ids, updates } = req.body;
     if (!Array.isArray(task_ids) || task_ids.length === 0) return res.status(400).json({ error: 'task_ids requerido' });
@@ -825,12 +858,24 @@ tasksRouter.post('/tasks/bulk-delete', requireAuth, async (req: AuthRequest, res
   try {
     const role = await getUserRole(req.userId!);
     const settingsRow = await queryOne<{ value: string | null }>("SELECT value FROM site_settings WHERE `key` = 'can_delete_tasks_roles'");
-    const rolesStr = settingsRow?.value || 'admin,ops';
+    const rolesStr = settingsRow?.value || 'admin,ejecutivo';
     const allowedRoles = rolesStr.split(',').map((r) => r.trim()).filter(Boolean);
     if (!allowedRoles.includes(role)) return res.status(403).json({ error: 'Sin permisos para borrar tareas' });
     const { task_ids } = req.body;
     if (!Array.isArray(task_ids) || task_ids.length === 0) return res.status(400).json({ error: 'task_ids requerido' });
     if (task_ids.length > 50) return res.status(400).json({ error: 'Máximo 50 tareas por operación' });
+
+    // Protect tasks created by admin/ejecutivo: only admin or the creator can delete
+    if (role !== 'admin') {
+      const placeholdersCheck = task_ids.map(() => '?').join(',');
+      const protectedTasks = await query<{ id: string }[]>(
+        `SELECT t.id FROM tasks t INNER JOIN profiles cb ON cb.id = t.created_by WHERE t.id IN (${placeholdersCheck}) AND cb.rol IN ('admin','ejecutivo') AND t.created_by != ?`,
+        [...task_ids, req.userId!]
+      );
+      if (protectedTasks.length > 0) {
+        return res.status(403).json({ error: 'No puedes eliminar tareas creadas por un admin o ejecutivo' });
+      }
+    }
 
     const placeholders = task_ids.map(() => '?').join(',');
     await query(`DELETE FROM tasks WHERE id IN (${placeholders})`, task_ids);

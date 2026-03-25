@@ -139,7 +139,7 @@ releasesRouter.get('/releases/:id', requireAuth, async (req: AuthRequest, res) =
 // ========== CREATE RELEASE ==========
 releasesRouter.post('/releases', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const body = req.body;
     const id = uuid();
@@ -167,7 +167,7 @@ releasesRouter.post('/releases', requireAuth, async (req: AuthRequest, res) => {
 // ========== UPDATE RELEASE ==========
 releasesRouter.patch('/releases/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const releaseId = String(req.params.id);
     const body = req.body;
@@ -197,7 +197,7 @@ releasesRouter.patch('/releases/:id', requireAuth, async (req: AuthRequest, res)
 // ========== DELETE RELEASE ==========
 releasesRouter.delete('/releases/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const releaseId = String(req.params.id);
     await query('DELETE FROM releases WHERE id = ?', [releaseId]);
@@ -211,7 +211,7 @@ releasesRouter.delete('/releases/:id', requireAuth, async (req: AuthRequest, res
 // ========== ASSIGN/REMOVE SPRINTS TO RELEASE ==========
 releasesRouter.post('/releases/:id/sprints', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const releaseId = String(req.params.id);
     const { sprint_ids } = req.body as { sprint_ids: string[] };

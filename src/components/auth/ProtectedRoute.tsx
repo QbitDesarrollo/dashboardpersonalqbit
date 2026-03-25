@@ -4,7 +4,7 @@ import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  allowedRoles?: ('admin' | 'ops' | 'equipo' | 'cliente')[];
+  allowedRoles?: ('admin' | 'ejecutivo' | 'equipo' | 'cliente')[];
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {

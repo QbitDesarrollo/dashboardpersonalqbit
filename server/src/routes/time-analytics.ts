@@ -36,7 +36,7 @@ timeAnalyticsRouter.get('/time-analytics', requireAuth, async (req: AuthRequest,
              COUNT(t.id) as task_count
       FROM profiles p
       LEFT JOIN tasks t ON t.responsable_user_id = p.id AND t.tiempo_trabajado > 0 ${brandFilter}
-      WHERE p.activo = 1 AND p.rol IN ('admin', 'ops', 'equipo')
+      WHERE p.activo = 1 AND p.rol IN ('admin', 'ejecutivo', 'equipo')
       GROUP BY p.id, p.nombre
       HAVING total_seconds > 0 OR task_count > 0
       ORDER BY total_seconds DESC

@@ -32,7 +32,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ soundEnabled = true, soundType = 'chime', onUnreadChange }: ChatPanelProps) {
-  const { profile, isAdmin, isOps } = useAuth();
+  const { profile, isAdmin, isEjecutivo } = useAuth();
   const [desks, setDesks] = useState<Desk[]>([]);
   const [selectedDesk, setSelectedDesk] = useState<Desk | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
@@ -89,7 +89,7 @@ export function ChatPanel({ soundEnabled = true, soundType = 'chime', onUnreadCh
       const active = allDesks.filter((d: Desk) => d.activo);
       const membersMap: Record<string, Member[]> = {};
 
-      if (isAdmin || isOps) {
+      if (isAdmin || isEjecutivo) {
         setDesks(active);
         for (const desk of active) {
           try {

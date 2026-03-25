@@ -1,4 +1,4 @@
-let permissionGranted = Notification.permission === 'granted';
+let permissionGranted = typeof Notification !== 'undefined' && Notification.permission === 'granted';
 
 export function isNotificationSupported(): boolean {
   return 'Notification' in window;
@@ -58,7 +58,9 @@ function fallbackNotification(
   title: string, body: string, icon: string,
   tag?: string, data?: Record<string, unknown>
 ) {
-  new Notification(title, { body, icon, tag: tag || undefined, data: data as any });
+  if (typeof Notification !== 'undefined') {
+    new Notification(title, { body, icon, tag: tag || undefined, data: data as any });
+  }
 }
 
 export function updateBadgeCount(count: number) {

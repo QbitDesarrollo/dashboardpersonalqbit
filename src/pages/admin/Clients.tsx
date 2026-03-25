@@ -23,7 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Edit, Loader2, Building2 } from 'lucide-react';
+import { Plus, Edit, Loader2, Building2, Trash2 } from 'lucide-react';
 
 interface Client {
   id: string;
@@ -89,6 +89,18 @@ export default function AdminClients() {
   const resetForm = () => {
     setFormData({ nombre: '', email_contacto: '', activo: true });
     setSelectedClient(null);
+  };
+
+  const handleDelete = async (client: Client) => {
+    if (!confirm(`¿Eliminar el cliente "${client.nombre}"? Las marcas asociadas se conservarán.`)) return;
+    try {
+      const result: any = await api.deleteClient(client.id);
+      if (result?.error) throw new Error(result.error);
+      toast.success('Cliente eliminado');
+      fetchClients();
+    } catch (error: any) {
+      toast.error('Error al eliminar', { description: error.message });
+    }
   };
 
   const openEditDialog = (client: Client) => {
@@ -183,9 +195,14 @@ export default function AdminClients() {
                 <div key={client.id} className="p-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{client.nombre}</span>
-                    <Button variant="ghost" size="icon" onClick={() => openEditDialog(client)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(client)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(client)} className="text-destructive hover:text-destructive">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   <p className="text-sm text-muted-foreground">{client.email_contacto || '-'}</p>
                   <Badge variant={client.activo ? "default" : "secondary"}>
@@ -226,9 +243,14 @@ export default function AdminClients() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(client)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(client)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(client)} className="text-destructive hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

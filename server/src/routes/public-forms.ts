@@ -76,7 +76,7 @@ publicFormsPublicRouter.post('/public/forms/:slug/submit', async (req, res) => {
 export const publicFormsAdminRouter = Router();
 publicFormsAdminRouter.get('/public-forms', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const rows = await query<any[]>(
       `SELECT pf.*, b.nombre as brand_nombre,
@@ -94,7 +94,7 @@ publicFormsAdminRouter.get('/public-forms', requireAuth, async (req: AuthRequest
 
 publicFormsAdminRouter.get('/public-forms/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const row = await queryOne<any>(
@@ -112,7 +112,7 @@ publicFormsAdminRouter.get('/public-forms/:id', requireAuth, async (req: AuthReq
 
 publicFormsAdminRouter.post('/public-forms', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { brand_id, name, description, slug, fields_config, default_desk_id, default_prioridad } = req.body;
     if (!brand_id || !name) return res.status(400).json({ error: 'brand_id y name requeridos' });
@@ -133,7 +133,7 @@ publicFormsAdminRouter.post('/public-forms', requireAuth, async (req: AuthReques
 
 publicFormsAdminRouter.patch('/public-forms/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const { name, description, slug, fields_config, default_desk_id, default_prioridad, is_active } = req.body;
@@ -159,7 +159,7 @@ publicFormsAdminRouter.patch('/public-forms/:id', requireAuth, async (req: AuthR
 
 publicFormsAdminRouter.delete('/public-forms/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     await query('DELETE FROM public_forms WHERE id = ?', [id]);
@@ -173,7 +173,7 @@ publicFormsAdminRouter.delete('/public-forms/:id', requireAuth, async (req: Auth
 // GET /api/data/public-forms/:id/submissions
 publicFormsAdminRouter.get('/public-forms/:id/submissions', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
     const rows = await query<any[]>(

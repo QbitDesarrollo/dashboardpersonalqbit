@@ -358,8 +358,8 @@ export default function TasksKanban() {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <ScrollArea className="w-full whitespace-nowrap -mx-3 sm:mx-0 px-3 sm:px-0">
-          <div className="flex gap-4 pb-4">
+        <ScrollArea className="w-full whitespace-nowrap -mx-3 sm:mx-0 px-3 sm:px-0 overflow-x-auto">
+          <div className="flex gap-4 pb-4" style={{ touchAction: 'pan-x' }}>
             {STATUS_ORDER.map((status) => (
               <div
                 key={status}

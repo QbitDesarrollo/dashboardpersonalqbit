@@ -115,12 +115,12 @@ export default function PublicForms() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Formularios públicos</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">Formularios públicos</h1>
           <p className="text-muted-foreground text-sm">Crea formularios accesibles sin login que generan tareas</p>
         </div>
-        <Button onClick={() => { setForm({ name: '', description: '', slug: '', brand_id: '', default_prioridad: 'media' }); setDialogOpen(true); }}>
+        <Button className="w-full sm:w-auto" onClick={() => { setForm({ name: '', description: '', slug: '', brand_id: '', default_prioridad: 'media' }); setDialogOpen(true); }}>
           <Plus className="h-4 w-4 mr-2" />
           Nuevo formulario
         </Button>
@@ -131,7 +131,8 @@ export default function PublicForms() {
           {forms.length === 0 ? (
             <div className="py-16 text-center text-muted-foreground">No hay formularios. Crea uno para recibir solicitudes.</div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+            <Table className="min-w-[600px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Nombre</TableHead>
@@ -169,12 +170,13 @@ export default function PublicForms() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent aria-describedby="pf-desc">
+        <DialogContent className="mx-4 sm:mx-auto" aria-describedby="pf-desc">
           <DialogHeader>
             <DialogTitle>Nuevo formulario</DialogTitle>
             <DialogDescription id="pf-desc">Crea un formulario público para capturar solicitudes.</DialogDescription>
@@ -219,7 +221,7 @@ export default function PublicForms() {
       </Dialog>
 
       <Dialog open={submissionsOpen} onOpenChange={setSubmissionsOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" aria-describedby="pf-subs-desc">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto mx-4 sm:mx-auto" aria-describedby="pf-subs-desc">
           <DialogHeader>
             <DialogTitle>Envíos {selectedForm?.name && `· ${selectedForm.name}`}</DialogTitle>
             <DialogDescription id="pf-subs-desc">Listado de envíos recibidos por el formulario.</DialogDescription>

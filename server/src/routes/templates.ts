@@ -9,7 +9,7 @@ export const templatesRouter = Router();
 // GET /api/data/templates — listar plantillas
 templatesRouter.get('/templates', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const rows = await query<any[]>(
@@ -29,7 +29,7 @@ templatesRouter.get('/templates', requireAuth, async (req: AuthRequest, res) => 
 // GET /api/data/templates/:id — detalle de plantilla con tareas
 templatesRouter.get('/templates/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const { id } = req.params;
@@ -54,7 +54,7 @@ templatesRouter.get('/templates/:id', requireAuth, async (req: AuthRequest, res)
 // POST /api/data/templates — crear plantilla
 templatesRouter.post('/templates', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const body = req.body;
@@ -81,7 +81,7 @@ templatesRouter.post('/templates', requireAuth, async (req: AuthRequest, res) =>
 // PATCH /api/data/templates/:id — actualizar plantilla
 templatesRouter.patch('/templates/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const { id } = req.params;
@@ -114,7 +114,7 @@ templatesRouter.patch('/templates/:id', requireAuth, async (req: AuthRequest, re
 // DELETE /api/data/templates/:id
 templatesRouter.delete('/templates/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const { id } = req.params;
@@ -129,7 +129,7 @@ templatesRouter.delete('/templates/:id', requireAuth, async (req: AuthRequest, r
 // POST /api/data/templates/:id/tasks — agregar tarea al template
 templatesRouter.post('/templates/:id/tasks', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const { id: templateId } = req.params;
@@ -167,7 +167,7 @@ templatesRouter.post('/templates/:id/tasks', requireAuth, async (req: AuthReques
 // PATCH /api/data/templates/:templateId/tasks/:taskId
 templatesRouter.patch('/templates/:templateId/tasks/:taskId', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const { templateId, taskId } = req.params;
@@ -200,7 +200,7 @@ templatesRouter.patch('/templates/:templateId/tasks/:taskId', requireAuth, async
 // DELETE /api/data/templates/:templateId/tasks/:taskId
 templatesRouter.delete('/templates/:templateId/tasks/:taskId', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const { templateId, taskId } = req.params;
@@ -215,7 +215,7 @@ templatesRouter.delete('/templates/:templateId/tasks/:taskId', requireAuth, asyn
 // POST /api/data/templates/:id/apply — aplicar plantilla y crear tareas
 templatesRouter.post('/templates/:id/apply', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops', 'equipo']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const { id } = req.params;

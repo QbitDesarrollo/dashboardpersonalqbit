@@ -293,9 +293,9 @@ export default function SprintPlanning() {
             <p className="text-sm text-muted-foreground">Planifica y asigna tareas al sprint</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <Select value={selectedSprintId} onValueChange={setSelectedSprintId}>
-            <SelectTrigger className="w-56">
+            <SelectTrigger className="w-full sm:w-56">
               <SelectValue placeholder="Seleccionar sprint" />
             </SelectTrigger>
             <SelectContent>
@@ -333,7 +333,7 @@ export default function SprintPlanning() {
                       <Badge variant="outline" className="text-xs">{data.sprint.brands.nombre}</Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground mb-3">
+                  <div className="flex items-center gap-3 text-sm text-muted-foreground mb-3 flex-wrap">
                     <span className="flex items-center gap-1">
                       <Calendar className="h-3.5 w-3.5" />
                       {new Date(data.sprint.start_date).toLocaleDateString('es')} – {new Date(data.sprint.end_date).toLocaleDateString('es')}
@@ -375,7 +375,7 @@ export default function SprintPlanning() {
                 </div>
 
                 {/* KPI Summary */}
-                <div className="grid grid-cols-2 gap-3 md:w-[320px] shrink-0">
+                <div className="grid grid-cols-2 gap-3 w-full md:w-[320px] shrink-0">
                   <div className="border rounded-lg p-3 text-center">
                     <div className="text-2xl font-bold text-primary">{committedPoints}</div>
                     <div className="text-xs text-muted-foreground">Pts. Comprometidos</div>
@@ -652,7 +652,7 @@ export default function SprintPlanning() {
 
       {/* Story Points Voting Dialog */}
       <Dialog open={!!votingTask} onOpenChange={(open) => { if (!open) { setVotingTask(null); setVotedPoints(null); } }}>
-        <DialogContent className="max-w-md" aria-describedby="voting-desc">
+        <DialogContent className="max-w-[95vw] sm:max-w-md" aria-describedby="voting-desc">
           <DialogHeader>
             <DialogTitle>Estimacion de Story Points</DialogTitle>
             <DialogDescription id="voting-desc">

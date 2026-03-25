@@ -4,7 +4,7 @@ import App from "./App.tsx";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
-  <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} storageKey="tiusdei-theme">
+  <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="tiusdei-theme">
     <App />
   </ThemeProvider>
 );

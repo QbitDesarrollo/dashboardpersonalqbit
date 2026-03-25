@@ -291,7 +291,7 @@ export function setupSocket(httpServer: HttpServer): void {
       );
       if (!member) {
         const userRow = await queryOne<{ rol: string }>('SELECT rol FROM profiles WHERE id = ?', [userId]);
-        if (!userRow || !['admin', 'ops'].includes(userRow.rol)) return;
+        if (!userRow || !['admin', 'ejecutivo'].includes(userRow.rol)) return;
       }
       socket.join(`desk:${deskId}`);
       socketDesks.get(socket.id)?.add(deskId);
@@ -337,36 +337,36 @@ export function setupSocket(httpServer: HttpServer): void {
       }
     });
 
-    socket.on('desk:message', async (data: { deskId: string; mensaje: string }, cb?: (err?: { message: string }) => void) => {
+    socket.on('desk:message', async (data: { deskId: string; mensaje: string; image_url?: string }, cb?: (err?: { message: string }) => void) => {
       try {
-        const { deskId, mensaje } = data || {};
-        if (!deskId || typeof mensaje !== 'string' || !mensaje.trim()) {
-          cb?.({ message: 'deskId y mensaje requeridos' });
+        const { deskId, mensaje, image_url } = data || {};
+        if (!deskId || (typeof mensaje !== 'string' || !mensaje.trim()) && !image_url) {
+          cb?.({ message: 'deskId y mensaje o imagen requeridos' });
           return;
         }
 
-        // Verify membership or admin/ops role
+        // Verify membership or admin/ejecutivo role
         const member = await queryOne<{ id: string }>(
           'SELECT dm.id FROM desk_members dm WHERE dm.desk_id = ? AND dm.user_id = ?',
           [deskId, userId]
         );
         if (!member) {
           const userRow = await queryOne<{ rol: string }>('SELECT rol FROM profiles WHERE id = ?', [userId]);
-          if (!userRow || !['admin', 'ops'].includes(userRow.rol)) {
+          if (!userRow || !['admin', 'ejecutivo'].includes(userRow.rol)) {
             cb?.({ message: 'Sin acceso a esta mesa' });
             return;
           }
         }
 
         const id = uuid();
-        const text = mensaje.trim();
+        const text = (mensaje || '').trim();
         await query(
-          'INSERT INTO desk_messages (id, desk_id, user_id, mensaje) VALUES (?, ?, ?, ?)',
-          [id, deskId, userId, text]
+          'INSERT INTO desk_messages (id, desk_id, user_id, mensaje, image_url) VALUES (?, ?, ?, ?, ?)',
+          [id, deskId, userId, text, image_url || null]
         );
 
         const row = await queryOne<any>(
-          `SELECT dm.id, dm.desk_id, dm.user_id, dm.mensaje, dm.created_at,
+          `SELECT dm.id, dm.desk_id, dm.user_id, dm.mensaje, dm.image_url, dm.created_at,
                   p.nombre AS user_nombre, p.avatar_url
            FROM desk_messages dm
            LEFT JOIN profiles p ON p.id = dm.user_id
@@ -379,6 +379,7 @@ export function setupSocket(httpServer: HttpServer): void {
           desk_id: row.desk_id,
           user_id: row.user_id,
           mensaje: row.mensaje,
+          image_url: row.image_url || null,
           created_at: row.created_at,
           user: { nombre: row.user_nombre, avatar_url: row.avatar_url },
         } : null;
@@ -397,7 +398,7 @@ export function setupSocket(httpServer: HttpServer): void {
           'SELECT user_id FROM desk_members WHERE desk_id = ?', [deskId]
         );
         const adminOps = await query<{ id: string }[]>(
-          "SELECT id FROM profiles WHERE rol IN ('admin','ops') AND activo = 1 AND id != ?",
+          "SELECT id FROM profiles WHERE rol IN ('admin','ejecutivo') AND activo = 1 AND id != ?",
           [userId]
         );
         const recipientIds = new Set(allMembers.map(m => m.user_id));
@@ -503,7 +504,7 @@ export function setupSocket(httpServer: HttpServer): void {
         );
         if (!member) {
           const userRow = await queryOne<{ rol: string }>('SELECT rol FROM profiles WHERE id = ?', [userId]);
-          if (!userRow || !['admin', 'ops'].includes(userRow.rol)) {
+          if (!userRow || !['admin', 'ejecutivo'].includes(userRow.rol)) {
             cb?.({ message: 'Sin acceso a esta mesa' });
             return;
           }

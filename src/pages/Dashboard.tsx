@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, lazy, Suspense } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as api from '@/lib/apiClient';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -185,7 +186,8 @@ const buildUrgentTasks = (taskList: Task[]): UrgentTask[] => {
 };
 
 export default function Dashboard() {
-  const { profile, isCliente, isAdmin, isOps, isEquipo, canViewAll } = useAuth();
+  const navigate = useNavigate();
+  const { profile, isCliente, isAdmin, isEjecutivo, isEquipo, canViewAll } = useAuth();
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [profiles, setProfiles] = useState<{ id: string; nombre: string }[]>([]);
@@ -209,7 +211,7 @@ export default function Dashboard() {
         api.getDesks(),
       ];
 
-      if (isAdmin || isOps) {
+      if (isAdmin || isEjecutivo) {
         fetchPromises.push(api.getRecentActivity(20));
       }
 
@@ -225,7 +227,7 @@ export default function Dashboard() {
       setBrands(Array.isArray(brandsData) ? brandsData.filter((b: any) => b.activo) : []);
       setDesks(Array.isArray(desksData) ? desksData.filter((d: any) => d.activo) : []);
 
-      if (isAdmin || isOps) {
+      if (isAdmin || isEjecutivo) {
         setRecentActivity(Array.isArray(results[4]) ? results[4] : []);
       }
     } catch (error) {
@@ -1040,7 +1042,8 @@ export default function Dashboard() {
               {activeUrgentTasks.slice(0, 5).map((task) => (
                 <div
                   key={task.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors gap-2"
+                  onClick={() => navigate(`/tareas?task=${task.id}`)}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors gap-2 cursor-pointer"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground text-sm sm:text-base truncate">{task.titulo_tarea}</p>

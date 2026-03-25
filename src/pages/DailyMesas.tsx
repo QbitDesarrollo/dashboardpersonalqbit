@@ -152,7 +152,7 @@ const getDaysRemaining = (fechaEntrega: string) => {
 };
 
 export default function DailyMesas() {
-  const { isAdmin, isOps, profile } = useAuth();
+  const { isAdmin, isEjecutivo, profile } = useAuth();
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
 
@@ -164,6 +164,14 @@ export default function DailyMesas() {
 
   const [filterDesk, setFilterDesk] = useState<string>(pinnedDeskId || 'all');
   const [filterBrand, setFilterBrand] = useState<string>(pinnedBrandId || 'all');
+
+  // Sync filters when global pinned desk/brand changes from sidebar
+  useEffect(() => {
+    setFilterDesk(pinnedDeskId || 'all');
+  }, [pinnedDeskId]);
+  useEffect(() => {
+    setFilterBrand(pinnedBrandId || 'all');
+  }, [pinnedBrandId]);
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
 
@@ -220,7 +228,8 @@ export default function DailyMesas() {
     const allowedDesksStr = siteSettings.daily_meetings_desk_ids ?? '';
     const allowedDesks = allowedDesksStr.split(',').map(s => s.trim()).filter(Boolean);
     if (allowedDesks.length === 0) return false;
-    if (filterDesk === 'all') return false;
+    // Si es "all", mostrar si hay al menos una mesa habilitada
+    if (filterDesk === 'all') return allowedDesks.length > 0;
     return allowedDesks.includes(filterDesk);
   }, [siteSettings, profile, filterDesk]);
 

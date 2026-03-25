@@ -77,7 +77,7 @@ attendanceRouter.get('/attendance/today', requireAuth, async (req: AuthRequest, 
 attendanceRouter.get('/attendance', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { user_id, date_from, date_to, limit = '50', offset = '0' } = req.query as Record<string, string>;
-    const isAdminOps = await hasRole(req.userId!, ['admin', 'ops']);
+    const isAdminOps = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     const effectiveUserId = (isAdminOps && user_id) ? user_id : req.userId!;
 
     let where = 'WHERE a.user_id = ?';
@@ -108,7 +108,7 @@ attendanceRouter.get('/attendance', requireAuth, async (req: AuthRequest, res) =
 // Admin: attendance summary
 attendanceRouter.get('/attendance/summary', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const { date_from, date_to } = req.query as Record<string, string>;
@@ -140,7 +140,7 @@ attendanceRouter.get('/attendance/summary', requireAuth, async (req: AuthRequest
 // Admin: edit attendance
 attendanceRouter.patch('/attendance/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ops']);
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
 
     const { check_in, check_out, notes } = req.body;

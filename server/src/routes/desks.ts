@@ -56,7 +56,7 @@ desksRouter.get('/desks/online-users', requireAuth, async (_req: AuthRequest, re
 desksRouter.get('/desks/unread-counts', requireAuth, async (req: AuthRequest, res) => {
   try {
     const userId = req.userId!;
-    const isAdminOps = await hasRole(userId, ['admin', 'ops']);
+    const isAdminOps = await hasRole(userId, ['admin', 'ejecutivo']);
 
     let deskIds: string[];
     if (isAdminOps) {
@@ -159,6 +159,57 @@ desksRouter.delete('/desks/:id/members/:userId', requireAuth, async (req: AuthRe
   }
 });
 
+// ========== Desk Brands (many-to-many) ==========
+desksRouter.get('/desks/:id/brands', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const rows = await query<any[]>(
+      `SELECT b.*, c.nombre as cliente_nombre FROM brands b
+       INNER JOIN desk_brands db ON db.brand_id = b.id
+       LEFT JOIN clients c ON c.id = b.cliente_id
+       WHERE db.desk_id = ? ORDER BY b.nombre`,
+      [id]
+    );
+    res.json(rows.map((r) => ({ ...r, activo: !!r.activo, clients: r.cliente_nombre ? { nombre: r.cliente_nombre } : null })));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cargar marcas de la mesa' });
+  }
+});
+
+desksRouter.post('/desks/:id/brands', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const { id } = req.params;
+    const { brand_ids } = req.body;
+    if (!Array.isArray(brand_ids) || brand_ids.length === 0) return res.status(400).json({ error: 'brand_ids requerido' });
+    for (const brandId of brand_ids) {
+      await query(
+        'INSERT IGNORE INTO desk_brands (id, desk_id, brand_id) VALUES (?, ?, ?)',
+        [uuid(), id, brandId]
+      );
+    }
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al asignar marcas' });
+  }
+});
+
+desksRouter.delete('/desks/:id/brands/:brandId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const { id, brandId } = req.params;
+    await query('DELETE FROM desk_brands WHERE desk_id = ? AND brand_id = ?', [id, brandId]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al quitar marca' });
+  }
+});
+
 // ========== Desk Chat Messages ==========
 desksRouter.get('/desks/:id/messages', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -166,18 +217,18 @@ desksRouter.get('/desks/:id/messages', requireAuth, async (req: AuthRequest, res
     const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 50, 1), 200);
     const before = typeof req.query.before === 'string' ? req.query.before : null;
 
-    // Verify membership or admin/ops role
+    // Verify membership or admin/ejecutivo role
     const member = await queryOne<{ id: string }>(
       'SELECT dm.id FROM desk_members dm WHERE dm.desk_id = ? AND dm.user_id = ?',
       [id, req.userId]
     );
     if (!member) {
-      const isAdminOps = await hasRole(req.userId!, ['admin', 'ops']);
+      const isAdminOps = await hasRole(req.userId!, ['admin', 'ejecutivo']);
       if (!isAdminOps) return res.status(403).json({ error: 'Sin acceso a esta mesa' });
     }
 
     let sql = `
-      SELECT m.id, m.desk_id, m.user_id, m.mensaje, m.created_at,
+      SELECT m.id, m.desk_id, m.user_id, m.mensaje, m.image_url, m.created_at,
              p.nombre AS user_nombre, p.avatar_url
       FROM desk_messages m
       LEFT JOIN profiles p ON p.id = m.user_id
@@ -199,6 +250,7 @@ desksRouter.get('/desks/:id/messages', requireAuth, async (req: AuthRequest, res
       desk_id: r.desk_id,
       user_id: r.user_id,
       mensaje: r.mensaje,
+      image_url: r.image_url || null,
       created_at: r.created_at,
       user: { nombre: r.user_nombre, avatar_url: r.avatar_url },
     })).reverse(); // Return in ASC order

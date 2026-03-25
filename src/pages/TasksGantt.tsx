@@ -134,7 +134,7 @@ export default function TasksGantt() {
           >
             6 meses
           </Button>
-          <div className="flex gap-1 p-1 rounded-lg bg-muted/50">
+          <div className="flex flex-wrap gap-1 p-1 rounded-lg bg-muted/50">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/tareas" className="flex items-center gap-1.5">
                 <LayoutGrid className="h-4 w-4" />
@@ -160,15 +160,15 @@ export default function TasksGantt() {
 
       <Card>
         <CardContent className="p-0 overflow-hidden">
-          <ScrollArea className="w-full">
-            <div className="min-w-max">
+          <ScrollArea className="w-full overflow-x-auto">
+            <div className="min-w-max" style={{ touchAction: 'pan-x' }}>
               {/* Header: days */}
               <div
                 className="flex border-b bg-muted/40 sticky top-0 z-10"
                 style={{ height: HEADER_HEIGHT }}
               >
                 <div
-                  className="flex-shrink-0 border-r px-3 flex items-center font-medium text-sm w-64"
+                  className="flex-shrink-0 border-r px-3 flex items-center font-medium text-sm w-48 sm:w-64"
                   style={{ height: HEADER_HEIGHT }}
                 >
                   Tarea / Fecha
@@ -204,7 +204,7 @@ export default function TasksGantt() {
                       style={{ height: ROW_HEIGHT }}
                     >
                       <div
-                        className="flex-shrink-0 border-r px-3 flex items-center gap-2 w-64"
+                        className="flex-shrink-0 border-r px-3 flex items-center gap-2 w-48 sm:w-64"
                         style={{ height: ROW_HEIGHT }}
                       >
                         <Link

@@ -53,7 +53,7 @@ export async function runInactivityMonitor() {
         // Check if we already sent an alert recently (avoid spamming)
         const recentAlert = await queryOne<any>(
           `SELECT id FROM notifications
-           WHERE user_id IN (SELECT id FROM profiles WHERE rol IN ('admin','ops'))
+           WHERE user_id IN (SELECT id FROM profiles WHERE rol IN ('admin','ejecutivo'))
              AND mensaje LIKE ?
              AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)
            LIMIT 1`,
@@ -61,9 +61,9 @@ export async function runInactivityMonitor() {
         );
 
         if (!recentAlert) {
-          // Get admin/ops users to notify
+          // Get admin/ejecutivo users to notify
           const admins = await query<{ id: string }[]>(
-            `SELECT id FROM profiles WHERE rol IN ('admin','ops') AND activo = 1`
+            `SELECT id FROM profiles WHERE rol IN ('admin','ejecutivo') AND activo = 1`
           );
 
           const mensaje = autoPause
