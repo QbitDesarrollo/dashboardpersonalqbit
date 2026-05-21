@@ -30,7 +30,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Plus, Edit, Loader2, LayoutDashboard, Users, Trash2, Tag } from 'lucide-react';
+import { Plus, Edit, Loader2, LayoutDashboard, Users, Trash2, Tag, Check, X, Search } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface Desk {
   id: string;
@@ -59,11 +61,13 @@ export default function AdminDesks() {
   const [saving, setSaving] = useState(false);
   const [selectedDesk, setSelectedDesk] = useState<Desk | null>(null);
   const [deskMembers, setDeskMembers] = useState<Profile[]>([]);
-  const [userToAdd, setUserToAdd] = useState<string>('');
+  const [usersToAdd, setUsersToAdd] = useState<Set<string>>(new Set());
+  const [userSearch, setUserSearch] = useState('');
 
   const [allBrands, setAllBrands] = useState<Brand[]>([]);
   const [deskBrands, setDeskBrands] = useState<Brand[]>([]);
-  const [brandToAdd, setBrandToAdd] = useState<string>('');
+  const [brandsToAdd, setBrandsToAdd] = useState<Set<string>>(new Set());
+  const [brandSearch, setBrandSearch] = useState('');
   const [configTab, setConfigTab] = useState<'members' | 'brands'>('members');
 
   const [formData, setFormData] = useState({
@@ -90,8 +94,10 @@ export default function AdminDesks() {
 
   const openMembersDialog = async (desk: Desk) => {
     setSelectedDesk(desk);
-    setUserToAdd('');
-    setBrandToAdd('');
+    setUsersToAdd(new Set());
+    setUserSearch('');
+    setBrandsToAdd(new Set());
+    setBrandSearch('');
     setConfigTab('members');
     try {
       const [members, brands] = await Promise.all([
@@ -108,18 +114,37 @@ export default function AdminDesks() {
   };
 
   const handleAddMember = async () => {
-    if (!selectedDesk || !userToAdd) return;
+    if (!selectedDesk || usersToAdd.size === 0) return;
+    const ids = Array.from(usersToAdd);
     try {
-      const result: any = await api.addDeskMember(selectedDesk.id, userToAdd);
+      const result: any = await api.addDeskMembers(selectedDesk.id, ids);
       if (result?.error) throw new Error(result.error);
       const members = await api.getDeskMembers(selectedDesk.id);
       setDeskMembers(Array.isArray(members) ? members : []);
-      setUserToAdd('');
-      toast.success('Usuario añadido a la mesa');
+      setUsersToAdd(new Set());
+      setUserSearch('');
+      toast.success(`${ids.length} ${ids.length === 1 ? 'usuario añadido' : 'usuarios añadidos'}`);
     } catch (err: any) {
       toast.error(err.message || 'Error al añadir');
     }
   };
+
+  const toggleUser = (id: string) => {
+    setUsersToAdd((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredUsersToAdd = () => usersNotInDesk.filter((u) => {
+    if (!userSearch.trim()) return true;
+    const q = userSearch.toLowerCase();
+    return u.nombre.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+
+  const selectAllUsers = () => setUsersToAdd(new Set(filteredUsersToAdd().map((u) => u.id)));
+  const clearUsers = () => setUsersToAdd(new Set());
 
   const handleRemoveMember = async (userId: string) => {
     if (!selectedDesk) return;
@@ -134,18 +159,37 @@ export default function AdminDesks() {
   };
 
   const handleAddBrand = async () => {
-    if (!selectedDesk || !brandToAdd) return;
+    if (!selectedDesk || brandsToAdd.size === 0) return;
+    const ids = Array.from(brandsToAdd);
     try {
-      const result: any = await api.addDeskBrands(selectedDesk.id, [brandToAdd]);
+      const result: any = await api.addDeskBrands(selectedDesk.id, ids);
       if (result?.error) throw new Error(result.error);
       const brands = await api.getDeskBrands(selectedDesk.id);
       setDeskBrands(Array.isArray(brands) ? brands : []);
-      setBrandToAdd('');
-      toast.success('Marca asignada a la mesa');
+      setBrandsToAdd(new Set());
+      setBrandSearch('');
+      toast.success(`${ids.length} ${ids.length === 1 ? 'marca asignada' : 'marcas asignadas'}`);
     } catch (err: any) {
       toast.error(err.message || 'Error al asignar');
     }
   };
+
+  const toggleBrand = (id: string) => {
+    setBrandsToAdd((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredBrandsToAdd = () => brandsNotInDesk.filter((b) => {
+    if (!brandSearch.trim()) return true;
+    const q = brandSearch.toLowerCase();
+    return b.nombre.toLowerCase().includes(q) || (b.clients?.nombre || '').toLowerCase().includes(q);
+  });
+
+  const selectAllBrands = () => setBrandsToAdd(new Set(filteredBrandsToAdd().map((b) => b.id)));
+  const clearSelection = () => setBrandsToAdd(new Set());
 
   const handleRemoveBrand = async (brandId: string) => {
     if (!selectedDesk) return;
@@ -365,26 +409,60 @@ export default function AdminDesks() {
 
           {configTab === 'members' && (
             <div className="space-y-4">
-              <div className="flex gap-2">
-                <Select value={userToAdd || '__none__'} onValueChange={(v) => setUserToAdd(v === '__none__' ? '' : v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Añadir usuario..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__" disabled>
-                      {usersNotInDesk.length ? 'Seleccionar usuario...' : 'Todos asignados'}
-                    </SelectItem>
-                    {usersNotInDesk.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.nombre} ({u.email})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button onClick={handleAddMember} disabled={!userToAdd}>
-                  Añadir
-                </Button>
-              </div>
+              {usersNotInDesk.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-3 text-center bg-muted/40 rounded-lg">
+                  Todos los usuarios ya están asignados a esta mesa
+                </div>
+              ) : (
+                <div className="border rounded-lg p-3 space-y-3 bg-muted/20">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar por nombre o correo..."
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        className="pl-9 h-9"
+                      />
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={selectAllUsers} className="gap-1">
+                      <Check className="h-3.5 w-3.5" /> Todos
+                    </Button>
+                    {usersToAdd.size > 0 && (
+                      <Button type="button" variant="ghost" size="sm" onClick={clearUsers} className="gap-1">
+                        <X className="h-3.5 w-3.5" /> Limpiar
+                      </Button>
+                    )}
+                  </div>
+
+                  <ScrollArea className="h-[220px] rounded border bg-background">
+                    <div className="p-1">
+                      {filteredUsersToAdd().map((u) => {
+                        const checked = usersToAdd.has(u.id);
+                        return (
+                          <label
+                            key={u.id}
+                            className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm hover:bg-muted/60 ${checked ? 'bg-primary/10' : ''}`}
+                          >
+                            <Checkbox checked={checked} onCheckedChange={() => toggleUser(u.id)} />
+                            <span className="flex-1">{u.nombre}</span>
+                            <span className="text-xs text-muted-foreground">{u.email}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-muted-foreground">
+                      {usersToAdd.size === 0 ? 'Selecciona uno o varios usuarios' : `${usersToAdd.size} ${usersToAdd.size === 1 ? 'usuario seleccionado' : 'usuarios seleccionados'}`}
+                    </span>
+                    <Button onClick={handleAddMember} disabled={usersToAdd.size === 0} size="sm">
+                      Añadir{usersToAdd.size > 0 ? ` (${usersToAdd.size})` : ''}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Equipo asignado</Label>
                 {deskMembers.length === 0 ? (
@@ -407,26 +485,62 @@ export default function AdminDesks() {
 
           {configTab === 'brands' && (
             <div className="space-y-4">
-              <div className="flex gap-2">
-                <Select value={brandToAdd || '__none__'} onValueChange={(v) => setBrandToAdd(v === '__none__' ? '' : v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Añadir marca..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__" disabled>
-                      {brandsNotInDesk.length ? 'Seleccionar marca...' : 'Todas asignadas'}
-                    </SelectItem>
-                    {brandsNotInDesk.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.nombre}{b.clients?.nombre ? ` (${b.clients.nombre})` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button onClick={handleAddBrand} disabled={!brandToAdd}>
-                  Añadir
-                </Button>
-              </div>
+              {brandsNotInDesk.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-3 text-center bg-muted/40 rounded-lg">
+                  Todas las marcas ya están asignadas a esta mesa
+                </div>
+              ) : (
+                <div className="border rounded-lg p-3 space-y-3 bg-muted/20">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar marca..."
+                        value={brandSearch}
+                        onChange={(e) => setBrandSearch(e.target.value)}
+                        className="pl-9 h-9"
+                      />
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={selectAllBrands} className="gap-1">
+                      <Check className="h-3.5 w-3.5" /> Todas
+                    </Button>
+                    {brandsToAdd.size > 0 && (
+                      <Button type="button" variant="ghost" size="sm" onClick={clearSelection} className="gap-1">
+                        <X className="h-3.5 w-3.5" /> Limpiar
+                      </Button>
+                    )}
+                  </div>
+
+                  <ScrollArea className="h-[220px] rounded border bg-background">
+                    <div className="p-1">
+                      {filteredBrandsToAdd().map((b) => {
+                        const checked = brandsToAdd.has(b.id);
+                        return (
+                          <label
+                            key={b.id}
+                            className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm hover:bg-muted/60 ${checked ? 'bg-primary/10' : ''}`}
+                          >
+                            <Checkbox checked={checked} onCheckedChange={() => toggleBrand(b.id)} />
+                            <span className="flex-1">{b.nombre}</span>
+                            {b.clients?.nombre && (
+                              <span className="text-xs text-muted-foreground">{b.clients.nombre}</span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-muted-foreground">
+                      {brandsToAdd.size === 0 ? 'Selecciona una o varias marcas' : `${brandsToAdd.size} ${brandsToAdd.size === 1 ? 'marca seleccionada' : 'marcas seleccionadas'}`}
+                    </span>
+                    <Button onClick={handleAddBrand} disabled={brandsToAdd.size === 0} size="sm">
+                      Añadir{brandsToAdd.size > 0 ? ` (${brandsToAdd.size})` : ''}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Marcas asignadas</Label>
                 {deskBrands.length === 0 ? (

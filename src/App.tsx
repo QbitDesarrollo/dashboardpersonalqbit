@@ -17,11 +17,16 @@ const Login = lazy(() => import("./pages/Login"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const TasksKanban = lazy(() => import("./pages/TasksKanban"));
+const PipelineBoard = lazy(() => import("./pages/PipelineBoard"));
 const TasksGantt = lazy(() => import("./pages/TasksGantt"));
 const TasksCalendar = lazy(() => import("./pages/TasksCalendar"));
 const TasksWorkload = lazy(() => import("./pages/TasksWorkload"));
 const TimeTracking = lazy(() => import("./pages/TimeTracking"));
 const Reports = lazy(() => import("./pages/Reports"));
+const Cumplimiento = lazy(() => import("./pages/Cumplimiento"));
+const Mcp = lazy(() => import("./pages/Mcp"));
+const Incidencias = lazy(() => import("./pages/Incidencias"));
+const Novedades = lazy(() => import("./pages/Novedades"));
 const Scrum = lazy(() => import("./pages/Scrum"));
 const ScrumBacklog = lazy(() => import("./pages/ScrumBacklog"));
 const ScrumBoard = lazy(() => import("./pages/ScrumBoard"));
@@ -40,6 +45,7 @@ const AdminClients = lazy(() => import("./pages/admin/Clients"));
 const AdminBrands = lazy(() => import("./pages/admin/Brands"));
 const AdminDesks = lazy(() => import("./pages/admin/Desks"));
 const AdminConfig = lazy(() => import("./pages/admin/Config"));
+const AdminErrorLogs = lazy(() => import("./pages/admin/ErrorLogs"));
 const Templates = lazy(() => import("./pages/Templates"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PublicFormView = lazy(() => import("./pages/PublicFormView"));
@@ -50,6 +56,7 @@ const GoogleAuthSuccess = lazy(() => import("./pages/GoogleAuthSuccess"));
 const MiPerfil = lazy(() => import("./pages/MiPerfil"));
 const CustomDashboard = lazy(() => import("./pages/CustomDashboard"));
 const TeamMonitor = lazy(() => import("./pages/admin/TeamMonitor"));
+const AdminWhatsApp = lazy(() => import("./pages/admin/WhatsApp"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -114,6 +121,11 @@ const App = () => (
                 <AppLayout><TasksKanban /></AppLayout>
               </ProtectedRoute>
             } />
+            <Route path="/tareas/pipeline" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
+                <AppLayout><PipelineBoard /></AppLayout>
+              </ProtectedRoute>
+            } />
             <Route path="/tareas/gantt" element={
               <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><TasksGantt /></AppLayout>
@@ -137,6 +149,26 @@ const App = () => (
             <Route path="/informes" element={
               <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Reports /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/informes/cumplimiento" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
+                <AppLayout><Cumplimiento /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/mcp" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
+                <AppLayout><Mcp /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/incidencias" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
+                <AppLayout><Incidencias /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/novedades" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
+                <AppLayout><Novedades /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/scrum" element={
@@ -243,6 +275,11 @@ const App = () => (
                 <AppLayout><Integrations /></AppLayout>
               </ProtectedRoute>
             } />
+            <Route path="/admin/errores" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AppLayout><AdminErrorLogs /></AppLayout>
+              </ProtectedRoute>
+            } />
             <Route path="/admin/automatizaciones" element={
               <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><Automations /></AppLayout>
@@ -261,6 +298,11 @@ const App = () => (
             <Route path="/admin/monitor" element={
               <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><TeamMonitor /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/whatsapp" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AppLayout><AdminWhatsApp /></AppLayout>
               </ProtectedRoute>
             } />
 

@@ -6,6 +6,8 @@ import { getUserRole, hasRole } from '../utils/roles.js';
 import { logActivity, logTaskChanges } from '../utils/activity.js';
 import { canAccessTask } from '../utils/taskAccess.js';
 import { createNotification } from '../utils/notifications.js';
+import { sendEmail, taskAssignmentEmail, taskHandoffEmail } from '../services/email.js';
+import { processCommentMentions } from '../utils/mentions.js';
 import { autoSyncTaskToCalendar } from '../utils/googleCalendarSync.js';
 
 const createTaskSchema = z.object({
@@ -17,6 +19,7 @@ const createTaskSchema = z.object({
   responsable_user_id: z.string().nullable().optional(),
   responsable_ids: z.array(z.string()).max(20).optional(),
   departamento: z.string().max(200).nullable().optional(),
+  department_id: z.string().nullable().optional(),
   prioridad: z.enum(['alta', 'media', 'baja']).optional().default('media'),
   estado: z.enum(['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado']).optional().default('backlog'),
   fecha_inicio: z.string().nullable().optional(),
@@ -38,6 +41,37 @@ const createTaskSchema = z.object({
   recurrence_end_date: z.string().nullable().optional(),
 });
 
+/** Manda email de asignación de tarea para un user específico. Lee data desde la DB. */
+async function sendTaskAssignmentEmailFor(userId: string, taskId: string): Promise<void> {
+  try {
+    const user = await queryOne<{ email: string; nombre: string }>('SELECT email, nombre FROM profiles WHERE id = ?', [userId]);
+    if (!user?.email) return;
+    if (!process.env.MAILGUN_API_KEY && !process.env.SMTP_PASS) return;
+    const t = await queryOne<any>(
+      `SELECT t.titulo_tarea, t.detalle, t.fecha_inicio, t.fecha_entrega, t.prioridad, b.nombre AS brand_nombre
+       FROM tasks t LEFT JOIN brands b ON b.id = t.brand_id WHERE t.id = ?`,
+      [taskId]
+    );
+    if (!t) return;
+    const frontendUrl = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
+    const emailData = await taskAssignmentEmail({
+      recipientName: user.nombre || 'Usuario',
+      taskTitle: String(t.titulo_tarea || 'Tarea'),
+      brandName: String(t.brand_nombre || 'Sin marca'),
+      detalle: t.detalle || undefined,
+      fechaInicio: t.fecha_inicio ? new Date(t.fecha_inicio).toISOString().slice(0, 10) : null,
+      fechaEntrega: t.fecha_entrega ? new Date(t.fecha_entrega).toISOString().slice(0, 10) : '',
+      prioridad: String(t.prioridad || 'media'),
+      frontendUrl,
+      taskId,
+    });
+    emailData.to = user.email;
+    await sendEmail(emailData);
+  } catch (e) {
+    console.error('[TASK ASSIGN EMAIL] error:', e);
+  }
+}
+
 /** Fire-and-forget notification. Only sends if userId is a non-empty string. */
 function notifyUser(userId: string, mensaje: string, taskId: string): void {
   if (!userId) return;
@@ -57,8 +91,8 @@ function asString(v: unknown): string {
 
 export const tasksRouter = Router();
 
-const TASKS_PAGE_SIZE = 50;
-const TASKS_PAGE_SIZE_MAX = 100;
+const TASKS_PAGE_SIZE = 100;
+const TASKS_PAGE_SIZE_MAX = 500;
 
 tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -85,8 +119,12 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
          LEFT JOIN sprints sp ON sp.id = t.sprint_id
          LEFT JOIN task_types tt ON tt.id = t.task_type_id
          LEFT JOIN deliverable_types dt ON dt.id = t.tipo_entregable_id
+         LEFT JOIN departments dep ON dep.id = t.department_id
          LEFT JOIN profiles cb ON cb.id = t.created_by`;
-    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol ${baseFrom}`;
+    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre as department_nombre, dep.color as department_color, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol,
+       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count,
+       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id AND (st.check_done = 1 OR st.estado IN ('entregado','aprobado'))) AS subtask_done_count
+       ${baseFrom}`;
     const orderBy = ' ORDER BY t.created_at DESC';
 
     let countSql: string;
@@ -109,8 +147,16 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
     let extraConditions = '';
     const extraParams: string[] = [];
     if (deskIdFilter) {
-      extraConditions += ' AND t.desk_id = ?';
-      extraParams.push(deskIdFilter);
+      extraConditions += ` AND (
+        t.desk_id = ?
+        OR t.responsable_user_id IN (SELECT user_id FROM desk_members WHERE desk_id = ?)
+        OR t.id IN (
+          SELECT tr.task_id FROM task_responsables tr
+          INNER JOIN desk_members dm ON dm.user_id = tr.user_id
+          WHERE dm.desk_id = ?
+        )
+      )`;
+      extraParams.push(deskIdFilter, deskIdFilter, deskIdFilter);
     }
     if (responsableFilter) {
       extraConditions += ' AND (t.responsable_user_id = ? OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?))';
@@ -150,11 +196,13 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
       // Equipo y ejecutivo solo ven tareas de su mesa o asignadas a ellos
       const deskRows = await query<{ desk_id: string }[]>('SELECT desk_id FROM desk_members WHERE user_id = ?', [req.userId]);
       const deskIds = deskRows.map((r) => r.desk_id);
+      // FIX: incluir también tareas donde el usuario es co-responsable (task_responsables)
+      const coRespCondition = ' OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?)';
       const where = deskIds.length > 0
-        ? ` WHERE ((t.desk_id IN (${deskIds.map(() => '?').join(',')})) OR t.responsable_user_id = ?)${noSubtasksCondition}${sprintCondition}${extraConditions}`
-        : ` WHERE t.responsable_user_id = ?${noSubtasksCondition}${sprintCondition}${extraConditions}`;
-      countParams = deskIds.length > 0 ? [...deskIds, req.userId!, ...sprintParam, ...extraParams] : [req.userId!, ...sprintParam, ...extraParams];
-      listParams = deskIds.length > 0 ? [...deskIds, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)] : [req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)];
+        ? ` WHERE ((t.desk_id IN (${deskIds.map(() => '?').join(',')})) OR t.responsable_user_id = ?${coRespCondition})${noSubtasksCondition}${sprintCondition}${extraConditions}`
+        : ` WHERE (t.responsable_user_id = ?${coRespCondition})${noSubtasksCondition}${sprintCondition}${extraConditions}`;
+      countParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, ...sprintParam, ...extraParams] : [req.userId!, req.userId!, ...sprintParam, ...extraParams];
+      listParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)] : [req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)];
       countSql = `SELECT COUNT(*) as total ${baseFrom}${where}`;
       listSql = `${baseSelect}${where}${orderBy} LIMIT ? OFFSET ?`;
     } else {
@@ -251,12 +299,43 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+
+// GET active timers — devuelve las tareas con timer activo del usuario actual.
+// Se usa al iniciar un timer en una tarea para detectar conflictos y ofrecer
+// pausar la anterior. Idealmente solo hay una (un usuario = un timer activo),
+// pero pueden ser varias si quedaron pegadas.
+tasksRouter.get("/tasks/active-timer", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const rows = await query<any[]>(
+      `SELECT t.id, t.titulo_tarea, t.timer_inicio, t.tiempo_trabajado,
+              b.nombre AS brand_nombre
+       FROM tasks t
+       LEFT JOIN brands b ON b.id = t.brand_id
+       WHERE t.timer_activo = 1
+         AND (t.responsable_user_id = ? OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?))
+       ORDER BY t.timer_inicio DESC`,
+      [req.userId, req.userId]
+    );
+    res.json(rows.map((r) => ({
+      id: r.id,
+      titulo: r.titulo_tarea,
+      brand_nombre: r.brand_nombre,
+      timer_inicio: r.timer_inicio,
+      tiempo_trabajado: Number(r.tiempo_trabajado || 0),
+    })));
+  } catch (e) {
+    console.error("[TIMER] active-timer error:", e);
+    res.status(500).json({ error: "Error al consultar timers activos" });
+  }
+});
+
 // GET single task by ID (for deep-linking from emails / daily)
 tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
     const taskId = req.params.id;
     const row = await queryOne<any>(
       `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre,
+              dep.nombre as department_nombre, dep.color as department_color,
               p.nombre as resp_nombre, p.avatar_url as resp_avatar_url,
               f.name as feature_name, sp.name as sprint_name,
               tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre,
@@ -269,6 +348,7 @@ tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
        LEFT JOIN sprints sp ON sp.id = t.sprint_id
        LEFT JOIN task_types tt ON tt.id = t.task_type_id
        LEFT JOIN deliverable_types dt ON dt.id = t.tipo_entregable_id
+       LEFT JOIN departments dep ON dep.id = t.department_id
        LEFT JOIN profiles cb ON cb.id = t.created_by
        WHERE t.id = ?`,
       [taskId]
@@ -347,10 +427,10 @@ tasksRouter.post('/tasks', requireAuth, async (req: AuthRequest, res) => {
     const primaryResponsable = responsableIds[0] || null;
 
     await query(
-      `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, department_id, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, body.check_done ? 1 : 0, body.brand_id, body.desk_id || null, body.titulo_tarea, body.detalle || null,
-        body.cantidad_entregables ?? 1, primaryResponsable, body.departamento || null,
+        body.cantidad_entregables ?? 1, primaryResponsable, body.departamento || null, body.department_id || null,
         body.prioridad || 'media', body.estado || 'backlog', body.fecha_inicio || null, body.fecha_entrega,
         enlaces, body.sprint_id || null, body.story_points ?? null, body.feature_id || null, body.task_type_id || null, body.tipo_entregable_id || null, req.userId ?? null,
         body.estimated_hours ?? null, body.recurrence_type || 'none', body.recurrence_interval ?? null, body.recurrence_end_date || null
@@ -360,6 +440,14 @@ tasksRouter.post('/tasks', requireAuth, async (req: AuthRequest, res) => {
     // Insert into task_responsables
     for (const uid of responsableIds) {
       await query('INSERT IGNORE INTO task_responsables (id, task_id, user_id) VALUES (?, ?, ?)', [uuid(), id, uid]);
+    }
+
+    // Primer registro de history por departamento (si hay)
+    if (body.department_id) {
+      await query(
+        'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
+        [uuid(), id, body.department_id, primaryResponsable]
+      ).catch((e) => console.error('[TASKS] history insert (create):', e));
     }
 
     // Insert deliverable types (multi-type support)
@@ -388,7 +476,7 @@ tasksRouter.post('/tasks', requireAuth, async (req: AuthRequest, res) => {
       }
     }
 
-    const row = await queryOne<any>(`SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre FROM tasks t LEFT JOIN brands b ON b.id = t.brand_id LEFT JOIN desks d ON d.id = t.desk_id WHERE t.id = ?`, [id]);
+    const row = await queryOne<any>(`SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre AS department_nombre, dep.color AS department_color FROM tasks t LEFT JOIN brands b ON b.id = t.brand_id LEFT JOIN desks d ON d.id = t.desk_id LEFT JOIN departments dep ON dep.id = t.department_id WHERE t.id = ?`, [id]);
     res.status(201).json({ ...row, brands: row?.brand_nombre ? { nombre: row.brand_nombre } : null, desks: row?.desk_nombre ? { nombre: row.desk_nombre } : null });
   } catch (e) {
     console.error(e);
@@ -412,24 +500,63 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
     }
     const isProtected = creatorRole === 'admin' || creatorRole === 'ejecutivo';
 
+    // Fields that equipo can always change on assigned tasks (even protected ones)
+    const operationalFields = new Set(['estado', 'timer_activo', 'timer_inicio', 'tiempo_trabajado', 'check_done', 'is_favorite']);
+    const bodyKeys = Object.keys(body);
+    const onlyOperational = bodyKeys.every(k => operationalFields.has(k));
+
+    const isResponsable = oldRow?.responsable_user_id === req.userId;
+    const isInResponsables = await queryOne<{ n: number }>(
+      'SELECT 1 as n FROM task_responsables WHERE task_id = ? AND user_id = ? LIMIT 1',
+      [id, req.userId!]
+    );
+    const isAssigned = isResponsable || !!isInResponsables;
+
     let allowed = false;
     if (role === 'admin') {
       allowed = true;
     } else if (role === 'ejecutivo') {
-      // Ejecutivo can edit tasks they created; not tasks from admin or other ejecutivos
       allowed = !isProtected || oldRow?.created_by === req.userId;
     } else if (role === 'equipo') {
-      // Equipo can edit if responsible, but NOT if task was created by admin/ejecutivo
-      allowed = !isProtected && (onlyFavorite || body.responsable_user_id === req.userId || oldRow?.responsable_user_id === req.userId);
+      if (isProtected) {
+        // On protected tasks, equipo can only change operational fields if assigned
+        allowed = isAssigned && (onlyOperational || onlyFavorite);
+      } else {
+        allowed = onlyFavorite || isAssigned;
+      }
     }
-    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    if (!allowed) {
+      console.log('[PATCH TASK] DENIED', { id, role, userId: req.userId, bodyKeys, onlyOperational, isAssigned, isProtected, creatorRole, responsable: oldRow?.responsable_user_id });
+      return res.status(403).json({ error: 'Sin permisos' });
+    }
+
+    // ── Reschedule: si cambia fecha_entrega, exigir motivo ──────────────────
+    const MOTIVOS_RESCHEDULE = ['INTERNO', 'CLIENTE', 'ALCANCE', 'FUERZA_MAYOR', 'SIN_CLASIFICAR'];
+    let rescheduleInfo: { oldFecha: string | null; newFecha: string | null; motivo: string; comentario: string | null } | null = null;
+    if (body.fecha_entrega !== undefined && oldRow) {
+      const normOld = oldRow.fecha_entrega ? new Date(oldRow.fecha_entrega).toISOString().slice(0, 10) : null;
+      const normNew = body.fecha_entrega ? String(body.fecha_entrega).slice(0, 10) : null;
+      if (normOld !== normNew) {
+        const motivo = String(body.motivo_reschedule || '').toUpperCase();
+        if (!MOTIVOS_RESCHEDULE.includes(motivo)) {
+          return res.status(400).json({ error: 'Debes indicar el motivo del cambio de fecha (motivo_reschedule)' });
+        }
+        rescheduleInfo = {
+          oldFecha: normOld,
+          newFecha: normNew,
+          motivo,
+          comentario: typeof body.comentario_reschedule === 'string' && body.comentario_reschedule.trim()
+            ? body.comentario_reschedule.trim().slice(0, 500) : null,
+        };
+      }
+    }
 
     const fields: string[] = [];
     const values: any[] = [];
     const map: Record<string, string> = {
       check_done: 'check_done', brand_id: 'brand_id', desk_id: 'desk_id', titulo_tarea: 'titulo_tarea',
       detalle: 'detalle', cantidad_entregables: 'cantidad_entregables', responsable_user_id: 'responsable_user_id',
-      departamento: 'departamento', prioridad: 'prioridad', estado: 'estado', fecha_inicio: 'fecha_inicio',
+      departamento: 'departamento', department_id: 'department_id', prioridad: 'prioridad', estado: 'estado', fecha_inicio: 'fecha_inicio',
       fecha_entrega: 'fecha_entrega', enlaces: 'enlaces', estado_envio: 'estado_envio',
       tiempo_trabajado: 'tiempo_trabajado', timer_activo: 'timer_activo', timer_inicio: 'timer_inicio',
       sprint_id: 'sprint_id', story_points: 'story_points', feature_id: 'feature_id',
@@ -456,10 +583,48 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
         }
       }
     }
-    if (fields.length === 0) return res.status(400).json({ error: 'Sin campos para actualizar' });
+    // Permitimos PATCH solo con responsable_ids/entregables (sin otros fields del map)
+    const hasOtherFields = fields.length > 0;
+    const hasResponsableIds = Array.isArray(body.responsable_ids);
+    const hasEntregables = Array.isArray(body.entregables);
+    if (!hasOtherFields && !hasResponsableIds && !hasEntregables) {
+      return res.status(400).json({ error: 'Sin campos para actualizar' });
+    }
 
-    values.push(id);
-    await query(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, values);
+    if (hasOtherFields) {
+      values.push(id);
+      await query(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, values);
+    }
+
+    // Registrar el reschedule (después de aplicar el UPDATE)
+    if (rescheduleInfo) {
+      await query(
+        'INSERT INTO task_reschedules (id, task_id, fecha_anterior, fecha_nueva, motivo, comentario, changed_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [uuid(), id, rescheduleInfo.oldFecha, rescheduleInfo.newFecha, rescheduleInfo.motivo, rescheduleInfo.comentario, req.userId]
+      );
+    }
+
+    // History de departamento: si cambio department_id, cerrar el registro
+    // actual abierto (set exited_at) y abrir uno nuevo con el nuevo depto.
+    if (body.department_id !== undefined && body.department_id !== oldRow?.department_id) {
+      try {
+        await query(
+          'UPDATE task_department_history SET exited_at = NOW(3) WHERE task_id = ? AND exited_at IS NULL',
+          [id]
+        );
+        if (body.department_id) {
+          const respForHistory = Array.isArray(body.responsable_ids) && body.responsable_ids.length > 0
+            ? body.responsable_ids[0]
+            : (body.responsable_user_id !== undefined ? body.responsable_user_id : oldRow?.responsable_user_id);
+          await query(
+            'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
+            [uuid(), id, body.department_id, respForHistory || null]
+          );
+        }
+      } catch (e) {
+        console.error('[TASKS] history hook (patch):', e);
+      }
+    }
 
     // Handle multiple responsables
     if (Array.isArray(body.responsable_ids)) {
@@ -470,15 +635,32 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       // Keep responsable_user_id in sync with first responsable
       const primary = body.responsable_ids[0] || null;
       await query('UPDATE tasks SET responsable_user_id = ? WHERE id = ?', [primary, id]);
-      // Notify new assignees and auto-sync to their Google Calendar
+      // Notify NEW assignees: in-app + email + Google Calendar sync.
+      // Solo mandamos email/notif a los que NO estaban antes.
       const tituloNotif: string = asString(oldRow?.titulo_tarea) || 'Tarea';
+      const oldRespRows = await query<{ user_id: string }[]>(
+        // Old responsables snapshot (antes del DELETE de arriba ya no existen, así que comparamos contra la primera lectura)
+        'SELECT 1 as n', []
+      );
+      // Obtener old responsables del oldRow + tabla legacy: usamos la lista que existía ANTES del PATCH.
+      // En este punto la tabla ya fue actualizada, así que reconstruimos los old desde oldRow.responsable_user_id
+      // y de un snapshot que tomamos al inicio (TODO: si se necesita lista completa pre-PATCH, leer al principio).
+      const oldRespSet = new Set<string>();
+      if (oldRow?.responsable_user_id) oldRespSet.add(String(oldRow.responsable_user_id));
+
       for (const uid of body.responsable_ids) {
         const uidStr: string = asString(uid);
-        if (uidStr && uidStr !== req.userId) {
-          notifyUser(uidStr, `Se te asignó la tarea: ${tituloNotif}`, id);
+        if (!uidStr) continue;
+        const isNew = !oldRespSet.has(uidStr);
+        if (uidStr !== req.userId) {
+          // Notif in-app siempre (al menos para nuevos)
+          if (isNew) notifyUser(uidStr, `Se te asignó la tarea: ${tituloNotif}`, id);
         }
-        if (uidStr) {
-          autoSyncTaskToCalendar(uidStr, id).catch(() => {});
+        autoSyncTaskToCalendar(uidStr, id).catch(() => {});
+
+        // Email solo a nuevos asignados (no al autor, no a quien ya estaba)
+        if (isNew && uidStr !== req.userId) {
+          sendTaskAssignmentEmailFor(uidStr, id).catch((e) => console.error('[PATCH TASK] email fail:', e));
         }
       }
     }
@@ -501,11 +683,17 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       }
     }
 
-    // If only responsable_user_id was updated (single), also auto-sync
+    // If only responsable_user_id was updated (single), notif + email + auto-sync
     if (body.responsable_user_id !== undefined && !Array.isArray(body.responsable_ids)) {
       const singleResp: string = asString(body.responsable_user_id);
       if (singleResp) {
         autoSyncTaskToCalendar(singleResp, id).catch(() => {});
+        const wasAlreadyAssigned = String(oldRow?.responsable_user_id || '') === singleResp;
+        if (!wasAlreadyAssigned && singleResp !== req.userId) {
+          const tituloNotif2: string = asString(oldRow?.titulo_tarea) || 'Tarea';
+          notifyUser(singleResp, `Se te asignó la tarea: ${tituloNotif2}`, id);
+          sendTaskAssignmentEmailFor(singleResp, id).catch((e) => console.error('[PATCH TASK] email single fail:', e));
+        }
       }
     }
 
@@ -592,21 +780,172 @@ tasksRouter.get('/tasks/:id/reads', requireAuth, async (req: AuthRequest, res) =
 });
 
 // ========== SUBTASKS ==========
+// POST /tasks/:id/handoff — pasar una tarea al siguiente departamento (handoff de etapa)
+tasksRouter.post('/tasks/:id/handoff', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id);
+    const src = await queryOne<any>(
+      `SELECT t.*, b.nombre AS brand_nombre, dep.nombre AS department_nombre
+       FROM tasks t
+       LEFT JOIN brands b ON b.id = t.brand_id
+       LEFT JOIN departments dep ON dep.id = t.department_id
+       WHERE t.id = ?`,
+      [id]
+    );
+    if (!src) return res.status(404).json({ error: 'Tarea no encontrada' });
+
+    const canAccess = await canAccessTask(req.userId!, id);
+    if (!canAccess) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
+
+    const toDeptId = asString(req.body?.to_department_id);
+    if (!toDeptId) return res.status(400).json({ error: 'to_department_id requerido' });
+
+    const toDept = await queryOne<any>('SELECT id, nombre FROM departments WHERE id = ? AND activo = 1', [toDeptId]);
+    if (!toDept) return res.status(400).json({ error: 'Departamento destino inválido o inactivo' });
+
+    const respIds: string[] = Array.isArray(req.body?.to_responsable_ids)
+      ? req.body.to_responsable_ids.filter((x: unknown) => typeof x === 'string' && x.length > 0)
+      : [];
+    const primaryResp = respIds[0] || null;
+    const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim().slice(0, 1000) : null;
+    const dueDate = typeof req.body?.due_date === 'string' && req.body.due_date ? req.body.due_date : null;
+    const createNew = req.body?.create_new_task === true;
+
+    const fromDeptId = src.department_id || null;
+    const fromResp = src.responsable_user_id || null;
+    let targetTaskId: string | null = null;
+
+    if (createNew) {
+      // Crear una tarea nueva relacionada en el nuevo departamento
+      const newId = uuid();
+      await query(
+        `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables,
+          responsable_user_id, departamento, department_id, prioridad, estado, fecha_inicio, fecha_entrega,
+          enlaces, task_type_id, created_by)
+         VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?, ?, ?, ?)`,
+        [
+          newId, src.brand_id, src.desk_id, src.titulo_tarea, src.detalle, src.cantidad_entregables ?? 1,
+          primaryResp, toDept.nombre, toDeptId, src.prioridad || 'media',
+          src.fecha_inicio || null, dueDate || src.fecha_entrega, src.enlaces, src.task_type_id || null, req.userId ?? null,
+        ]
+      );
+      for (const uid of respIds) {
+        await query('INSERT IGNORE INTO task_responsables (id, task_id, user_id) VALUES (?, ?, ?)', [uuid(), newId, uid]);
+      }
+      await query(
+        'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
+        [uuid(), newId, toDeptId, primaryResp]
+      );
+      targetTaskId = newId;
+    } else {
+      // Pasar la MISMA tarea: cambiar departamento + responsables
+      const updates: string[] = ['department_id = ?'];
+      const vals: unknown[] = [toDeptId];
+      if (primaryResp) { updates.push('responsable_user_id = ?'); vals.push(primaryResp); }
+      if (dueDate) { updates.push('fecha_entrega = ?'); vals.push(dueDate); }
+      vals.push(id);
+      await query(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`, vals);
+
+      if (respIds.length > 0) {
+        await query('DELETE FROM task_responsables WHERE task_id = ?', [id]);
+        for (const uid of respIds) {
+          await query('INSERT IGNORE INTO task_responsables (id, task_id, user_id) VALUES (?, ?, ?)', [uuid(), id, uid]);
+        }
+      }
+      // Cerrar history actual y abrir nuevo
+      await query('UPDATE task_department_history SET exited_at = NOW(3) WHERE task_id = ? AND exited_at IS NULL', [id]);
+      await query(
+        'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
+        [uuid(), id, toDeptId, primaryResp]
+      );
+    }
+
+    // Registro del handoff
+    await query(
+      `INSERT INTO task_handoffs (id, source_task_id, target_task_id, from_department_id, to_department_id,
+        from_responsable_id, to_responsable_id, motivo, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [uuid(), id, targetTaskId, fromDeptId, toDeptId, fromResp, primaryResp, motivo, req.userId ?? null]
+    );
+
+    // Actividad
+    await logActivity('task', id, 'handoff', 'department_id', src.department_nombre || null, toDept.nombre, req.userId ?? null).catch(() => {});
+
+    // Notificar + email a los nuevos responsables
+    const notifyTaskId = targetTaskId || id;
+    const frontendUrl = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
+    let fromRespNombre: string | null = null;
+    if (fromResp) {
+      const fr = await queryOne<{ nombre: string }>('SELECT nombre FROM profiles WHERE id = ?', [fromResp]);
+      fromRespNombre = fr?.nombre || null;
+    }
+    for (const uid of respIds) {
+      notifyUser(uid, `Te pasaron una tarea a ${toDept.nombre}: ${src.titulo_tarea}`, notifyTaskId);
+      try {
+        const u = await queryOne<{ email: string; nombre: string }>('SELECT email, nombre FROM profiles WHERE id = ?', [uid]);
+        if (u?.email && (process.env.MAILGUN_API_KEY || process.env.SMTP_PASS)) {
+          const emailData = await taskHandoffEmail({
+            recipientName: u.nombre || 'Usuario',
+            taskTitle: String(src.titulo_tarea || 'Tarea'),
+            brandName: String(src.brand_nombre || 'Sin marca'),
+            fromDepartment: src.department_nombre || null,
+            toDepartment: toDept.nombre,
+            fromResponsable: fromRespNombre,
+            motivo,
+            fechaEntrega: (dueDate || src.fecha_entrega) ? new Date(dueDate || src.fecha_entrega).toISOString().slice(0, 10) : null,
+            frontendUrl,
+            taskId: notifyTaskId,
+          });
+          emailData.to = u.email;
+          await sendEmail(emailData);
+        }
+      } catch (e) {
+        console.error('[HANDOFF EMAIL] error:', e);
+      }
+    }
+
+    res.status(201).json({ ok: true, target_task_id: targetTaskId, same_task: !createNew });
+  } catch (e) {
+    console.error('[TASKS] handoff error:', e);
+    res.status(500).json({ error: 'Error al pasar la tarea de etapa' });
+  }
+});
+
 tasksRouter.get('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const rows = await query<any[]>(
-      `SELECT t.*, b.nombre as brand_nombre, p.nombre as resp_nombre
+      `SELECT t.*, b.nombre as brand_nombre, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url
        FROM tasks t
        LEFT JOIN brands b ON b.id = t.brand_id
        LEFT JOIN profiles p ON p.id = t.responsable_user_id
-       WHERE t.parent_task_id = ? ORDER BY t.created_at ASC`,
+       WHERE t.parent_task_id = ? ORDER BY t.sort_order ASC, t.created_at ASC`,
       [id]
     );
+
+    // Cargar responsables múltiples (task_responsables) para todas las subtareas en una sola query
+    const subIds = rows.map((r: any) => r.id);
+    const respMap: Record<string, { user_id: string; nombre: string; avatar_url: string | null }[]> = {};
+    if (subIds.length > 0) {
+      const ph = subIds.map(() => '?').join(',');
+      const respRows = await query<any[]>(
+        `SELECT tr.task_id, tr.user_id, p.nombre, p.avatar_url
+         FROM task_responsables tr
+         LEFT JOIN profiles p ON p.id = tr.user_id
+         WHERE tr.task_id IN (${ph})`,
+        subIds
+      );
+      for (const r of respRows) {
+        if (!respMap[r.task_id]) respMap[r.task_id] = [];
+        respMap[r.task_id].push({ user_id: r.user_id, nombre: r.nombre, avatar_url: r.avatar_url || null });
+      }
+    }
+
     const subtasks = rows.map((r: any) => ({
       ...r,
       brands: r.brand_nombre ? { nombre: r.brand_nombre } : null,
-      profiles: r.resp_nombre ? { nombre: r.resp_nombre } : null,
+      profiles: r.resp_nombre ? { nombre: r.resp_nombre, avatar_url: r.resp_avatar_url || null } : null,
+      responsables: respMap[r.id] || [],
     }));
     res.json(subtasks);
   } catch (e) {
@@ -642,6 +981,43 @@ tasksRouter.post('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, re
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al crear subtarea' });
+  }
+});
+
+// DELETE subtarea (solo subtareas, no tareas padre)
+tasksRouter.delete('/tasks/:id/subtasks/:subId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const { id, subId } = req.params;
+    // Verificar que la subtarea pertenezca al padre
+    const sub = await queryOne<any>('SELECT id, parent_task_id, titulo_tarea FROM tasks WHERE id = ? AND parent_task_id = ?', [subId, id]);
+    if (!sub) return res.status(404).json({ error: 'Subtarea no encontrada' });
+    await query('DELETE FROM tasks WHERE id = ? AND parent_task_id = ?', [subId, id]);
+    logActivity("task", String(subId), 'delete', null, sub.titulo_tarea, null, req.userId!).catch(() => {});
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al eliminar subtarea' });
+  }
+});
+
+// PATCH reorder subtareas: body { ordered_ids: string[] }
+tasksRouter.patch('/tasks/:id/subtasks/reorder', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const { id: parentId } = req.params;
+    const ids = Array.isArray(req.body?.ordered_ids) ? req.body.ordered_ids.filter((x: unknown) => typeof x === 'string') : [];
+    if (ids.length === 0) return res.status(400).json({ error: 'ordered_ids requerido' });
+    // Update cada id con su posición
+    for (let i = 0; i < ids.length; i++) {
+      await query('UPDATE tasks SET sort_order = ? WHERE id = ? AND parent_task_id = ?', [String(i), ids[i], parentId]);
+    }
+    res.json({ ok: true, count: ids.length });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al reordenar subtareas' });
   }
 });
 
@@ -760,6 +1136,15 @@ tasksRouter.post('/tasks/:taskId/comments', requireAuth, async (req: AuthRequest
       [id]
     );
     const comment = row ? { ...row, user: row.user_nombre ? { nombre: row.user_nombre, avatar_url: row.user_avatar_url || null } : null, likes_count: 0, liked_by_me: false } : null;
+
+    // Detectar @menciones y notificar (in-app + email con link a la tarea). Fire-and-forget.
+    const mentionText = text || (typeof contenido_html === 'string' ? contenido_html.replace(/<[^>]*>/g, ' ') : '');
+    if (mentionText && req.userId) {
+      processCommentMentions({ taskId, authorUserId: req.userId, text: mentionText }).catch((e) => {
+        console.error('[COMMENTS REST] processCommentMentions failed:', e);
+      });
+    }
+
     res.status(201).json(comment);
   } catch (e) {
     console.error(e);
@@ -813,16 +1198,25 @@ tasksRouter.post('/comments/:commentId/like', requireAuth, async (req: AuthReque
 // ========== BULK ACTIONS ==========
 tasksRouter.post('/tasks/bulk-update', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
-    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const role = await getUserRole(req.userId!);
+    if (!['admin', 'ejecutivo', 'equipo'].includes(role)) return res.status(403).json({ error: 'Sin permisos' });
     const { task_ids, updates } = req.body;
     if (!Array.isArray(task_ids) || task_ids.length === 0) return res.status(400).json({ error: 'task_ids requerido' });
     if (task_ids.length > 50) return res.status(400).json({ error: 'Máximo 50 tareas por operación' });
     if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'updates requerido' });
 
+    // Equipo can only bulk-update operational fields (estado, check_done)
+    const operationalFields = new Set(['estado', 'check_done']);
+    if (role === 'equipo') {
+      const updateKeys = Object.keys(updates);
+      if (!updateKeys.every(k => operationalFields.has(k))) {
+        return res.status(403).json({ error: 'Sin permisos para modificar esos campos' });
+      }
+    }
+
     const allowedFields: Record<string, string> = {
       estado: 'estado', prioridad: 'prioridad', responsable_user_id: 'responsable_user_id',
-      sprint_id: 'sprint_id', desk_id: 'desk_id',
+      sprint_id: 'sprint_id', desk_id: 'desk_id', check_done: 'check_done',
     };
 
     const fields: string[] = [];
@@ -930,18 +1324,35 @@ async function spawnNextRecurrence(parentTask: any, userId: string): Promise<voi
 
   const newId = uuid();
   const recurrenceParent = parentTask.recurrence_parent_id || parentTask.id;
+  const nextDueStr = nextDue.toISOString().slice(0, 10);
+
+  // GUARD anti-duplicado: si ya existe una ocurrencia para esta serie con esta misma
+  // fecha de entrega, NO crear otra. Hace el spawn idempotente — si el trigger se dispara
+  // 2 veces (ej. PATCH de check_done + PATCH de estado por separado) solo se crea una.
+  const yaExiste = await queryOne<{ id: string }>(
+    `SELECT id FROM tasks
+     WHERE fecha_entrega = ?
+       AND (recurrence_parent_id = ? OR id = ?)
+       AND recurrence_parent_id IS NOT NULL
+     LIMIT 1`,
+    [nextDueStr, recurrenceParent, recurrenceParent]
+  );
+  if (yaExiste) {
+    console.log('[Recurrence] Ocurrencia ya existe para', recurrenceParent, nextDueStr, '— no se duplica');
+    return;
+  }
 
   await query(
     `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle,
-     cantidad_entregables, responsable_user_id, departamento, prioridad, estado,
+     cantidad_entregables, responsable_user_id, departamento, department_id, prioridad, estado,
      fecha_inicio, fecha_entrega, enlaces, feature_id, task_type_id,
      tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval,
      recurrence_end_date, recurrence_parent_id)
-     VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [newId, parentTask.brand_id, parentTask.desk_id, parentTask.titulo_tarea,
      parentTask.detalle, parentTask.cantidad_entregables, parentTask.responsable_user_id,
-     parentTask.departamento, parentTask.prioridad, nextStart,
-     nextDue.toISOString().slice(0, 10), parentTask.enlaces,
+     parentTask.departamento, parentTask.department_id, parentTask.prioridad, nextStart,
+     nextDueStr, parentTask.enlaces,
      parentTask.feature_id, parentTask.task_type_id, parentTask.tipo_entregable_id,
      userId, parentTask.estimated_hours, parentTask.recurrence_type,
      parentTask.recurrence_interval, parentTask.recurrence_end_date, recurrenceParent]

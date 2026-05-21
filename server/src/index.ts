@@ -19,10 +19,14 @@ import { clientsRouter } from './routes/clients.js';
 import { brandsRouter } from './routes/brands.js';
 import { desksRouter } from './routes/desks.js';
 import { taskTypesRouter } from './routes/task-types.js';
+import { departmentsRouter } from './routes/departments.js';
 import { featuresRouter } from './routes/features-routes.js';
 import { sprintsRouter } from './routes/sprints.js';
 import { releasesRouter } from './routes/releases.js';
 import { tasksRouter } from './routes/tasks.js';
+import { metricsRouter } from './routes/metrics.js';
+import { incidenciasRouter } from './routes/incidencias.js';
+import { novedadesRouter } from './routes/novedades.js';
 import { deliverablesRouter } from './routes/deliverables.js';
 import { filesRouter } from './routes/files-routes.js';
 import { activityRouter } from './routes/activity.js';
@@ -43,6 +47,12 @@ import { timeSessionsRouter } from './routes/time-sessions.js';
 import { activityTrackingRouter } from './routes/activity-tracking.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { teamMonitorRouter } from './routes/team-monitor.js';
+import { whatsappRouter } from './routes/whatsapp.js';
+import { errorLogsRouter } from './routes/error-logs.js';
+import { initErrorCapture, errorLogMiddleware } from './utils/errorLog.js';
+import { setSocketIO } from './services/whatsapp.js';
+import { apiTokensRouter } from './routes/api-tokens.js';
+import { mcpRouter } from './routes/mcp.js';
 
 // --- Validate required env vars at startup ---
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'tiusdei-secret-change-me') {
@@ -56,6 +66,9 @@ if (!process.env.DATABASE_URL) {
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3003', 10);
+
+// Captura centralizada de errores -> tabla error_logs (consola interna)
+initErrorCapture();
 
 // Trust proxy (behind nginx)
 app.set('trust proxy', 1);
@@ -132,6 +145,7 @@ app.use('/api/data', clientsRouter);
 app.use('/api/data', brandsRouter);
 app.use('/api/data', desksRouter);
 app.use('/api/data', taskTypesRouter);
+app.use('/api/data', departmentsRouter);
 app.use('/api/data', featuresRouter);
 app.use('/api/data', sprintsRouter);
 app.use('/api/data', releasesRouter);
@@ -141,6 +155,9 @@ app.use('/api/data', filesRouter);
 app.use('/api/data', activityRouter);
 app.use('/api/data', templatesRouter);
 app.use('/api/data', timeAnalyticsRouter);
+app.use('/api/data', metricsRouter);
+app.use('/api/data', incidenciasRouter);
+app.use('/api/data', novedadesRouter);
 app.use('/api/data', searchRouter);
 app.use('/api/data', savedFiltersRouter);
 app.use('/api/data', publicFormsAdminRouter);
@@ -156,12 +173,20 @@ app.use('/api/data', timeSessionsRouter);
 app.use('/api/data', activityTrackingRouter);
 app.use('/api/data', attendanceRouter);
 app.use('/api/data', teamMonitorRouter);
+app.use('/api/data', whatsappRouter);
+app.use('/api/data', errorLogsRouter);
+app.use('/api/data', apiTokensRouter);
+app.use('/api', mcpRouter);
 app.use('/api/config', configRouter);
 app.use('/api/email', emailRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/webhooks', webhooksRouter);
 
 // Global error handler - don't leak internal details
+app.use((err: any, req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  errorLogMiddleware(err, req, _res, () => {});
+  next(err);
+});
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('[ERROR]', err.message);
   if (process.env.NODE_ENV !== 'production') {
@@ -172,6 +197,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 import { runDeadlineWarning } from './jobs/deadlineWarning.js';
 import { runInactivityMonitor } from './jobs/inactivityMonitor.js';
+import { runTimeEntryAutoClose } from './jobs/timeEntryAutoClose.js';
 
 const httpServer = http.createServer(app);
 setupSocket(httpServer);
@@ -187,5 +213,7 @@ httpServer.listen(PORT, '0.0.0.0', () => {
 
   // Job: monitor de inactividad (cada 60 segundos)
   setInterval(runInactivityMonitor, 60 * 1000);
+  setInterval(runTimeEntryAutoClose, 30 * 60 * 1000); // cada 30 min
+  runTimeEntryAutoClose().catch(() => {}); // run once on boot
   console.log('[TIUSDEI API] WebSocket (comentarios en tiempo real) activo');
 });

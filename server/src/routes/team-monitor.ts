@@ -45,10 +45,15 @@ teamMonitorRouter.get('/team-monitor/live', requireAuth, async (req: AuthRequest
         // Calculate current duration
         if (user.session_start) {
           const elapsed = Math.floor((Date.now() - new Date(user.session_start).getTime()) / 1000);
-          user.current_session_seconds = elapsed;
+          // Cap defensivo 12h: si excede, asumimos que olvidaron pausar y reportamos solo 12h
+          user.current_session_seconds = Math.min(elapsed, 12 * 3600);
+          user.session_overdue = elapsed > 12 * 3600;
         }
       }
-      user.today_total_seconds = (user.today_completed_seconds || 0) + (user.current_session_seconds || 0);
+      // Cast a Number — MySQL devuelve SUM() como string, evita concatenación en frontend
+      user.today_completed_seconds = Number(user.today_completed_seconds || 0);
+      user.current_session_seconds = Number(user.current_session_seconds || 0);
+      user.today_total_seconds = user.today_completed_seconds + user.current_session_seconds;
     }
 
     res.json({ users });

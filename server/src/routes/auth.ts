@@ -8,8 +8,19 @@ import path from 'path';
 import fs from 'fs';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
+import { sendEmail, bienvenidaEmail } from '../services/email.js';
 
 export const authRouter = Router();
+
+/** Envía email de bienvenida (fire-and-forget). No bloquea el registro. */
+function sendBienvenida(email: string, nombre: string): void {
+  if (!email || (!process.env.MAILGUN_API_KEY && !process.env.SMTP_PASS)) return;
+  const frontendUrl = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
+  bienvenidaEmail({ recipientName: nombre || 'Usuario', email, frontendUrl })
+    .then((m) => { m.to = email; return sendEmail(m); })
+    .catch((e) => console.error('[AUTH] bienvenida email fail:', e));
+}
+
 const JWT_SECRET = process.env.JWT_SECRET!;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
@@ -177,6 +188,8 @@ authRouter.post('/register', async (req, res) => {
       'INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, ?)',
       [uuid(), id, rol]
     );
+
+    sendBienvenida(emailLower, nombre);
 
     const token = signToken(id, rol);
     res.status(201).json({
@@ -358,11 +371,12 @@ authRouter.get('/google', (req, res) => {
   }
   const mode = req.query.mode as string;
   const oauth2Client = getOAuth2Client();
-  // 'register' o 'link' fuerzan consent para obtener refresh_token
-  const needConsent = mode === 'register' || mode === 'link';
+  // Siempre forzar consent para garantizar refresh_token (sin él Google Calendar/Chat se rompen)
+  // Ver: https://developers.google.com/identity/protocols/oauth2/web-server#offline
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    prompt: needConsent ? 'consent' : 'select_account',
+    include_granted_scopes: true,
+    prompt: 'consent',
     scope: [
       'openid',
       'https://www.googleapis.com/auth/userinfo.email',
@@ -440,6 +454,52 @@ authRouter.get('/google/callback', async (req, res) => {
       }
     }
 
+    // GUARDA anti duplicate: buscar por google_id o email SIN filtrar activo
+    // — si existe con activo=0, devolver error claro en vez de crashear con duplicate key.
+    if (!user) {
+      const existing = await queryOne<{ id: string; email: string; activo: number; google_id: string | null }>(
+        'SELECT id, email, activo, google_id FROM users WHERE google_id = ? OR email = ? LIMIT 1',
+        [gId, gEmail]
+      );
+      if (existing) {
+        // CASO: correo de Workspace REASIGNADO a una persona nueva.
+        // Señal inequívoca: el google_id coincide con una cuenta INACTIVA cuyo email
+        // es distinto al actual de Google → alguien retomó ese correo de Workspace.
+        // Acción: liberar el google_id de la cuenta vieja (queda como histórico intacto)
+        // y crear una cuenta NUEVA y limpia para la persona nueva.
+        if (existing.google_id === gId && !existing.activo && existing.email.toLowerCase() !== gEmail) {
+          await query('UPDATE users SET google_id = NULL WHERE id = ?', [existing.id]);
+          const newId = uuid();
+          const rol = 'equipo';
+          const randomPass = await bcrypt.hash(uuid(), 10);
+          await query(
+            'INSERT INTO users (id, email, password_hash, nombre, rol, google_id, avatar_url) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [newId, gEmail, randomPass, gName, rol, gId, gPicture]
+          );
+          await Promise.all([
+            query('INSERT INTO profiles (id, email, nombre, rol, avatar_url) VALUES (?, ?, ?, ?, ?)', [newId, gEmail, gName, rol, gPicture]),
+            query('INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, ?)', [uuid(), newId, rol]),
+          ]);
+          sendBienvenida(gEmail, gName);
+          user = { id: newId, email: gEmail, nombre: gName, rol, activo: 1, avatar_url: gPicture };
+          console.log('[AUTH] Correo reasignado: cuenta inactiva', existing.id, '(' + existing.email + ') liberada → cuenta nueva', newId, 'para', gEmail);
+        } else if (!existing.activo) {
+          // Cuenta inactiva legítima (misma persona desactivada) → denegar acceso
+          console.log('[AUTH] Google login denied — usuario inactivo:', gEmail);
+          res.redirect(FRONTEND_URL + '/login?error=account_disabled');
+          return;
+        } else {
+          // Usuario activo pero no matcheó arriba (race? case-sensitivity?). Linkear google_id y reutilizar.
+          if (!existing.google_id) {
+            await query('UPDATE users SET google_id = ? WHERE id = ?', [gId, existing.id]);
+          }
+          user = await queryOne<{ id: string; email: string; nombre: string; rol: string; activo: number; avatar_url: string | null }>(
+            'SELECT id, email, nombre, rol, activo, avatar_url FROM users WHERE id = ?', [existing.id]
+          );
+        }
+      }
+    }
+
     // Auto-register if allowed
     if (!user) {
       const regSettings = await getRegistrationSettings();
@@ -460,6 +520,7 @@ authRouter.get('/google/callback', async (req, res) => {
       ]);
       user = { id, email: gEmail, nombre: gName, rol, activo: 1, avatar_url: gPicture };
       console.log('[AUTH] New Google user created:', gEmail);
+      sendBienvenida(gEmail, gName);
     }
 
     // Save Google tokens (non-blocking) and generate JWT in parallel

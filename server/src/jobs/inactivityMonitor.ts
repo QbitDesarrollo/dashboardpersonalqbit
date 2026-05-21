@@ -73,7 +73,7 @@ export async function runInactivityMonitor() {
           for (const admin of admins) {
             const notifId = uuid();
             await query(
-              `INSERT INTO notifications (id, user_id, tipo, mensaje, task_id) VALUES (?, ?, 'alerta', ?, ?)`,
+              `INSERT INTO notifications (id, user_id, mensaje, task_id) VALUES (?, ?, ?, ?)`,
               [notifId, admin.id, mensaje, session.task_id]
             );
           }

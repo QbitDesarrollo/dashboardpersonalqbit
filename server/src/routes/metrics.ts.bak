@@ -1,0 +1,330 @@
+import { Router } from 'express';
+import { requireAuth, AuthRequest } from '../middleware/auth.js';
+import { query } from '../db/mysql.js';
+import { getUserRole } from '../utils/roles.js';
+
+export const metricsRouter = Router();
+
+/** Parsea un old_value de fecha del activity_log que puede venir en formatos varios:
+ *  "2026-04-30"
+ *  "Fri Apr 30 2026 00:00:00 GMT+0000 (...)"
+ *  "Mon Apr 27 2026 00:00:00 GMT+0000 (...)"
+ *
+ *  Devuelve un Date o null.
+ */
+function parseDeadlineLogValue(value: string | null): Date | null {
+  if (!value) return null;
+  const v = value.trim();
+  // ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    return new Date(v + 'T00:00:00Z');
+  }
+  // "Fri Apr 30 2026 ..." o ISO con tiempo
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function dateOnly(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /tasks/:id/deadline-history
+// Historial de cambios de fecha_entrega de una tarea + count + fecha original
+// ─────────────────────────────────────────────────────────────────────────────
+metricsRouter.get('/tasks/:id/deadline-history', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const task = await query<any[]>('SELECT id, fecha_entrega FROM tasks WHERE id = ?', [id]);
+    if (!task[0]) return res.status(404).json({ error: 'Tarea no encontrada' });
+
+    const rows = await query<any[]>(
+      `SELECT al.old_value, al.new_value, al.created_at, p.nombre AS user_nombre, p.id AS user_id
+       FROM activity_log al
+       LEFT JOIN profiles p ON p.id = al.user_id
+       WHERE al.entity_type = 'task' AND al.entity_id = ? AND al.field_name = 'fecha_entrega'
+       ORDER BY al.created_at ASC`,
+      [id]
+    );
+
+    const history = rows.map((r: any) => {
+      const oldD = parseDeadlineLogValue(r.old_value);
+      const newD = parseDeadlineLogValue(r.new_value);
+      return {
+        old: oldD ? dateOnly(oldD) : r.old_value,
+        new: newD ? dateOnly(newD) : r.new_value,
+        by: r.user_nombre || 'Sistema',
+        by_user_id: r.user_id || null,
+        at: r.created_at,
+      };
+    });
+
+    // Fecha original = primer old_value si existe, si no la actual.
+    const firstOld = rows.length > 0 ? parseDeadlineLogValue(rows[0].old_value) : null;
+    const fechaOriginal = firstOld ? dateOnly(firstOld) : (task[0].fecha_entrega ? new Date(task[0].fecha_entrega).toISOString().slice(0, 10) : null);
+
+    res.json({
+      task_id: id,
+      fecha_entrega_actual: task[0].fecha_entrega ? new Date(task[0].fecha_entrega).toISOString().slice(0, 10) : null,
+      fecha_entrega_original: fechaOriginal,
+      reschedule_count: rows.length,
+      history,
+    });
+  } catch (e) {
+    console.error('[METRICS] deadline-history:', e);
+    res.status(500).json({ error: 'Error al obtener historial' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /metrics/cumplimiento?from=YYYY-MM-DD&to=YYYY-MM-DD&desk_id=&responsable_id=
+// Métricas agregadas de cumplimiento por responsable
+// Permisos:
+//   - admin: ve todos
+//   - ejecutivo: ve solo miembros de sus mesas + a sí mismo
+//   - equipo: ve solo a sí mismo
+//   - cliente: 403
+// ─────────────────────────────────────────────────────────────────────────────
+metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const role = await getUserRole(req.userId!);
+    if (role === 'cliente') return res.status(403).json({ error: 'Sin acceso' });
+
+    const from = (req.query.from as string) || new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+    const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
+    const deskFilter = req.query.desk_id as string | undefined;
+    const responsableFilter = req.query.responsable_id as string | undefined;
+
+    // Determinar qué user_ids puede ver según rol
+    let allowedUserIds: string[] | null = null; // null = todos (admin)
+    if (role === 'ejecutivo') {
+      const myDesks = await query<{ desk_id: string }[]>('SELECT desk_id FROM desk_members WHERE user_id = ?', [req.userId]);
+      const deskIds = myDesks.map((d) => d.desk_id);
+      if (deskIds.length === 0) {
+        allowedUserIds = [req.userId!];
+      } else {
+        const ph = deskIds.map(() => '?').join(',');
+        const members = await query<{ user_id: string }[]>(
+          `SELECT DISTINCT user_id FROM desk_members WHERE desk_id IN (${ph})`,
+          deskIds
+        );
+        allowedUserIds = Array.from(new Set([req.userId!, ...members.map((m) => m.user_id)]));
+      }
+    } else if (role === 'equipo') {
+      allowedUserIds = [req.userId!];
+    }
+
+    // Filtro por responsable específico (solo si está permitido)
+    let targetUserIds: string[] | null = null;
+    if (responsableFilter) {
+      if (allowedUserIds && !allowedUserIds.includes(responsableFilter)) {
+        return res.status(403).json({ error: 'Sin acceso a ese responsable' });
+      }
+      targetUserIds = [responsableFilter];
+    } else {
+      targetUserIds = allowedUserIds;
+    }
+
+    // 1. Tareas relevantes en el rango (responsable principal o co-responsable, no subtareas)
+    const params: any[] = [from, to];
+    let userScope = '';
+    if (targetUserIds) {
+      const ph = targetUserIds.map(() => '?').join(',');
+      userScope = ` AND user_id IN (${ph})`;
+      params.push(...targetUserIds);
+    }
+    let deskScope = '';
+    if (deskFilter) {
+      deskScope = ' AND task_desk_id = ?';
+      params.push(deskFilter);
+    }
+
+    const tasksRows = await query<any[]>(
+      `SELECT * FROM (
+        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, t.responsable_user_id AS user_id
+        FROM tasks t
+        WHERE t.responsable_user_id IS NOT NULL
+          AND DATE(t.created_at) BETWEEN ? AND ?
+          AND (t.parent_task_id IS NULL OR t.parent_task_id = '')
+        UNION
+        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, tr.user_id AS user_id
+        FROM task_responsables tr
+        INNER JOIN tasks t ON t.id = tr.task_id
+        WHERE DATE(t.created_at) BETWEEN ? AND ?
+          AND (t.parent_task_id IS NULL OR t.parent_task_id = '')
+      ) ut
+      WHERE 1=1${userScope}${deskScope}`,
+      [from, to, ...params.slice(0, params.length)] // re-pasar from,to por la segunda mitad del UNION
+    );
+    // Nota: el SQL de arriba pasa los mismos params para ambas mitades del UNION.
+    // Re-armar correctamente:
+    const finalParams = [from, to, from, to];
+    if (targetUserIds) finalParams.push(...targetUserIds);
+    if (deskFilter) finalParams.push(deskFilter);
+
+    const tasksRowsFinal = await query<any[]>(
+      `SELECT * FROM (
+        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, t.responsable_user_id AS user_id
+        FROM tasks t
+        WHERE t.responsable_user_id IS NOT NULL
+          AND DATE(t.created_at) BETWEEN ? AND ?
+          AND (t.parent_task_id IS NULL OR t.parent_task_id = '')
+        UNION
+        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, tr.user_id AS user_id
+        FROM task_responsables tr
+        INNER JOIN tasks t ON t.id = tr.task_id
+        WHERE DATE(t.created_at) BETWEEN ? AND ?
+          AND (t.parent_task_id IS NULL OR t.parent_task_id = '')
+      ) ut
+      WHERE 1=1${userScope}${deskScope}`,
+      finalParams
+    );
+
+    const taskIds = Array.from(new Set(tasksRowsFinal.map((r: any) => r.task_id)));
+
+    // 2. Cambios de fecha_entrega (para reschedule_count + fecha_original)
+    let deadlineLogs: any[] = [];
+    if (taskIds.length > 0) {
+      const ph = taskIds.map(() => '?').join(',');
+      deadlineLogs = await query<any[]>(
+        `SELECT entity_id AS task_id, old_value, new_value, created_at
+         FROM activity_log
+         WHERE entity_type = 'task' AND field_name = 'fecha_entrega' AND entity_id IN (${ph})
+         ORDER BY entity_id, created_at ASC`,
+        taskIds
+      );
+    }
+    const reschedulesByTask: Record<string, number> = {};
+    const fechaOriginalByTask: Record<string, Date | null> = {};
+    for (const log of deadlineLogs) {
+      const tid = log.task_id;
+      reschedulesByTask[tid] = (reschedulesByTask[tid] || 0) + 1;
+      if (!(tid in fechaOriginalByTask)) {
+        // primera entrada para esta tarea (ORDER BY created_at ASC)
+        fechaOriginalByTask[tid] = parseDeadlineLogValue(log.old_value);
+      }
+    }
+
+    // 3. Cambios a estado entregado/aprobado (para fecha de entrega real)
+    let deliveryLogs: any[] = [];
+    if (taskIds.length > 0) {
+      const ph = taskIds.map(() => '?').join(',');
+      deliveryLogs = await query<any[]>(
+        `SELECT entity_id AS task_id, MIN(created_at) AS delivered_at
+         FROM activity_log
+         WHERE entity_type = 'task' AND field_name = 'estado'
+           AND new_value IN ('entregado', 'aprobado')
+           AND entity_id IN (${ph})
+         GROUP BY entity_id`,
+        taskIds
+      );
+    }
+    const deliveredAtByTask: Record<string, Date> = {};
+    for (const d of deliveryLogs) {
+      deliveredAtByTask[d.task_id] = new Date(d.delivered_at);
+    }
+
+    // 4. Calcular métricas por usuario
+    type UserMetric = {
+      user_id: string;
+      tareas_total: number;
+      entregadas_a_tiempo: number;
+      entregadas_tarde: number;
+      vencidas_no_entregadas: number;
+      en_proceso: number;
+      reschedules_total: number;
+      task_ids: string[];
+    };
+    const byUser: Record<string, UserMetric> = {};
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (const t of tasksRowsFinal) {
+      const uid = t.user_id;
+      if (!byUser[uid]) {
+        byUser[uid] = {
+          user_id: uid,
+          tareas_total: 0,
+          entregadas_a_tiempo: 0,
+          entregadas_tarde: 0,
+          vencidas_no_entregadas: 0,
+          en_proceso: 0,
+          reschedules_total: 0,
+          task_ids: [],
+        };
+      }
+      const m = byUser[uid];
+      m.tareas_total += 1;
+      m.reschedules_total += reschedulesByTask[t.task_id] || 0;
+      m.task_ids.push(t.task_id);
+
+      const fechaOriginal = fechaOriginalByTask[t.task_id] || (t.fecha_entrega ? new Date(t.fecha_entrega) : null);
+      const deliveredAt = deliveredAtByTask[t.task_id];
+
+      if (deliveredAt) {
+        // Entregada — comparar con fecha original (sin hora, solo fecha)
+        if (fechaOriginal) {
+          const fOrig = new Date(fechaOriginal); fOrig.setHours(23, 59, 59, 999);
+          if (deliveredAt <= fOrig) m.entregadas_a_tiempo += 1;
+          else m.entregadas_tarde += 1;
+        } else {
+          // No hay fecha original conocida → contar como a tiempo (no es justo penalizarla)
+          m.entregadas_a_tiempo += 1;
+        }
+      } else {
+        // No entregada
+        if (t.fecha_entrega && new Date(t.fecha_entrega) < today && !['entregado', 'aprobado'].includes(t.estado)) {
+          m.vencidas_no_entregadas += 1;
+        } else {
+          m.en_proceso += 1;
+        }
+      }
+    }
+
+    // 5. Enriquecer con datos del perfil
+    const userIds = Object.keys(byUser);
+    let profiles: any[] = [];
+    if (userIds.length > 0) {
+      const ph = userIds.map(() => '?').join(',');
+      profiles = await query<any[]>(
+        `SELECT id, nombre, email, avatar_url, rol FROM profiles WHERE id IN (${ph})`,
+        userIds
+      );
+    }
+    const profileById = new Map(profiles.map((p: any) => [p.id, p]));
+
+    const result = Object.values(byUser).map((m) => {
+      const completadas = m.entregadas_a_tiempo + m.entregadas_tarde;
+      const porcentaje = completadas > 0 ? (m.entregadas_a_tiempo / completadas) * 100 : null;
+      const promedioReschedules = m.tareas_total > 0 ? m.reschedules_total / m.tareas_total : 0;
+      const p = profileById.get(m.user_id);
+      return {
+        user_id: m.user_id,
+        nombre: p?.nombre || 'Desconocido',
+        email: p?.email || null,
+        avatar_url: p?.avatar_url || null,
+        rol: p?.rol || null,
+        tareas_total: m.tareas_total,
+        entregadas_a_tiempo: m.entregadas_a_tiempo,
+        entregadas_tarde: m.entregadas_tarde,
+        vencidas_no_entregadas: m.vencidas_no_entregadas,
+        en_proceso: m.en_proceso,
+        promedio_reschedules: Number(promedioReschedules.toFixed(2)),
+        porcentaje_cumplimiento: porcentaje !== null ? Number(porcentaje.toFixed(1)) : null,
+      };
+    });
+
+    result.sort((a, b) => b.tareas_total - a.tareas_total);
+
+    res.json({
+      from,
+      to,
+      total_responsables: result.length,
+      total_tareas: result.reduce((sum, r) => sum + r.tareas_total, 0),
+      responsables: result,
+    });
+  } catch (e) {
+    console.error('[METRICS] cumplimiento:', e);
+    res.status(500).json({ error: 'Error al calcular métricas' });
+  }
+});

@@ -49,6 +49,12 @@ import {
   Sun,
   Moon,
   UserCog,
+  Phone,
+  TrendingUp,
+  Bug,
+  Sparkles,
+  Workflow,
+  Plug,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -81,14 +87,22 @@ interface NavItem {
   roles?: ('admin' | 'ejecutivo' | 'equipo' | 'cliente')[];
 }
 
+// Mesa "Pycca - Loialty" — la sección MCP es solo para su equipo (+ admins).
+const PYCCA_DESK_ID = 'e8e49f2e-465c-44bd-86ef-e560c7876431';
+
 const navigation: NavItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
   { title: 'Tareas', href: '/tareas', icon: <CheckSquare className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Pipeline', href: '/tareas/pipeline', icon: <Workflow className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Scrum', href: '/scrum', icon: <Target className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Daily Mesas', href: '/daily-mesas', icon: <Users className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   { title: 'Archivos', href: '/archivos', icon: <Files className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Plantillas', href: '/plantillas', icon: <LayoutTemplate className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Informes', href: '/informes', icon: <FileText className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Cumplimiento', href: '/informes/cumplimiento', icon: <TrendingUp className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'MCP', href: '/mcp', icon: <Plug className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Incidencias', href: '/incidencias', icon: <Bug className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
+  { title: 'Novedades', href: '/novedades', icon: <Sparkles className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   // { title: 'Mi Dashboard', href: '/mi-dashboard', icon: <BarChart3 className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Portal Cliente', href: '/cliente', icon: <Briefcase className="h-5 w-5" />, roles: ['cliente'] },
 ];
@@ -100,7 +114,9 @@ const adminNavigation: NavItem[] = [
   { title: 'Mesas', href: '/admin/mesas', icon: <LayoutDashboard className="h-5 w-5" /> },
   { title: 'Integraciones', href: '/admin/integraciones', icon: <MessageCircle className="h-5 w-5" /> },
   { title: 'Automatizaciones', href: '/admin/automatizaciones', icon: <Zap className="h-5 w-5" /> },
+  { title: 'Consola de errores', href: '/admin/errores', icon: <Bug className="h-5 w-5" />, roles: ['admin'] },
   { title: 'Formularios públicos', href: '/admin/formularios', icon: <FileText className="h-5 w-5" /> },
+  { title: 'WhatsApp', href: '/admin/whatsapp', icon: <Phone className="h-5 w-5" /> },
   { title: 'Monitor Equipo', href: '/admin/monitor', icon: <MonitorCheck className="h-5 w-5" /> },
   { title: 'Configuración', href: '/admin/configuracion', icon: <Settings className="h-5 w-5" /> },
 ];
@@ -131,6 +147,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [siteSettings, setSiteSettings] = useState<{ logo_url?: string | null; site_name?: string | null }>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const socketRef = useRef<ReturnType<typeof import('socket.io-client').io> | null>(null);
   const notifSoundEnabledRef = useRef(true);
@@ -272,6 +289,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const filteredNav = navigation.filter(item => {
+    if (item.href === '/mcp') {
+      // MCP: solo admins o miembros de la mesa Pycca
+      const inPycca = desks.some(
+        (d) => d.id === PYCCA_DESK_ID || (d.nombre || '').toLowerCase().includes('pycca'),
+      );
+      return profile?.rol === 'admin' || inPycca;
+    }
     if (!item.roles) return true;
     return profile && item.roles.includes(profile.rol);
   });
@@ -620,7 +644,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               >
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </Button>
-              <Popover>
+              <Popover open={notifOpen} onOpenChange={setNotifOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative">
                     <Bell className="h-5 w-5" />
@@ -631,7 +655,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[calc(100vw-2rem)] max-w-80 p-0" align="end" sideOffset={8}>
+                <PopoverContent className="w-[calc(100vw-2rem)] max-w-96 p-0 max-h-[80vh] flex flex-col" align="end" sideOffset={8}>
                   <div className="flex items-center justify-between p-3 border-b border-border">
                     <h4 className="font-semibold text-sm">Notificaciones</h4>
                     {unreadCount > 0 && (
@@ -641,7 +665,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                       </Button>
                     )}
                   </div>
-                  <ScrollArea className="max-h-72">
+                  <ScrollArea className="flex-1 h-[min(70vh,500px)]">
                     {notifications.length === 0 ? (
                       <div className="p-6 text-center text-sm text-muted-foreground">
                         Sin notificaciones
@@ -658,7 +682,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                                 const deskName = match?.[1] || '';
                                 window.dispatchEvent(new CustomEvent('open-desk-chat', { detail: { deskName } }));
                               } else if (notif.task_id) {
-                                navigate('/tareas');
+                                navigate(`/tareas?task=${notif.task_id}`);
+                                setNotifOpen(false);
                               }
                             }}
                             className={cn(

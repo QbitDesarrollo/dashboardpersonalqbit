@@ -188,3 +188,41 @@ filesRouter.delete('/files/:id', requireAuth, async (req: AuthRequest, res) => {
     res.status(500).json({ error: 'Error al eliminar' });
   }
 });
+
+// ── Upload de imágenes inline del editor (paste/drag&drop en RichTextEditor) ──
+const EDITOR_UPLOADS_DIR = path.join(process.cwd(), "uploads", "editor");
+if (!fs.existsSync(EDITOR_UPLOADS_DIR)) fs.mkdirSync(EDITOR_UPLOADS_DIR, { recursive: true });
+
+const editorStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, EDITOR_UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    const ext = (path.extname(file.originalname || "") || ".png").toLowerCase();
+    cb(null, `${uuid()}${ext}`);
+  },
+});
+
+const editorUpload = multer({
+  storage: editorStorage,
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB — capturas pueden ser pesadas
+  fileFilter: (_req, file, cb) => {
+    // Se permite por mimetype (paste del clipboard suele no tener extensión en originalname)
+    if (file.mimetype && file.mimetype.startsWith("image/")) return cb(null, true);
+    const allowed = /\.(jpg|jpeg|png|gif|webp)$/i;
+    cb(null, allowed.test(path.extname(file.originalname || "")));
+  },
+});
+
+filesRouter.post("/editor/upload-image", requireAuth, editorUpload.single("image"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No se envió imagen" });
+    }
+    // URL absoluta — los comentarios pueden mandarse por email
+    const base = (process.env.FRONTEND_URL || "https://tiusdei.qbit.ec").replace(/\/$/, "");
+    const url = `${base}/uploads/editor/${req.file.filename}`;
+    res.status(201).json({ url });
+  } catch (e) {
+    console.error("[FILES] Error editor upload:", e);
+    res.status(500).json({ error: "Error al subir imagen" });
+  }
+});

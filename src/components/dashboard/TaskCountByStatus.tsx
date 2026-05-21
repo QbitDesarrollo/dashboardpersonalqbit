@@ -9,7 +9,7 @@ const STATUS_COLORS: Record<string, string> = {
   bloqueado: '#ef4444',
 };
 const STATUS_LABELS: Record<string, string> = {
-  backlog: 'Backlog',
+  backlog: 'Pendiente',
   en_proceso: 'En Proceso',
   en_revision: 'En Revisión',
   aprobado: 'Aprobado',

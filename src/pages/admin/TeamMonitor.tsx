@@ -134,7 +134,7 @@ export default function TeamMonitor() {
 
   const activeUsers = liveUsers.filter(u => u.session_status === 'active');
   const checkedInUsers = liveUsers.filter(u => u.checked_in_at && !u.checked_out_at);
-  const totalHoursToday = liveUsers.reduce((sum, u) => sum + (u.today_total_seconds || 0), 0);
+  const totalHoursToday = liveUsers.reduce((sum, u) => sum + Number(u.today_total_seconds || 0), 0);
 
   return (
     <div className="space-y-4">

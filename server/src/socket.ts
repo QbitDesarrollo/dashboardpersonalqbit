@@ -3,7 +3,9 @@ import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { query, queryOne, uuid } from './db/mysql.js';
 import { canAccessTask } from './utils/taskAccess.js';
-import { sendEmail } from './services/email.js';
+import { sendEmail, chatMentionEmail } from './services/email.js';
+import { processCommentMentions } from './utils/mentions.js';
+import { setSocketIO } from './services/whatsapp.js';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
@@ -131,6 +133,9 @@ export function setupSocket(httpServer: HttpServer): void {
     }
   });
 
+  // Pass Socket.io instance to WhatsApp service for real-time events
+  setSocketIO(io);
+
   io.on('connection', (socket: Socket & { userId?: string }) => {
     const userId = socket.userId;
     if (!userId) return;
@@ -201,79 +206,16 @@ export function setupSocket(httpServer: HttpServer): void {
 
         io.to(`task:${taskId}`).emit('comment:new', comment);
 
-        // --- Detectar @menciones y notificar a cada usuario mencionado ---
-        const mentionRegex = /@([A-Za-zÀ-ÿ0-9 ._-]+)/g;
-        let match;
-        const notifiedUserIds = new Set<string>();
-        while ((match = mentionRegex.exec(text)) !== null) {
-          const mentionedName = match[1].trim();
-          if (!mentionedName) continue;
-          // Buscar perfil por nombre (case-insensitive, coincidencia parcial)
-          const mentionedUser = await queryOne<{ id: string; nombre: string }>(
-            `SELECT id, nombre FROM profiles WHERE LOWER(nombre) LIKE LOWER(?) AND activo = 1 LIMIT 1`,
-            [`%${mentionedName}%`]
-          );
-          if (mentionedUser && mentionedUser.id !== userId && !notifiedUserIds.has(mentionedUser.id)) {
-            notifiedUserIds.add(mentionedUser.id);
-            const authorRow = await queryOne<{ nombre: string; email: string }>(
-              'SELECT nombre, email FROM profiles WHERE id = ?', [userId]
-            );
-            const authorName = authorRow?.nombre || 'Alguien';
-
-            // Obtener datos de la tarea para el email
-            const taskRow = await queryOne<{ titulo_tarea: string }>(
-              'SELECT titulo_tarea FROM tasks WHERE id = ?', [taskId]
-            );
-            const taskTitle = taskRow?.titulo_tarea || 'una tarea';
-
-            // 1. Notificación in-app
-            const nId = uuid();
-            await query(
-              'INSERT INTO notifications (id, user_id, mensaje, task_id) VALUES (?, ?, ?, ?)',
-              [nId, mentionedUser.id, `${authorName} te mencionó en un comentario`, taskId]
-            );
-            io.to(`user:${mentionedUser.id}`).emit('notification:new', {
-              id: nId,
-              mensaje: `${authorName} te mencionó en un comentario`,
-              task_id: taskId,
-              leida: 0,
-              created_at: new Date().toISOString(),
-            });
-
-            // 2. Email de mención (fire-and-forget)
-            const mentionedProfile = await queryOne<{ email: string; nombre: string }>(
-              'SELECT email, nombre FROM profiles WHERE id = ?', [mentionedUser.id]
-            );
-            if (mentionedProfile?.email && process.env.SMTP_PASS) {
-              const frontendUrl = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
-              sendEmail({
-                to: mentionedProfile.email,
-                subject: `💬 ${authorName} te mencionó en un comentario`,
-                html: `
-                  <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;color:#111;">
-                    <div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;">
-                      <h1 style="margin:0;font-size:20px;font-weight:700;color:#2563eb;">Te mencionaron en un comentario</h1>
-                    </div>
-                    <div style="padding:24px 32px;">
-                      <p style="margin:0 0 12px;font-size:15px;">Hola <strong>${mentionedProfile.nombre}</strong>,</p>
-                      <p style="margin:0 0 20px;font-size:14px;color:#374151;"><strong>${authorName}</strong> te mencionó en la tarea <strong>"${taskTitle}"</strong>:</p>
-                      <div style="background:#f3f4f6;border-left:4px solid #2563eb;padding:12px 16px;border-radius:4px;font-size:14px;color:#374151;font-style:italic;">
-                        "${text}"
-                      </div>
-                      <a href="${frontendUrl}/tareas" style="display:inline-block;margin-top:20px;background:#2563eb;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
-                        Ver comentario
-                      </a>
-                    </div>
-                    <div style="padding:16px 32px;background:#f9fafb;text-align:center;font-size:12px;color:#6b7280;">
-                      TIUSDEI · Notificación automática de mención
-                    </div>
-                  </div>
-                `,
-                text: `${authorName} te mencionó en la tarea "${taskTitle}": "${text}"`,
-              }).catch(() => {});
-            }
-          }
-        }
+        // Detectar @menciones (notif in-app + email centralizado).
+        // Ver: server/src/utils/mentions.ts
+        await processCommentMentions({
+          taskId,
+          authorUserId: userId,
+          text,
+          emit: (uid, payload) => {
+            io.to(`user:${uid}`).emit('notification:new', payload);
+          },
+        }).catch((e) => console.error('[SOCKET] processCommentMentions error:', e));
 
         cb?.();
       } catch (e) {
@@ -451,33 +393,22 @@ export function setupSocket(httpServer: HttpServer): void {
             const mentionedProfile = await queryOne<{ email: string; nombre: string }>(
               'SELECT email, nombre FROM profiles WHERE id = ?', [mentioned.id]
             );
-            if (mentionedProfile?.email && process.env.SMTP_PASS) {
+            if (mentionedProfile?.email && (process.env.MAILGUN_API_KEY || process.env.SMTP_PASS)) {
               const frontendUrl = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
-              sendEmail({
-                to: mentionedProfile.email,
-                subject: `💬 ${authorName} te mencionó en el chat de ${deskNameStr}`,
-                html: `
-                  <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;color:#111;">
-                    <div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;">
-                      <h1 style="margin:0;font-size:20px;font-weight:700;color:#2563eb;">Te mencionaron en el chat</h1>
-                    </div>
-                    <div style="padding:24px 32px;">
-                      <p style="margin:0 0 12px;font-size:15px;">Hola <strong>${mentionedProfile.nombre}</strong>,</p>
-                      <p style="margin:0 0 20px;font-size:14px;color:#374151;"><strong>${authorName}</strong> te mencionó en el chat de la mesa <strong>"${deskNameStr}"</strong>:</p>
-                      <div style="background:#f3f4f6;border-left:4px solid #2563eb;padding:12px 16px;border-radius:4px;font-size:14px;color:#374151;font-style:italic;">
-                        "${text}"
-                      </div>
-                      <a href="${frontendUrl}" style="display:inline-block;margin-top:20px;background:#2563eb;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
-                        Abrir Tiusdei
-                      </a>
-                    </div>
-                    <div style="padding:16px 32px;background:#f9fafb;text-align:center;font-size:12px;color:#6b7280;">
-                      TIUSDEI · Notificación automática de mención
-                    </div>
-                  </div>
-                `,
-                text: `${authorName} te mencionó en el chat de "${deskNameStr}": "${text}"`,
-              }).catch(() => {});
+              try {
+                const emailData = await chatMentionEmail({
+                  recipientName: mentionedProfile.nombre,
+                  authorName,
+                  deskName: deskNameStr,
+                  messageText: text,
+                  frontendUrl,
+                  deskId: deskId,
+                });
+                emailData.to = mentionedProfile.email;
+                sendEmail(emailData).catch((e) => console.error('[SOCKET][chat-mention] email failed:', e));
+              } catch (e) {
+                console.error('[SOCKET][chat-mention] render failed:', e);
+              }
             }
           }
         }

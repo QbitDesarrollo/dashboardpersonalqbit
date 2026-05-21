@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Eye, Calendar, Loader2, Clock, Repeat } from 'lucide-react';
+import { Eye, Calendar, Loader2, Clock, Repeat, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, getInitials } from '@/lib/utils';
 import { TaskTimer } from '@/components/tasks/TaskTimer';
@@ -27,7 +27,7 @@ interface TaskData {
   estado: string;
   prioridad: string;
   fecha_inicio?: string;
-  fecha_entrega: string;
+  fecha_entrega: string | null;
   cantidad_entregables: number;
   story_points?: number;
   tiempo_trabajado?: number;
@@ -68,6 +68,8 @@ const getStatusColor = (estado: string) => {
     backlog: 'bg-status-backlog text-white',
     en_proceso: 'bg-status-in-progress text-white',
     en_revision: 'bg-status-in-review text-black',
+    revision_interna: 'bg-amber-500 text-white',
+    revision_cliente: 'bg-purple-500 text-white',
     aprobado: 'bg-status-approved text-white',
     entregado: 'bg-status-delivered text-white',
     bloqueado: 'bg-status-blocked text-white',
@@ -77,9 +79,11 @@ const getStatusColor = (estado: string) => {
 
 const getStatusLabel = (estado: string) => {
   const labels: Record<string, string> = {
-    backlog: 'Backlog',
+    backlog: 'Pendiente',
     en_proceso: 'En Proceso',
     en_revision: 'En Revisión',
+    revision_interna: 'Revisión interna',
+    revision_cliente: 'Revisión cliente',
     aprobado: 'Aprobado',
     entregado: 'Entregado',
     bloqueado: 'Bloqueado',
@@ -87,7 +91,8 @@ const getStatusLabel = (estado: string) => {
   return labels[estado] || estado;
 };
 
-const parseLocalDate = (dateStr: string) => {
+const parseLocalDate = (dateStr: string | null | undefined): Date => {
+  if (!dateStr) return new Date(NaN);
   const clean = dateStr.substring(0, 10);
   const [y, m, d] = clean.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -96,6 +101,8 @@ const parseLocalDate = (dateStr: string) => {
 export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialogProps) {
   const { profile, isAdmin, isEjecutivo, isEquipo } = useAuth();
   const [task, setTask] = useState<TaskData | null>(null);
+  const [deadlineHistory, setDeadlineHistory] = useState<{ count: number; original: string | null; history: Array<{ old: string; new: string; by: string; at: string }> } | null>(null);
+  const [showHistoryPopover, setShowHistoryPopover] = useState(false);
   const [loading, setLoading] = useState(false);
   const [taskReads, setTaskReads] = useState<{ user_id: string; read_at: string; nombre: string; avatar_url: string | null }[]>([]);
 
@@ -106,6 +113,13 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
       return;
     }
     setLoading(true);
+    api.getDeadlineHistory(taskId).then((h) => {
+      setDeadlineHistory({
+        count: h.reschedule_count,
+        original: h.fecha_entrega_original,
+        history: h.history,
+      });
+    }).catch(() => setDeadlineHistory(null));
     api.getTask(taskId)
       .then((data: any) => {
         setTask(data);
@@ -122,14 +136,20 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
       .finally(() => setLoading(false));
   }, [open, taskId]);
 
+  const isAssigned = () =>
+    task?.responsable_user_id === profile?.id || task?.responsables?.some(r => r.user_id === profile?.id);
+
   const canEdit = () => {
     if (!task) return false;
     if (isAdmin) return true;
     const isProtected = task.created_by_rol === 'admin' || task.created_by_rol === 'ejecutivo';
     if (isEjecutivo) return !isProtected || task.created_by === profile?.id;
-    if (isEquipo) return !isProtected && (task.responsable_user_id === profile?.id || task.responsables?.some(r => r.user_id === profile?.id));
+    if (isEquipo) return !isProtected && isAssigned();
     return false;
   };
+
+  // Equipo can change status/timer on protected tasks if assigned
+  const canOperate = () => canEdit() || (isEquipo && isAssigned());
 
   const updateStatus = async (status: string) => {
     if (!task) return;
@@ -152,7 +172,27 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto p-4 sm:p-6" aria-describedby="task-detail-standalone-desc">
         <DialogHeader>
-          <DialogTitle className="text-xl">{task?.titulo_tarea || 'Detalle de Tarea'}</DialogTitle>
+          <DialogTitle className="text-xl flex items-center gap-2 pr-8">
+            <span className="flex-1">{task?.titulo_tarea || 'Detalle de Tarea'}</span>
+            {task?.id && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={() => {
+                  const url = `${window.location.origin}/tareas?task=${task.id}`;
+                  navigator.clipboard.writeText(url).then(
+                    () => toast.success('Link copiado'),
+                    () => toast.error('No se pudo copiar')
+                  );
+                }}
+                title="Copiar link a esta tarea"
+              >
+                <Link2 className="w-4 h-4" />
+                <span className="hidden sm:inline text-xs">Copiar link</span>
+              </Button>
+            )}
+          </DialogTitle>
           <DialogDescription id="task-detail-standalone-desc">Información completa, timer, comentarios y entregables.</DialogDescription>
         </DialogHeader>
 
@@ -203,11 +243,59 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                       {task.fecha_inicio ? parseLocalDate(task.fecha_inicio).toLocaleDateString('es-ES') : '-'}
                     </span>
                   </div>
-                  <div>
+                  <div className="relative">
                     <span className="text-muted-foreground text-xs block">Fecha Entrega</span>
-                    <span className="font-medium">
-                      {parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES')}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={cn("font-medium", !task.fecha_entrega && "text-muted-foreground italic")}>
+                        {task.fecha_entrega ? parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES') : 'Sin fecha'}
+                      </span>
+                      {deadlineHistory && deadlineHistory.count > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowHistoryPopover(v => !v)}
+                          className={cn(
+                            "text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors",
+                            deadlineHistory.count >= 3
+                              ? "bg-red-100 text-red-700 hover:bg-red-200"
+                              : deadlineHistory.count >= 2
+                              ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                          )}
+                          title="Ver historial de cambios de fecha"
+                        >
+                          📅 Reagendada {deadlineHistory.count} {deadlineHistory.count === 1 ? 'vez' : 'veces'}
+                        </button>
+                      )}
+                    </div>
+                    {showHistoryPopover && deadlineHistory && deadlineHistory.history.length > 0 && (
+                      <div className="absolute z-50 mt-2 left-0 bg-popover border border-border rounded-lg shadow-lg p-3 min-w-[280px] max-w-[360px]">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Historial de fecha</p>
+                          <button onClick={() => setShowHistoryPopover(false)} className="text-muted-foreground hover:text-foreground text-sm">×</button>
+                        </div>
+                        {deadlineHistory.original && (
+                          <div className="text-xs mb-2 pb-2 border-b">
+                            <span className="text-muted-foreground">Fecha original: </span>
+                            <span className="font-medium">{new Date(deadlineHistory.original).toLocaleDateString('es-ES')}</span>
+                          </div>
+                        )}
+                        <div className="space-y-1.5 max-h-[240px] overflow-y-auto">
+                          {deadlineHistory.history.map((h, i) => (
+                            <div key={i} className="text-xs flex items-start gap-2">
+                              <span className="text-muted-foreground shrink-0">
+                                {new Date(h.at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                              </span>
+                              <span className="flex-1">
+                                <span className="line-through text-muted-foreground">{new Date(h.old).toLocaleDateString('es-ES')}</span>
+                                {' → '}
+                                <span className="font-medium">{new Date(h.new).toLocaleDateString('es-ES')}</span>
+                                <span className="text-muted-foreground block text-[10px]">por {h.by}</span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <span className="text-muted-foreground text-xs block">Entregables</span>
@@ -288,7 +376,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                     initialTime={task.tiempo_trabajado}
                     isActive={task.timer_activo}
                     startTime={task.timer_inicio}
-                    canEdit={canEdit()}
+                    canEdit={canOperate()}
                     onUpdate={refreshTask}
                   />
                 </div>
@@ -392,11 +480,11 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
 
               {/* Right column — status, files, comments, calendar */}
               <div className="space-y-5">
-                {canEdit() && (
+                {canOperate() && (
                   <div className="pb-4 border-b border-border">
                     <h4 className="text-sm font-medium text-muted-foreground mb-2">Cambiar Estado</h4>
                     <div className="flex flex-wrap gap-2">
-                      {['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado'].map((status) => (
+                      {['backlog', 'en_proceso', 'revision_interna', 'revision_cliente', 'aprobado', 'entregado', 'bloqueado'].map((status) => (
                         <Button
                           key={status}
                           variant={task.estado === status ? "default" : "outline"}

@@ -26,6 +26,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -69,6 +76,8 @@ import {
   FolderOpen,
   Repeat,
   Clock,
+  Filter,
+  Workflow,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -78,6 +87,8 @@ import { FileUploader, UploadedFile } from '@/components/tasks/FileUploader';
 import { DriveBrowser } from '@/components/drive/DriveBrowser';
 import type { DriveFile } from '@/lib/apiClient';
 import { DeliverableProgress } from '@/components/tasks/DeliverableProgress';
+import { SubtaskList } from '@/components/tasks/SubtaskList';
+import { RescheduleDialog, MotivoReschedule } from '@/components/tasks/RescheduleDialog';
 import { ResponsableMetrics } from '@/components/tasks/ResponsableMetrics';
 import { CommentsPanel } from '@/components/tasks/CommentsPanel';
 import { BulkActions } from '@/components/tasks/BulkActions';
@@ -85,6 +96,8 @@ import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 import { sendTaskNotification } from '@/lib/api';
 import { RichTextEditor, RichTextViewer } from '@/components/RichTextEditor';
 import { CustomFieldsForm } from '@/components/tasks/CustomFieldsForm';
+import { DepartmentSelect, DepartmentBadge } from '@/components/tasks/DepartmentSelect';
+import { HandoffDialog } from '@/components/tasks/HandoffDialog';
 
 interface Task {
   id: string;
@@ -96,8 +109,11 @@ interface Task {
   cantidad_entregables: number;
   responsable_user_id: string | null;
   departamento: string | null;
+  department_id: string | null;
+  department_nombre?: string | null;
+  department_color?: string | null;
   prioridad: 'alta' | 'media' | 'baja';
-  estado: 'backlog' | 'en_proceso' | 'en_revision' | 'aprobado' | 'entregado' | 'bloqueado';
+  estado: 'backlog' | 'en_proceso' | 'en_revision' | 'revision_interna' | 'revision_cliente' | 'aprobado' | 'entregado' | 'bloqueado';
   fecha_inicio: string | null;
   fecha_entrega: string;
   enlaces: string[] | null;
@@ -134,6 +150,8 @@ interface Task {
   recurrence_interval?: number | null;
   recurrence_end_date?: string | null;
   recurrence_parent_id?: string | null;
+  subtask_count?: number;
+  subtask_done_count?: number;
 }
 
 interface Brand {
@@ -165,6 +183,8 @@ export default function Tasks() {
   const [deskMembers, setDeskMembers] = useState<Profile[]>([]);
   const [deskBrandsForForm, setDeskBrandsForForm] = useState<Brand[] | null>(null);
   const [filterDeskMembers, setFilterDeskMembers] = useState<Profile[]>([]);
+  const [filterDeskBrands, setFilterDeskBrands] = useState<Brand[]>([]);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBrand, setFilterBrand] = useState<string>('all');
@@ -174,9 +194,11 @@ export default function Tasks() {
   const [filterResponsable, setFilterResponsable] = useState<string>(() => searchParams.get('responsable') || 'all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskReads, setTaskReads] = useState<{ user_id: string; read_at: string; nombre: string; avatar_url: string | null }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [pendingReschedule, setPendingReschedule] = useState<null | { taskData: any; oldFecha: string | null; newFecha: string | null }>(null);
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([]);
   const [pendingDriveFiles, setPendingDriveFiles] = useState<DriveFile[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, unknown>>({});
@@ -251,7 +273,7 @@ export default function Tasks() {
     });
   };
 
-  const pageSize = 20;
+  const pageSize = 100;
 
   // Debounce del término de búsqueda para no saturar el servidor
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -271,6 +293,7 @@ export default function Tasks() {
     responsable_user_id: '',
     responsable_ids: [] as string[],
     departamento: '',
+    department_id: '' as string,
     prioridad: 'media' as 'alta' | 'media' | 'baja',
     estado: 'backlog' as Task['estado'],
     fecha_inicio: '',
@@ -300,13 +323,27 @@ export default function Tasks() {
     if (r) setFilterResponsable(r);
   }, [searchParams]);
 
-  // Auto-open task detail from query param (e.g. from email link or daily)
-  const deepLinkHandled = useRef(false);
+  // Auto-open task detail from query param (e.g. desde email, notificación, daily, link copiado).
+  // Detecta cambios en el query param ?task=... y abre/recarga el modal cada vez que cambie.
+  const lastDeepLinkTaskId = useRef<string | null>(null);
   useEffect(() => {
-    if (deepLinkHandled.current) return;
     const taskId = searchParams.get('task');
-    if (!taskId) return;
-    deepLinkHandled.current = true;
+    if (!taskId) {
+      // Si quitaron el param y el modal estaba abierto via deep-link, cerrar
+      if (lastDeepLinkTaskId.current && detailDialogOpen) {
+        setDetailDialogOpen(false);
+        setSelectedTask(null);
+      }
+      lastDeepLinkTaskId.current = null;
+      return;
+    }
+    // Evitar refetch si ya estamos mostrando esa misma tarea
+    if (lastDeepLinkTaskId.current === taskId && selectedTask?.id === taskId) {
+      // pero asegurar que el modal esté abierto (puede haberlo cerrado y vuelto a clickear la misma notif)
+      if (!detailDialogOpen) setDetailDialogOpen(true);
+      return;
+    }
+    lastDeepLinkTaskId.current = taskId;
     api.getTask(taskId).then((task: any) => {
       if (task && task.id) {
         setSelectedTask(task as Task);
@@ -317,7 +354,7 @@ export default function Tasks() {
     });
   }, [searchParams]);
 
-  // Cargar miembros de la mesa seleccionada en filtros para el dropdown de responsable
+  // Cargar miembros y marcas de la mesa seleccionada para sincronizar dropdowns
   useEffect(() => {
     const effectiveDesk = filterDesk !== 'all' ? filterDesk : (pinnedDeskId || null);
     if (effectiveDesk) {
@@ -325,14 +362,25 @@ export default function Tasks() {
         .then((data) => {
           const members = Array.isArray(data) ? data : [];
           setFilterDeskMembers(members);
-          // Si el responsable seleccionado no está en la nueva mesa, resetear
           if (filterResponsable !== 'all' && !members.some((m: Profile) => m.id === filterResponsable)) {
             setFilterResponsable('all');
           }
         })
         .catch(() => setFilterDeskMembers([]));
+
+      api.getDeskBrands(effectiveDesk)
+        .then((data) => {
+          const ds = Array.isArray(data) ? data : [];
+          setFilterDeskBrands(ds);
+          // Si la marca actual no está asignada a esta mesa, resetear (a menos que la mesa no tenga marcas → dejar libre)
+          if (ds.length > 0 && filterBrand !== 'all' && !ds.some((b: Brand) => b.id === filterBrand)) {
+            setFilterBrand('all');
+          }
+        })
+        .catch(() => setFilterDeskBrands([]));
     } else {
       setFilterDeskMembers([]);
+      setFilterDeskBrands([]);
     }
   }, [filterDesk, pinnedDeskId]);
 
@@ -483,35 +531,14 @@ export default function Tasks() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  /**
+   * Persiste la tarea (PATCH si editamos, POST si es nueva). Se llama desde
+   * handleSubmit y también desde el RescheduleDialog (cuando el motivo del
+   * reagendamiento ya está incluido en taskData).
+   */
+  const persistTask = async (taskData: any) => {
     setSaving(true);
-
     try {
-      const validEntregables = formData.entregables.filter(e => e.tipo_entregable_id);
-      const taskData = {
-        titulo_tarea: formData.titulo_tarea,
-        detalle: formData.detalle || null,
-        brand_id: formData.brand_id,
-        desk_id: formData.desk_id || null,
-        responsable_user_id: formData.responsable_ids[0] || formData.responsable_user_id || null,
-        responsable_ids: formData.responsable_ids.length > 0 ? formData.responsable_ids : (formData.responsable_user_id ? [formData.responsable_user_id] : []),
-        departamento: formData.departamento || null,
-        prioridad: formData.prioridad,
-        estado: formData.estado,
-        fecha_inicio: formData.fecha_inicio || null,
-        fecha_entrega: formData.fecha_entrega,
-        cantidad_entregables: validEntregables.length > 0 ? validEntregables.reduce((sum, e) => sum + e.cantidad, 0) : formData.cantidad_entregables,
-        enlaces: formData.enlaces ? formData.enlaces.split('\n').filter(Boolean) : null,
-        task_type_id: formData.task_type_id || null,
-        tipo_entregable_id: validEntregables[0]?.tipo_entregable_id || formData.tipo_entregable_id || null,
-        entregables: validEntregables.map(e => ({ tipo_entregable_id: e.tipo_entregable_id, cantidad: e.cantidad })),
-        estimated_hours: formData.estimated_hours ? parseFloat(formData.estimated_hours) : null,
-        recurrence_type: formData.recurrence_type || 'none',
-        recurrence_interval: formData.recurrence_type === 'custom' ? formData.recurrence_interval : null,
-        recurrence_end_date: formData.recurrence_end_date || null,
-      };
-
       if (selectedTask) {
         const result: any = await api.patchTask(selectedTask.id, taskData);
         if (result?.error) throw new Error(result.error);
@@ -596,6 +623,52 @@ export default function Tasks() {
     }
   };
 
+  /**
+   * Arma el payload desde el form y decide si necesita motivo de reagendamiento.
+   * Si cambia la fecha de entrega en una tarea existente, abre el RescheduleDialog
+   * (con el comentario opcional). Si no, persiste directo.
+   */
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const validEntregables = formData.entregables.filter(e => e.tipo_entregable_id);
+    const taskData: any = {
+      titulo_tarea: formData.titulo_tarea,
+      detalle: formData.detalle || null,
+      brand_id: formData.brand_id,
+      desk_id: formData.desk_id || null,
+      responsable_user_id: formData.responsable_ids[0] || formData.responsable_user_id || null,
+      responsable_ids: formData.responsable_ids.length > 0 ? formData.responsable_ids : (formData.responsable_user_id ? [formData.responsable_user_id] : []),
+      departamento: formData.departamento || null,
+      department_id: formData.department_id || null,
+      prioridad: formData.prioridad,
+      estado: formData.estado,
+      fecha_inicio: formData.fecha_inicio || null,
+      fecha_entrega: formData.fecha_entrega,
+      cantidad_entregables: validEntregables.length > 0 ? validEntregables.reduce((sum, e) => sum + e.cantidad, 0) : formData.cantidad_entregables,
+      enlaces: formData.enlaces ? formData.enlaces.split('\n').filter(Boolean) : null,
+      task_type_id: formData.task_type_id || null,
+      tipo_entregable_id: validEntregables[0]?.tipo_entregable_id || formData.tipo_entregable_id || null,
+      entregables: validEntregables.map(e => ({ tipo_entregable_id: e.tipo_entregable_id, cantidad: e.cantidad })),
+      estimated_hours: formData.estimated_hours ? parseFloat(formData.estimated_hours) : null,
+      recurrence_type: formData.recurrence_type || 'none',
+      recurrence_interval: formData.recurrence_type === 'custom' ? formData.recurrence_interval : null,
+      recurrence_end_date: formData.recurrence_end_date || null,
+    };
+
+    // Si estamos editando y cambió la fecha de entrega, pedir el motivo antes de guardar
+    if (selectedTask) {
+      const oldFecha = selectedTask.fecha_entrega ? String(selectedTask.fecha_entrega).slice(0, 10) : null;
+      const newFecha = formData.fecha_entrega ? String(formData.fecha_entrega).slice(0, 10) : null;
+      if (oldFecha !== newFecha) {
+        setPendingReschedule({ taskData, oldFecha, newFecha });
+        return;
+      }
+    }
+
+    await persistTask(taskData);
+  };
+
   const resetForm = () => {
     const defaultDeskId = filterDesk !== 'all' ? filterDesk : (pinnedDeskId || '');
     setFormData({
@@ -606,6 +679,7 @@ export default function Tasks() {
       responsable_user_id: '',
       responsable_ids: [],
       departamento: '',
+      department_id: '',
       prioridad: 'media',
       estado: 'backlog',
       fecha_inicio: '',
@@ -649,6 +723,7 @@ export default function Tasks() {
       responsable_user_id: task.responsable_user_id || '',
       responsable_ids: task.responsables?.map(r => r.user_id) || (task.responsable_user_id ? [task.responsable_user_id] : []),
       departamento: task.departamento || '',
+      department_id: task.department_id || '',
       prioridad: task.prioridad,
       estado: task.estado,
       fecha_inicio: task.fecha_inicio ? task.fecha_inicio.substring(0, 10) : '',
@@ -702,7 +777,8 @@ export default function Tasks() {
   // Aquí solo filtramos combinaciones de dropdown + pinned sidebar cuando ambos están activos.
   const filteredTasks = tasks.filter(task => {
     const matchesBrand = filterBrand === 'all' || task.brand_id === filterBrand;
-    const matchesDesk = filterDesk === 'all' || task.desk_id === filterDesk;
+    // Confiamos en el backend: si pidió mesa, ya devolvió tareas relacionadas (mesa primaria + mesas de responsables)
+    const matchesDesk = true;
     const matchesPinnedDesk = !pinnedDeskId || task.desk_id === pinnedDeskId;
     const matchesPinnedBrand = !pinnedBrandId || task.brand_id === pinnedBrandId;
     return matchesBrand && matchesDesk && matchesPinnedDesk && matchesPinnedBrand;
@@ -722,6 +798,8 @@ export default function Tasks() {
       backlog: 'bg-status-backlog text-white',
       en_proceso: 'bg-status-in-progress text-white',
       en_revision: 'bg-status-in-review text-black',
+      revision_interna: 'bg-amber-500 text-white',
+      revision_cliente: 'bg-purple-500 text-white',
       aprobado: 'bg-status-approved text-white',
       entregado: 'bg-status-delivered text-white',
       bloqueado: 'bg-status-blocked text-white',
@@ -731,9 +809,11 @@ export default function Tasks() {
 
   const getStatusLabel = (estado: string) => {
     const labels: Record<string, string> = {
-      backlog: 'Backlog',
+      backlog: 'Pendiente',
       en_proceso: 'En Proceso',
       en_revision: 'En Revisión',
+      revision_interna: 'Revisión interna',
+      revision_cliente: 'Revisión cliente',
       aprobado: 'Aprobado',
       entregado: 'Entregado',
       bloqueado: 'Bloqueado',
@@ -741,13 +821,15 @@ export default function Tasks() {
     return labels[estado] || estado;
   };
 
-  const statusOrder: Task['estado'][] = ['en_proceso', 'en_revision', 'backlog', 'bloqueado', 'aprobado', 'entregado'];
+  const statusOrder: Task['estado'][] = ['en_proceso', 'revision_interna', 'revision_cliente', 'en_revision', 'backlog', 'bloqueado', 'aprobado', 'entregado'];
 
   const getStatusHeaderColor = (estado: string) => {
     const colors: Record<string, string> = {
       backlog: 'bg-[hsl(222,35%,35%)]',
       en_proceso: 'bg-[hsl(199,89%,48%)]',
       en_revision: 'bg-[hsl(38,92%,50%)]',
+      revision_interna: 'bg-[hsl(38,92%,50%)]',
+      revision_cliente: 'bg-[hsl(271,76%,53%)]',
       aprobado: 'bg-[hsl(142,76%,36%)]',
       entregado: 'bg-[hsl(168,76%,42%)]',
       bloqueado: 'bg-[hsl(0,84%,60%)]',
@@ -923,7 +1005,8 @@ export default function Tasks() {
     }
   };
 
-  const parseLocalDate = (dateStr: string) => {
+  const parseLocalDate = (dateStr: string | null | undefined): Date => {
+    if (!dateStr) return new Date(NaN);
     // Handle ISO format "2026-02-16T00:00:00.000Z" and plain "2026-02-16"
     const clean = dateStr.substring(0, 10);
     const [y, m, d] = clean.split('-').map(Number);
@@ -937,11 +1020,21 @@ export default function Tasks() {
     return Math.ceil((entrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   };
 
+  const isAssignedTo = (task: Task) =>
+    task.responsable_user_id === profile?.id || task.responsables?.some(r => r.user_id === profile?.id);
+
   const canEditTask = (task: Task) => {
     if (isAdmin) return true;
     const isProtected = task.created_by_rol === 'admin' || task.created_by_rol === 'ejecutivo';
     if (isEjecutivo) return !isProtected || task.created_by === profile?.id;
-    if (isEquipo) return !isProtected && (task.responsable_user_id === profile?.id || task.responsables?.some(r => r.user_id === profile?.id));
+    if (isEquipo) return !isProtected && isAssignedTo(task);
+    return false;
+  };
+
+  // Equipo can change status/timer on protected tasks if assigned
+  const canOperateTask = (task: Task) => {
+    if (canEditTask(task)) return true;
+    if (isEquipo && isAssignedTo(task)) return true;
     return false;
   };
 
@@ -1124,10 +1217,9 @@ export default function Tasks() {
 
                   <div className="space-y-2">
                     <Label htmlFor="departamento">Departamento</Label>
-                    <Input
-                      id="departamento"
-                      value={formData.departamento}
-                      onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
+                    <DepartmentSelect
+                      value={formData.department_id}
+                      onChange={(depId) => setFormData({ ...formData, department_id: depId || '' })}
                     />
                   </div>
 
@@ -1250,9 +1342,10 @@ export default function Tasks() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="backlog">Backlog</SelectItem>
+                        <SelectItem value="backlog">Pendiente</SelectItem>
                         <SelectItem value="en_proceso">En Proceso</SelectItem>
-                        <SelectItem value="en_revision">En Revisión</SelectItem>
+                        <SelectItem value="revision_interna">Revisión interna</SelectItem>
+                        <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
                         <SelectItem value="aprobado">Aprobado</SelectItem>
                         <SelectItem value="entregado">Entregado</SelectItem>
                         <SelectItem value="bloqueado">Bloqueado</SelectItem>
@@ -1468,64 +1561,59 @@ export default function Tasks() {
       </div>
 
       {/* Filters */}
-      <Card className="glass-card">
-        <CardContent className="p-3 sm:p-4 space-y-3">
-          <div className="flex flex-wrap items-end gap-3">
+      {(() => {
+        const activeFilterCount = [filterBrand, filterDesk, filterStatus, filterPriority, filterResponsable].filter((v) => v !== 'all').length;
+        const clearAllFilters = () => {
+          setFilterBrand('all');
+          setFilterDesk('all');
+          setFilterStatus('all');
+          setFilterPriority('all');
+          setFilterResponsable('all');
+        };
+        const dropdowns = (
+          <>
             <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[180px]">
               <Label className="text-xs text-muted-foreground block">Marca</Label>
               <Select value={filterBrand} onValueChange={setFilterBrand}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
-                  {brands.map((brand) => (
-                    <SelectItem key={brand.id} value={brand.id}>
-                      {brand.nombre}
-                    </SelectItem>
+                  {(filterDeskBrands.length > 0 ? filterDeskBrands : brands).map((brand) => (
+                    <SelectItem key={brand.id} value={brand.id}>{brand.nombre}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 w-[calc(50%-6px)] sm:w-auto sm:flex-1 sm:min-w-[120px]">
+            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[120px]">
               <Label className="text-xs text-muted-foreground block">Mesa</Label>
               <Select value={filterDesk} onValueChange={setFilterDesk}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
-                  {desks.map((desk) => (
-                    <SelectItem key={desk.id} value={desk.id}>
-                      {desk.nombre}
-                    </SelectItem>
-                  ))}
+                  {desks.map((desk) => (<SelectItem key={desk.id} value={desk.id}>{desk.nombre}</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 w-[calc(50%-6px)] sm:w-auto sm:flex-1 sm:min-w-[120px]">
+            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[120px]">
               <Label className="text-xs text-muted-foreground block">Estado</Label>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Todos" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="backlog">Backlog</SelectItem>
+                  <SelectItem value="backlog">Pendiente</SelectItem>
                   <SelectItem value="en_proceso">En Proceso</SelectItem>
-                  <SelectItem value="en_revision">En Revisión</SelectItem>
+                  <SelectItem value="revision_interna">Revisión interna</SelectItem>
+                        <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
                   <SelectItem value="aprobado">Aprobado</SelectItem>
                   <SelectItem value="entregado">Entregado</SelectItem>
                   <SelectItem value="bloqueado">Bloqueado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 w-[calc(50%-6px)] sm:w-auto sm:flex-1 sm:min-w-[110px]">
+            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[110px]">
               <Label className="text-xs text-muted-foreground block">Prioridad</Label>
               <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
                   <SelectItem value="alta">Alta</SelectItem>
@@ -1534,23 +1622,72 @@ export default function Tasks() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 w-[calc(50%-6px)] sm:w-auto sm:flex-1 sm:min-w-[130px]">
+            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[130px]">
               <Label className="text-xs text-muted-foreground block">Responsable</Label>
               <Select value={filterResponsable} onValueChange={setFilterResponsable}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Todos" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
                   {(filterDeskMembers.length > 0 ? filterDeskMembers : users).map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.nombre}
-                    </SelectItem>
+                    <SelectItem key={user.id} value={user.id}>{user.nombre}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+          </>
+        );
+        return (
+      <Card className="glass-card">
+        <CardContent className="p-3 sm:p-4 space-y-3">
+          {/* Mobile: 1 botón compacto que abre Sheet */}
+          <div className="flex sm:hidden items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 justify-start gap-2"
+              onClick={() => setMobileFiltersOpen(true)}
+            >
+              <Filter className="h-4 w-4" />
+              <span>Filtros</span>
+              {activeFilterCount > 0 && (
+                <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-[10px]">{activeFilterCount}</Badge>
+              )}
+            </Button>
+            {activeFilterCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearAllFilters} className="h-9 px-2">
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </div>
+
+          {/* Desktop: dropdowns inline */}
+          <div className="hidden sm:flex flex-wrap items-end gap-3">
+            {dropdowns}
+          </div>
+
+          {/* Mobile sheet con todos los filtros */}
+          <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+            <SheetContent side="right" className="w-[88vw] sm:max-w-md overflow-y-auto">
+              <SheetHeader className="mb-4">
+                <SheetTitle className="flex items-center gap-2">
+                  <Filter className="h-4 w-4" /> Filtros
+                  {activeFilterCount > 0 && (
+                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{activeFilterCount} activos</Badge>
+                  )}
+                </SheetTitle>
+                <SheetDescription>Filtra las tareas por marca, mesa, estado y más.</SheetDescription>
+              </SheetHeader>
+              <div className="space-y-4">
+                {dropdowns}
+              </div>
+              <div className="flex gap-2 mt-6 pt-4 border-t">
+                <Button variant="outline" className="flex-1" onClick={() => { clearAllFilters(); setMobileFiltersOpen(false); }} disabled={activeFilterCount === 0}>
+                  Limpiar
+                </Button>
+                <Button className="flex-1" onClick={() => setMobileFiltersOpen(false)}>Aplicar</Button>
+              </div>
+            </SheetContent>
+          </Sheet>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-0 sm:min-w-[180px] w-full sm:w-auto">
               <Label className="text-xs text-muted-foreground block mb-1.5">Buscar</Label>
@@ -1604,6 +1741,8 @@ export default function Tasks() {
           </div>
         </CardContent>
       </Card>
+        );
+      })()}
 
       {saveFilterOpen && (
         <Dialog open={saveFilterOpen} onOpenChange={setSaveFilterOpen}>
@@ -1763,6 +1902,24 @@ export default function Tasks() {
                                 >
                                   {task.titulo_tarea}
                                 </span>
+                                {(task.subtask_count ?? 0) > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleTaskExpand(task.id)}
+                                    className={cn(
+                                      "inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border shrink-0 hover:opacity-80 transition-opacity",
+                                      (task.subtask_done_count ?? 0) === (task.subtask_count ?? 0)
+                                        ? "bg-green-100 text-green-700 border-green-200"
+                                        : (task.subtask_done_count ?? 0) > 0
+                                        ? "bg-blue-100 text-blue-700 border-blue-200"
+                                        : "bg-muted text-muted-foreground border-border"
+                                    )}
+                                    title={`${task.subtask_done_count ?? 0} de ${task.subtask_count} subtareas completadas. Click para expandir.`}
+                                  >
+                                    <span>📋</span>
+                                    <span>{task.subtask_done_count ?? 0}/{task.subtask_count}</span>
+                                  </button>
+                                )}
                                 {task.recurrence_type && task.recurrence_type !== 'none' && (
                                   <Repeat className="h-3.5 w-3.5 text-blue-500 shrink-0" title="Tarea recurrente" />
                                 )}
@@ -1777,7 +1934,9 @@ export default function Tasks() {
                             {visibleCols.mesa && <TableCell><span className="text-sm">{task.desks?.nombre || '-'}</span></TableCell>}
                             {visibleCols.depto && (
                               <TableCell>
-                                {task.departamento ? (
+                                {task.department_nombre ? (
+                                  <DepartmentBadge nombre={task.department_nombre} color={task.department_color} />
+                                ) : task.departamento ? (
                                   <Badge className={cn("text-[10px] font-semibold uppercase", getDepartmentColor(task.departamento))}>
                                     {task.departamento}
                                   </Badge>
@@ -1835,7 +1994,7 @@ export default function Tasks() {
                                   initialTime={task.tiempo_trabajado}
                                   isActive={task.timer_activo}
                                   startTime={task.timer_inicio}
-                                  canEdit={canEditTask(task)}
+                                  canEdit={canOperateTask(task)}
                                   compact
                                   onUpdate={fetchData}
                                 />
@@ -1880,7 +2039,7 @@ export default function Tasks() {
                             )}
                             {visibleCols.estado && (
                               <TableCell className="px-1">
-                                {canEditTask(task) ? (
+                                {canOperateTask(task) ? (
                                   <Select
                                     value={task.estado}
                                     onValueChange={(value: Task['estado']) => updateTaskStatus(task.id, value)}
@@ -1889,9 +2048,10 @@ export default function Tasks() {
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="backlog">Backlog</SelectItem>
+                                      <SelectItem value="backlog">Pendiente</SelectItem>
                                       <SelectItem value="en_proceso">En Proceso</SelectItem>
-                                      <SelectItem value="en_revision">En Revisión</SelectItem>
+                                      <SelectItem value="revision_interna">Revisión interna</SelectItem>
+                        <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
                                       <SelectItem value="aprobado">Aprobado</SelectItem>
                                       <SelectItem value="entregado">Entregado</SelectItem>
                                       <SelectItem value="bloqueado">Bloqueado</SelectItem>
@@ -1908,7 +2068,7 @@ export default function Tasks() {
                               <TableCell>
                                 <div className="flex items-center gap-1 text-sm text-muted-foreground">
                                   <Calendar className="h-3 w-3" />
-                                  {parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES')}
+                                  {task.fecha_entrega ? parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES') : <span className="text-muted-foreground italic">Sin fecha</span>}
                                 </div>
                               </TableCell>
                             )}
@@ -2011,88 +2171,24 @@ export default function Tasks() {
                               </div>
                             </TableCell>
                           </TableRow>
-                          {/* Subtasks expanded row - Monday style */}
+                          {/* Subtasks expanded row - SubtaskList component (rich UI) */}
                           {isExpanded && (
                             <TableRow className="bg-muted/30 border-l-4 border-l-primary/50">
-                              <TableCell colSpan={30} className="py-2 px-4">
-                                <div className="pl-6 space-y-2">
-                                  {!subtasksCache[task.id] && (
-                                    <div className="flex items-center gap-2 text-muted-foreground text-sm py-1">
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      Cargando subtareas…
-                                    </div>
-                                  )}
-                                  {subtasksCache[task.id] && subtasks.length === 0 && (
-                                    <p className="text-sm text-muted-foreground">Sin subtareas</p>
-                                  )}
-                                  {subtasks.length > 0 && (
-                                    <ul className="space-y-1.5">
-                                      {subtasks.map((st) => (
-                                        <li key={st.id} className="flex items-center gap-2 text-sm group py-0.5">
-                                          <Checkbox
-                                            checked={!!st.check_done}
-                                            onCheckedChange={() => handleToggleSubtaskDone(st, task.id)}
-                                            disabled={!canEditTask(task)}
-                                            className="h-3.5 w-3.5 shrink-0"
-                                          />
-                                          {editingSubtaskId === st.id ? (
-                                            <>
-                                              <Input
-                                                value={editingSubtaskTitle}
-                                                onChange={(e) => setEditingSubtaskTitle(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                  if (e.key === 'Enter') handleSaveSubtaskEdit(st.id, task.id);
-                                                  if (e.key === 'Escape') { setEditingSubtaskId(null); setEditingSubtaskTitle(''); }
-                                                }}
-                                                className="h-7 text-sm flex-1 max-w-[200px]"
-                                                autoFocus
-                                              />
-                                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-primary" onClick={() => handleSaveSubtaskEdit(st.id, task.id)} title="Guardar">
-                                                <Check className="h-3.5 w-3.5" />
-                                              </Button>
-                                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditingSubtaskId(null); setEditingSubtaskTitle(''); }}>
-                                                <X className="h-3.5 w-3.5" />
-                                              </Button>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <span className={cn("flex-1 min-w-0 truncate", st.check_done && "text-muted-foreground line-through")}>{st.titulo_tarea}</span>
-                                              {canEditTask(task) && (
-                                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleEditSubtask(st)} title="Editar">
-                                                    <Edit className="h-3 w-3" />
-                                                  </Button>
-                                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteSubtask(st.id, task.id)} title="Eliminar">
-                                                    <Trash2 className="h-3 w-3" />
-                                                  </Button>
-                                                </div>
-                                              )}
-                                            </>
-                                          )}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  )}
-                                  {canEditTask(task) && (
-                                    <div className="flex gap-2 items-center pt-1 border-t border-border/50">
-                                      <Input
-                                        placeholder="Nueva subtarea..."
-                                        value={newSubtaskTitle[task.id] ?? ''}
-                                        onChange={(e) => setNewSubtaskTitle(t => ({ ...t, [task.id]: e.target.value }))}
-                                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask(task.id))}
-                                        className="h-8 text-sm max-w-xs"
-                                      />
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => handleAddSubtask(task.id)}
-                                        disabled={addingSubtaskFor === task.id || !(newSubtaskTitle[task.id]?.trim())}
-                                      >
-                                        {addingSubtaskFor === task.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
-                                        Agregar subtarea
-                                      </Button>
-                                    </div>
-                                  )}
+                              <TableCell colSpan={30} className="py-3 px-4">
+                                <div className="pl-6">
+                                  <SubtaskList
+                                    taskId={task.id}
+                                    deskId={task.desk_id || undefined}
+                                    onUpdate={fetchData}
+                                    onOpenSubtask={(subId) => {
+                                      api.getTask(subId).then((t: any) => {
+                                        if (t && t.id) {
+                                          setSelectedTask(t as Task);
+                                          setDetailDialogOpen(true);
+                                        }
+                                      }).catch(() => toast.error('No se pudo cargar la subtarea'));
+                                    }}
+                                  />
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -2119,9 +2215,9 @@ export default function Tasks() {
               </TableBody>
             </Table>
             {totalTasks > pageSize && (
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 px-3 py-3 border-t">
-                <p className="text-xs sm:text-sm text-muted-foreground order-2 sm:order-1">
-                  Página {page + 1} de {Math.max(1, Math.ceil(totalTasks / pageSize))} ({totalTasks} tareas)
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 px-3 py-3 border-t bg-muted/30 sticky bottom-0">
+                <p className="text-xs sm:text-sm font-medium order-2 sm:order-1">
+                  📄 Mostrando {Math.min(pageSize, totalTasks - page * pageSize)} de {totalTasks} tareas — Página {page + 1} de {Math.max(1, Math.ceil(totalTasks / pageSize))}
                 </p>
                 <div className="flex gap-2 order-1 sm:order-2 shrink-0">
                   <Button
@@ -2173,6 +2269,20 @@ export default function Tasks() {
                 {selectedTask.sprint && (
                   <Badge variant="outline" className="text-xs">{selectedTask.sprint.name}</Badge>
                 )}
+                {selectedTask.department_nombre && (
+                  <DepartmentBadge nombre={selectedTask.department_nombre} color={selectedTask.department_color} />
+                )}
+                {canEditTask(selectedTask) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto h-7 gap-1.5 text-xs"
+                    onClick={() => setHandoffOpen(true)}
+                  >
+                    <Workflow className="h-3.5 w-3.5" />
+                    Pasar de etapa
+                  </Button>
+                )}
               </div>
 
               {/* Two-column layout */}
@@ -2198,7 +2308,7 @@ export default function Tasks() {
                     <div>
                       <span className="text-muted-foreground text-xs block">Fecha Entrega</span>
                       <span className="font-medium">
-                        {parseLocalDate(selectedTask.fecha_entrega).toLocaleDateString('es-ES')}
+                        {selectedTask.fecha_entrega ? parseLocalDate(selectedTask.fecha_entrega).toLocaleDateString('es-ES') : <span className="text-muted-foreground italic">Sin fecha</span>}
                       </span>
                     </div>
                     <div>
@@ -2247,7 +2357,7 @@ export default function Tasks() {
                       initialTime={selectedTask.tiempo_trabajado}
                       isActive={selectedTask.timer_activo}
                       startTime={selectedTask.timer_inicio}
-                      canEdit={canEditTask(selectedTask)}
+                      canEdit={canOperateTask(selectedTask)}
                       onUpdate={fetchData}
                     />
                   </div>
@@ -2347,11 +2457,11 @@ export default function Tasks() {
 
                 {/* Right column — status, files, comments, calendar */}
                 <div className="space-y-5">
-                  {canEditTask(selectedTask) && (
+                  {canOperateTask(selectedTask) && (
                     <div className="pb-4 border-b border-border">
                       <h4 className="text-sm font-medium text-muted-foreground mb-2">Cambiar Estado</h4>
                       <div className="flex flex-wrap gap-2">
-                        {['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado'].map((status) => (
+                        {['backlog', 'en_proceso', 'revision_interna', 'revision_cliente', 'aprobado', 'entregado', 'bloqueado'].map((status) => (
                           <Button
                             key={status}
                             variant={selectedTask.estado === status ? "default" : "outline"}
@@ -2443,7 +2553,32 @@ export default function Tasks() {
         </DialogContent>
       </Dialog>
 
+      {/* Reschedule dialog — pide motivo cuando cambia la fecha de entrega de una tarea existente */}
+      <RescheduleDialog
+        open={!!pendingReschedule}
+        fechaAnterior={pendingReschedule?.oldFecha ?? null}
+        fechaNueva={pendingReschedule?.newFecha ?? null}
+        onConfirm={async (motivo: MotivoReschedule, comentario: string) => {
+          if (!pendingReschedule) return;
+          const merged = {
+            ...pendingReschedule.taskData,
+            motivo_reschedule: motivo,
+            comentario_reschedule: comentario || null,
+          };
+          setPendingReschedule(null);
+          await persistTask(merged);
+        }}
+        onCancel={() => setPendingReschedule(null)}
+      />
+
       {/* Bulk Actions bar — aparece al seleccionar tareas */}
+      <HandoffDialog
+        open={handoffOpen}
+        onClose={() => setHandoffOpen(false)}
+        task={selectedTask as any}
+        users={users}
+        onDone={() => { fetchData(); setDetailDialogOpen(false); }}
+      />
       <BulkActions
         selectedIds={selectedIds}
         onClear={() => setSelectedIds(new Set())}

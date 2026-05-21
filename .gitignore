@@ -30,3 +30,4 @@ server/uploads
 *.njsproj
 *.sln
 *.sw?
+.agent.env

@@ -133,13 +133,18 @@ desksRouter.post('/desks/:id/members', requireAuth, async (req: AuthRequest, res
     const allowed = await hasRole(req.userId!, ['admin']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id } = req.params;
-    const { user_id } = req.body;
-    if (!user_id) return res.status(400).json({ error: 'user_id requerido' });
-    await query(
-      'INSERT IGNORE INTO desk_members (id, desk_id, user_id) VALUES (?, ?, ?)',
-      [uuid(), id, user_id]
-    );
-    res.json({ success: true });
+    // Acepta { user_id } (legacy, una persona) o { user_ids: [] } (bulk).
+    const ids: string[] = Array.isArray(req.body?.user_ids)
+      ? req.body.user_ids.filter((x: unknown) => typeof x === 'string' && x.length > 0)
+      : (req.body?.user_id ? [String(req.body.user_id)] : []);
+    if (ids.length === 0) return res.status(400).json({ error: 'user_id o user_ids requerido' });
+    for (const uid of ids) {
+      await query(
+        'INSERT IGNORE INTO desk_members (id, desk_id, user_id) VALUES (?, ?, ?)',
+        [uuid(), id, uid]
+      );
+    }
+    res.json({ success: true, count: ids.length });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al asignar' });

@@ -200,13 +200,13 @@ export default function ScrumTasks() {
     if (filterDateFrom) {
       result = result.filter((t) => {
         if (!t.fecha_entrega) return false;
-        return t.fecha_entrega.slice(0, 10) >= filterDateFrom;
+        return (t.fecha_entrega || "").slice(0, 10) >= filterDateFrom;
       });
     }
     if (filterDateTo) {
       result = result.filter((t) => {
         if (!t.fecha_entrega) return false;
-        return t.fecha_entrega.slice(0, 10) <= filterDateTo;
+        return (t.fecha_entrega || "").slice(0, 10) <= filterDateTo;
       });
     }
     if (searchTerm.trim()) {

@@ -150,7 +150,7 @@ const calcStats = (taskList: Task[]): TaskStats => {
       s[task.estado as keyof TaskStats]++;
     }
     if (task.fecha_entrega) {
-      const [yy, mm, dd] = task.fecha_entrega.split('T')[0].split('-').map(Number);
+      const [yy, mm, dd] = (task.fecha_entrega || '').split('T')[0].split('-').map(Number);
       const fechaEntrega = new Date(yy, mm - 1, dd);
       const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       if (diasRestantes < 0 && task.estado !== 'entregado') {
@@ -167,13 +167,13 @@ const buildUrgentTasks = (taskList: Task[]): UrgentTask[] => {
   return taskList
     .filter(task => {
       if (!task.fecha_entrega) return false;
-      const [yy, mm, dd] = task.fecha_entrega.split('T')[0].split('-').map(Number);
+      const [yy, mm, dd] = (task.fecha_entrega || '').split('T')[0].split('-').map(Number);
       const fechaEntrega = new Date(yy, mm - 1, dd);
       const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       return diasRestantes <= 2 && task.estado !== 'entregado';
     })
     .map(task => {
-      const [yy, mm, dd] = task.fecha_entrega.split('T')[0].split('-').map(Number);
+      const [yy, mm, dd] = (task.fecha_entrega || '').split('T')[0].split('-').map(Number);
       const fechaEntrega = new Date(yy, mm - 1, dd);
       const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       return {
@@ -460,7 +460,7 @@ export default function Dashboard() {
 
   const getStatusLabel = (estado: string) => {
     const labels: Record<string, string> = {
-      backlog: 'Backlog',
+      backlog: 'Pendiente',
       en_proceso: 'En Proceso',
       en_revision: 'En Revisión',
       aprobado: 'Aprobado',
@@ -881,7 +881,7 @@ export default function Dashboard() {
                     <PieChart>
                       <Pie
                         data={[
-                          { name: 'Backlog', value: myStats.backlog },
+                          { name: 'Pendiente', value: myStats.backlog },
                           { name: 'En Proceso', value: myStats.en_proceso },
                           { name: 'En Revisión', value: myStats.en_revision },
                           { name: 'Aprobado', value: myStats.aprobado },
@@ -991,7 +991,7 @@ export default function Dashboard() {
         <CardContent>
           <div className="space-y-3 sm:space-y-4">
             {[
-              { label: 'Backlog', value: activeStats.backlog, total: activeStats.total, color: 'bg-status-backlog' },
+              { label: 'Pendiente', value: activeStats.backlog, total: activeStats.total, color: 'bg-status-backlog' },
               { label: 'En Proceso', value: activeStats.en_proceso, total: activeStats.total, color: 'bg-status-in-progress' },
               { label: 'En Revisión', value: activeStats.en_revision, total: activeStats.total, color: 'bg-status-in-review' },
               { label: 'Aprobado', value: activeStats.aprobado, total: activeStats.total, color: 'bg-status-approved' },

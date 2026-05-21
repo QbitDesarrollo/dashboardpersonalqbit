@@ -110,7 +110,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  backlog: 'Backlog',
+  backlog: 'Pendiente',
   en_proceso: 'En Proceso',
   en_revision: 'En Revision',
   aprobado: 'Aprobado',
@@ -130,7 +130,8 @@ const formatTime = (seconds: number) => {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 };
 
-const parseLocalDate = (dateStr: string) => {
+const parseLocalDate = (dateStr: string | null | undefined): Date => {
+  if (!dateStr) return new Date(NaN);
   const clean = dateStr.substring(0, 10);
   const [y, m, d] = clean.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -258,11 +259,11 @@ export default function DailyMesas() {
       if (filterDesk !== 'all' && t.desk_id !== filterDesk) return false;
       if (filterBrand !== 'all' && t.brand_id !== filterBrand) return false;
       if (dateFrom && t.fecha_entrega) {
-        const entrega = t.fecha_entrega.substring(0, 10);
+        const entrega = (t.fecha_entrega || "").substring(0, 10);
         if (entrega < dateFrom) return false;
       }
       if (dateTo && t.fecha_entrega) {
-        const entrega = t.fecha_entrega.substring(0, 10);
+        const entrega = (t.fecha_entrega || "").substring(0, 10);
         if (entrega > dateTo) return false;
       }
       return true;
@@ -687,7 +688,7 @@ export default function DailyMesas() {
                           const bOverdue = isOverdue(b.fecha_entrega, b.estado);
                           if (aOverdue && !bOverdue) return -1;
                           if (bOverdue && !aOverdue) return 1;
-                          return a.fecha_entrega.localeCompare(b.fecha_entrega);
+                          return (a.fecha_entrega || "").localeCompare(b.fecha_entrega || "");
                         })
                         .map((task) => {
                           const overdue = isOverdue(task.fecha_entrega, task.estado);
@@ -721,7 +722,7 @@ export default function DailyMesas() {
                                 <span className="text-[10px] text-destructive font-medium shrink-0">{Math.abs(dias)}d atras</span>
                               ) : (
                                 <span className={cn("text-[10px] shrink-0", dias <= 2 ? "text-amber-500 font-medium" : "text-muted-foreground")}>
-                                  {parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                                  {task.fecha_entrega ? parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : <span className="text-muted-foreground italic">—</span>}
                                 </span>
                               )}
                             </div>

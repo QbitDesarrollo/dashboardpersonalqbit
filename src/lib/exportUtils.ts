@@ -22,7 +22,7 @@ export interface TaskForExport {
 }
 
 const ESTADO_LABELS: Record<string, string> = {
-  backlog: 'Backlog',
+  backlog: 'Pendiente',
   en_proceso: 'En Proceso',
   en_revision: 'En Revisión',
   aprobado: 'Aprobado',
@@ -195,7 +195,7 @@ export function exportDailyToPDF(
     t.deliverable_type?.nombre || (t.tipo_entregable_id ? (dtNameMap[t.tipo_entregable_id] || '-') : '-'),
     ESTADO_LABELS[t.estado] ?? t.estado,
     t.prioridad,
-    t.fecha_entrega.substring(0, 10),
+    (t.fecha_entrega || "").substring(0, 10),
     formatTime(t.tiempo_trabajado),
   ]);
 
@@ -243,7 +243,7 @@ export function exportDailyToExcel(
     'Tipo Entregable': t.deliverable_type?.nombre || (t.tipo_entregable_id ? (dtNameMap[t.tipo_entregable_id] || '-') : '-'),
     Estado: ESTADO_LABELS[t.estado] ?? t.estado,
     Prioridad: t.prioridad,
-    'Fecha Entrega': t.fecha_entrega.substring(0, 10),
+    'Fecha Entrega': (t.fecha_entrega || "").substring(0, 10),
     'Tiempo (h)': Math.round((t.tiempo_trabajado / 3600) * 100) / 100,
   }));
   const wsTasks = XLSX.utils.json_to_sheet(taskData);

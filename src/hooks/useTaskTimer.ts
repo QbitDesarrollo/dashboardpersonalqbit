@@ -51,13 +51,63 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
 
   const startTimer = useCallback(async () => {
     try {
+      // 1) Detectar si el usuario ya tiene OTRO timer activo
+      let activos: api.ActiveTimer[] = [];
+      try {
+        activos = await api.getActiveTimers();
+      } catch {
+        // Si falla el chequeo seguimos sin bloquear (best-effort)
+      }
+      const otro = activos.find((t) => t.id !== taskId);
+
+      if (otro) {
+        // Calcular cuánto lleva corriendo el otro timer
+        const otroStart = new Date(otro.timer_inicio).getTime();
+        const additional = Math.max(0, Math.floor((Date.now() - otroStart) / 1000));
+        const hrs = Math.floor(additional / 3600);
+        const mins = Math.floor((additional % 3600) / 60);
+        const elapsedStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+        const brand = otro.brand_nombre ? ` (${otro.brand_nombre})` : '';
+
+        const THREE_HOURS = 3 * 3600;
+        let confirmMsg: string;
+        let timeToSum = additional;
+        if (additional > THREE_HOURS) {
+          // Probablemente se olvidaron de pausar — sumamos 0 por defecto
+          confirmMsg = `Ya tienes un timer activo en otra tarea:\n\n"${otro.titulo}"${brand}\nLleva ${elapsedStr} corriendo (parece que se olvidó pausar).\n\n¿Pausar la anterior SIN sumar tiempo e iniciar esta? La nueva tarea quedará como activa.`;
+          timeToSum = 0;
+        } else {
+          confirmMsg = `Ya tienes un timer activo en otra tarea:\n\n"${otro.titulo}"${brand}\nLleva ${elapsedStr} corriendo.\n\n¿Pausar la anterior (se suman ${elapsedStr}) e iniciar esta?`;
+        }
+
+        const ok = window.confirm(confirmMsg);
+        if (!ok) {
+          toast.info('Cancelado. El timer anterior sigue corriendo.');
+          return;
+        }
+
+        // Pausar la anterior con el tiempo correspondiente
+        try {
+          await api.patchTask(otro.id, {
+            timer_activo: false,
+            timer_inicio: null,
+            tiempo_trabajado: (otro.tiempo_trabajado || 0) + timeToSum,
+          });
+        } catch (e) {
+          console.error('[TIMER] No se pudo pausar el timer anterior:', e);
+          toast.error('No se pudo pausar el timer anterior. Revisá manualmente.');
+          return;
+        }
+      }
+
+      // 2) Iniciar este timer
       const now = new Date().toISOString();
       const result: any = await api.patchTask(taskId, { timer_activo: true, timer_inicio: now });
       if (result?.error) throw new Error(result.error);
-      
+
       startTimeRef.current = new Date(now);
       setIsRunning(true);
-      toast.success('Timer iniciado');
+      toast.success(otro ? 'Timer iniciado (la anterior se pausó)' : 'Timer iniciado');
     } catch (error: any) {
       toast.error('Error al iniciar timer', { description: error.message });
     }
@@ -71,16 +121,38 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
         additionalTime = Math.floor((new Date().getTime() - startTimeRef.current.getTime()) / 1000);
       }
 
+      // GUARDA: si la diferencia es > 3h, muy probable que el usuario olvidó pausar
+      // (ej. almuerzo). Preguntamos antes de sumar.
+      const THREE_HOURS = 3 * 3600;
+      if (additionalTime > THREE_HOURS) {
+        const hours = Math.floor(additionalTime / 3600);
+        const mins = Math.floor((additionalTime % 3600) / 60);
+        const msg = `El timer lleva ${hours}h ${mins}min activo. ¿Trabajaste todo ese tiempo?
+
+[Aceptar] = sumar ${hours}h ${mins}min
+[Cancelar] = pausar sin sumar (asumir que te olvidaste de pausar)`;
+        const confirmed = window.confirm(msg);
+        if (!confirmed) {
+          additionalTime = 0;
+        }
+      }
+
+      // CAP ABSOLUTO: nunca sumar más de 10h en una sola sesión (sanity)
+      const TEN_HOURS = 10 * 3600;
+      if (additionalTime > TEN_HOURS) additionalTime = TEN_HOURS;
+
       const result: any = await api.patchTask(taskId, {
         timer_activo: false,
         timer_inicio: null,
         tiempo_trabajado: initialTime + additionalTime,
       });
       if (result?.error) throw new Error(result.error);
-      
+
+      // Actualizar elapsed local para reflejar cambio real
+      setElapsedTime(initialTime + additionalTime);
       setIsRunning(false);
       startTimeRef.current = null;
-      toast.success('Timer pausado');
+      toast.success(additionalTime === 0 ? 'Timer pausado (sin cambios)' : 'Timer pausado');
     } catch (error: any) {
       toast.error('Error al pausar timer', { description: error.message });
     }

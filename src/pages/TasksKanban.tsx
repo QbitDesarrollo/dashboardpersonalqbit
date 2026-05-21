@@ -33,6 +33,8 @@ export type TaskStatus =
   | 'backlog'
   | 'en_proceso'
   | 'en_revision'
+  | 'revision_interna'
+  | 'revision_cliente'
   | 'aprobado'
   | 'entregado'
   | 'bloqueado';
@@ -40,16 +42,19 @@ export type TaskStatus =
 const STATUS_ORDER: TaskStatus[] = [
   'backlog',
   'en_proceso',
-  'en_revision',
+  'revision_interna',
+  'revision_cliente',
   'aprobado',
   'entregado',
   'bloqueado',
 ];
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
-  backlog: 'Backlog',
+  backlog: 'Pendiente',
   en_proceso: 'En proceso',
   en_revision: 'En revisión',
+  revision_interna: 'Revisión interna',
+  revision_cliente: 'Revisión cliente',
   aprobado: 'Aprobado',
   entregado: 'Entregado',
   bloqueado: 'Bloqueado',
@@ -59,6 +64,8 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   backlog: 'border-l-status-backlog',
   en_proceso: 'border-l-status-in-progress',
   en_revision: 'border-l-status-in-review',
+  revision_interna: 'border-l-amber-500',
+  revision_cliente: 'border-l-purple-500',
   aprobado: 'border-l-status-approved',
   entregado: 'border-l-status-delivered',
   bloqueado: 'border-l-status-blocked',
@@ -261,6 +268,8 @@ export default function TasksKanban() {
       backlog: [],
       en_proceso: [],
       en_revision: [],
+      revision_interna: [],
+      revision_cliente: [],
       aprobado: [],
       entregado: [],
       bloqueado: [],

@@ -15,7 +15,7 @@ interface Props {
 }
 
 const estados = [
-  { value: 'backlog', label: 'Backlog' },
+  { value: 'backlog', label: 'Pendiente' },
   { value: 'en_proceso', label: 'En Proceso' },
   { value: 'en_revision', label: 'En Revisión' },
   { value: 'aprobado', label: 'Aprobado' },

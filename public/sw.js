@@ -18,7 +18,16 @@ self.addEventListener('fetch', (event) => {
   if (event.request.url.includes('/socket.io/')) return;
 
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request).then((response) => {
+      if (response && response.status === 200) return response;
+      return response;
+    }).catch(() => {
+      // For navigation requests (SPA), fallback to index.html
+      if (event.request.mode === 'navigate') {
+        return caches.match('/index.html') || fetch('/index.html');
+      }
+      return caches.match(event.request);
+    })
   );
 });
 

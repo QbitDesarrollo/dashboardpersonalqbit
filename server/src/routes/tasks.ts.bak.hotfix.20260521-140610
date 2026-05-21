@@ -1,0 +1,1365 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { requireAuth, AuthRequest } from '../middleware/auth.js';
+import { query, queryOne, uuid } from '../db/mysql.js';
+import { getUserRole, hasRole } from '../utils/roles.js';
+import { logActivity, logTaskChanges } from '../utils/activity.js';
+import { canAccessTask } from '../utils/taskAccess.js';
+import { createNotification } from '../utils/notifications.js';
+import { sendEmail, taskAssignmentEmail, taskHandoffEmail } from '../services/email.js';
+import { processCommentMentions } from '../utils/mentions.js';
+import { autoSyncTaskToCalendar } from '../utils/googleCalendarSync.js';
+
+const createTaskSchema = z.object({
+  titulo_tarea: z.string().min(1, 'Título requerido').max(500),
+  brand_id: z.string().min(1, 'Marca requerida'),
+  desk_id: z.string().nullable().optional(),
+  detalle: z.string().max(5000).nullable().optional(),
+  cantidad_entregables: z.number().int().min(0).max(999).optional().default(1),
+  responsable_user_id: z.string().nullable().optional(),
+  responsable_ids: z.array(z.string()).max(20).optional(),
+  departamento: z.string().max(200).nullable().optional(),
+  department_id: z.string().nullable().optional(),
+  prioridad: z.enum(['alta', 'media', 'baja']).optional().default('media'),
+  estado: z.enum(['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado']).optional().default('backlog'),
+  fecha_inicio: z.string().nullable().optional(),
+  fecha_entrega: z.string().min(1, 'Fecha de entrega requerida'),
+  enlaces: z.union([z.string(), z.array(z.string())]).nullable().optional(),
+  check_done: z.boolean().optional().default(false),
+  sprint_id: z.string().nullable().optional(),
+  story_points: z.number().int().min(0).max(100).nullable().optional(),
+  feature_id: z.string().nullable().optional(),
+  task_type_id: z.string().nullable().optional(),
+  tipo_entregable_id: z.string().nullable().optional(),
+  entregables: z.array(z.object({
+    tipo_entregable_id: z.string().min(1),
+    cantidad: z.number().int().min(1).max(999).default(1),
+  })).max(20).optional(),
+  estimated_hours: z.number().min(0).max(9999).nullable().optional(),
+  recurrence_type: z.enum(['none', 'daily', 'weekly', 'biweekly', 'monthly', 'custom']).optional().default('none'),
+  recurrence_interval: z.number().int().min(1).max(365).nullable().optional(),
+  recurrence_end_date: z.string().nullable().optional(),
+});
+
+/** Manda email de asignación de tarea para un user específico. Lee data desde la DB. */
+async function sendTaskAssignmentEmailFor(userId: string, taskId: string): Promise<void> {
+  try {
+    const user = await queryOne<{ email: string; nombre: string }>('SELECT email, nombre FROM profiles WHERE id = ?', [userId]);
+    if (!user?.email) return;
+    if (!process.env.MAILGUN_API_KEY && !process.env.SMTP_PASS) return;
+    const t = await queryOne<any>(
+      `SELECT t.titulo_tarea, t.detalle, t.fecha_inicio, t.fecha_entrega, t.prioridad, b.nombre AS brand_nombre
+       FROM tasks t LEFT JOIN brands b ON b.id = t.brand_id WHERE t.id = ?`,
+      [taskId]
+    );
+    if (!t) return;
+    const frontendUrl = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
+    const emailData = await taskAssignmentEmail({
+      recipientName: user.nombre || 'Usuario',
+      taskTitle: String(t.titulo_tarea || 'Tarea'),
+      brandName: String(t.brand_nombre || 'Sin marca'),
+      detalle: t.detalle || undefined,
+      fechaInicio: t.fecha_inicio ? new Date(t.fecha_inicio).toISOString().slice(0, 10) : null,
+      fechaEntrega: t.fecha_entrega ? new Date(t.fecha_entrega).toISOString().slice(0, 10) : '',
+      prioridad: String(t.prioridad || 'media'),
+      frontendUrl,
+      taskId,
+    });
+    emailData.to = user.email;
+    await sendEmail(emailData);
+  } catch (e) {
+    console.error('[TASK ASSIGN EMAIL] error:', e);
+  }
+}
+
+/** Fire-and-forget notification. Only sends if userId is a non-empty string. */
+function notifyUser(userId: string, mensaje: string, taskId: string): void {
+  if (!userId) return;
+  createNotification(userId, mensaje, taskId).catch(() => {});
+}
+
+/** Safely extract a single string id from an Express body value (could be any). */
+function asString(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v)) {
+    const first = v[0];
+    return typeof first === 'string' ? first : first != null ? String(first) : '';
+  }
+  if (v != null) return String(v);
+  return '';
+}
+
+export const tasksRouter = Router();
+
+const TASKS_PAGE_SIZE = 100;
+const TASKS_PAGE_SIZE_MAX = 500;
+
+tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const limit = Math.min(
+      Math.max(1, parseInt(String(req.query.limit), 10) || TASKS_PAGE_SIZE),
+      TASKS_PAGE_SIZE_MAX
+    );
+    const offset = Math.max(0, parseInt(String(req.query.offset), 10) || 0);
+    const sprintId = req.query.sprint_id as string | undefined;
+    const backlogOnly = req.query.backlog === '1' || req.query.backlog === 'true';
+    const deskIdFilter = req.query.desk_id as string | undefined;
+    const responsableFilter = req.query.responsable_user_id as string | undefined;
+    const brandFilter = req.query.brand_id as string | undefined;
+    const statusFilter = req.query.estado as string | undefined;
+    const priorityFilter = req.query.prioridad as string | undefined;
+    const searchFilter = req.query.search as string | undefined;
+
+    const role = await getUserRole(req.userId!);
+    const baseFrom = `FROM tasks t
+         LEFT JOIN brands b ON b.id = t.brand_id
+         LEFT JOIN desks d ON d.id = t.desk_id
+         LEFT JOIN profiles p ON p.id = t.responsable_user_id
+         LEFT JOIN features f ON f.id = t.feature_id
+         LEFT JOIN sprints sp ON sp.id = t.sprint_id
+         LEFT JOIN task_types tt ON tt.id = t.task_type_id
+         LEFT JOIN deliverable_types dt ON dt.id = t.tipo_entregable_id
+         LEFT JOIN departments dep ON dep.id = t.department_id
+         LEFT JOIN profiles cb ON cb.id = t.created_by`;
+    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre as department_nombre, dep.color as department_color, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol,
+       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count,
+       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id AND (st.check_done = 1 OR st.estado IN ('entregado','aprobado'))) AS subtask_done_count
+       ${baseFrom}`;
+    const orderBy = ' ORDER BY t.created_at DESC';
+
+    let countSql: string;
+    let listSql: string;
+    let countParams: (string | undefined)[];
+    let listParams: (string | undefined)[];
+
+    let sprintCondition = '';
+    const sprintParam: (string | undefined)[] = [];
+    if (backlogOnly) {
+      sprintCondition = ' AND (t.sprint_id IS NULL OR t.sprint_id = \'\')';
+    } else if (sprintId) {
+      sprintCondition = ' AND t.sprint_id = ?';
+      sprintParam.push(sprintId);
+    }
+    // Solo tareas de primer nivel (no subtareas)
+    const noSubtasksCondition = ' AND (t.parent_task_id IS NULL OR t.parent_task_id = \'\')';
+
+    // Common filters (applied in all role branches)
+    let extraConditions = '';
+    const extraParams: string[] = [];
+    if (deskIdFilter) {
+      extraConditions += ` AND (
+        t.desk_id = ?
+        OR t.responsable_user_id IN (SELECT user_id FROM desk_members WHERE desk_id = ?)
+        OR t.id IN (
+          SELECT tr.task_id FROM task_responsables tr
+          INNER JOIN desk_members dm ON dm.user_id = tr.user_id
+          WHERE dm.desk_id = ?
+        )
+      )`;
+      extraParams.push(deskIdFilter, deskIdFilter, deskIdFilter);
+    }
+    if (responsableFilter) {
+      extraConditions += ' AND (t.responsable_user_id = ? OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?))';
+      extraParams.push(responsableFilter, responsableFilter);
+    }
+    if (brandFilter) {
+      extraConditions += ' AND t.brand_id = ?';
+      extraParams.push(brandFilter);
+    }
+    if (statusFilter) {
+      extraConditions += ' AND t.estado = ?';
+      extraParams.push(statusFilter);
+    }
+    if (priorityFilter) {
+      extraConditions += ' AND t.prioridad = ?';
+      extraParams.push(priorityFilter);
+    }
+    if (searchFilter) {
+      extraConditions += ' AND t.titulo_tarea LIKE ?';
+      extraParams.push(`%${searchFilter}%`);
+    }
+
+    if (role === 'cliente') {
+      const brandIds = await query<{ brand_id: string }[]>('SELECT brand_id FROM client_brands WHERE user_id = ?', [req.userId]);
+      const ids = brandIds.map((r) => r.brand_id);
+      if (ids.length === 0) {
+        res.json({ tasks: [], total: 0 });
+        return;
+      }
+      const placeholders = ids.map(() => '?').join(',');
+      const where = ` WHERE t.brand_id IN (${placeholders})${noSubtasksCondition}${sprintCondition}${extraConditions}`;
+      countSql = `SELECT COUNT(*) as total ${baseFrom}${where}`;
+      listSql = `${baseSelect}${where}${orderBy} LIMIT ? OFFSET ?`;
+      countParams = [...ids, ...sprintParam, ...extraParams];
+      listParams = [...ids, ...sprintParam, ...extraParams, String(limit), String(offset)];
+    } else if (role === 'equipo' || role === 'ejecutivo') {
+      // Equipo y ejecutivo solo ven tareas de su mesa o asignadas a ellos
+      const deskRows = await query<{ desk_id: string }[]>('SELECT desk_id FROM desk_members WHERE user_id = ?', [req.userId]);
+      const deskIds = deskRows.map((r) => r.desk_id);
+      // FIX: incluir también tareas donde el usuario es co-responsable (task_responsables)
+      const coRespCondition = ' OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?)';
+      const where = deskIds.length > 0
+        ? ` WHERE ((t.desk_id IN (${deskIds.map(() => '?').join(',')})) OR t.responsable_user_id = ?${coRespCondition})${noSubtasksCondition}${sprintCondition}${extraConditions}`
+        : ` WHERE (t.responsable_user_id = ?${coRespCondition})${noSubtasksCondition}${sprintCondition}${extraConditions}`;
+      countParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, ...sprintParam, ...extraParams] : [req.userId!, req.userId!, ...sprintParam, ...extraParams];
+      listParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)] : [req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)];
+      countSql = `SELECT COUNT(*) as total ${baseFrom}${where}`;
+      listSql = `${baseSelect}${where}${orderBy} LIMIT ? OFFSET ?`;
+    } else {
+      // admin: ve todas las tareas (solo primer nivel)
+      const baseWhere = ' WHERE (t.parent_task_id IS NULL OR t.parent_task_id = \'\')';
+      const where = baseWhere + (backlogOnly ? ' AND (t.sprint_id IS NULL OR t.sprint_id = \'\')' : sprintId ? ' AND t.sprint_id = ?' : '') + extraConditions;
+      countSql = `SELECT COUNT(*) as total ${baseFrom}${where}`;
+      listSql = `${baseSelect}${where}${orderBy} LIMIT ? OFFSET ?`;
+      countParams = [...sprintParam, ...extraParams];
+      listParams = [...sprintParam, ...extraParams, String(limit), String(offset)];
+    }
+
+    const [countRow, rows] = await Promise.all([
+      queryOne<{ total: number }>(countSql, countParams),
+      query<any[]>(listSql, listParams),
+    ]);
+    const total = Number(countRow?.total ?? 0);
+
+    // Fetch multiple responsables for all tasks
+    const taskIds = rows.map((r: any) => r.id);
+    let respMap: Record<string, { user_id: string; nombre: string; avatar_url: string | null }[]> = {};
+    if (taskIds.length > 0) {
+      const ph = taskIds.map(() => '?').join(',');
+      const respRows = await query<any[]>(
+        `SELECT tr.task_id, tr.user_id, p.nombre, p.avatar_url FROM task_responsables tr LEFT JOIN profiles p ON p.id = tr.user_id WHERE tr.task_id IN (${ph})`,
+        taskIds
+      );
+      for (const r of respRows) {
+        if (!respMap[r.task_id]) respMap[r.task_id] = [];
+        respMap[r.task_id].push({ user_id: r.user_id, nombre: r.nombre, avatar_url: r.avatar_url || null });
+      }
+    }
+
+    // Fetch read status for current user and read counts
+    let readMap: Record<string, boolean> = {};
+    let readCountMap: Record<string, number> = {};
+    if (taskIds.length > 0) {
+      const readPh = taskIds.map(() => '?').join(',');
+      const [readRows, readCountRows] = await Promise.all([
+        query<any[]>(
+          `SELECT task_id FROM task_reads WHERE user_id = ? AND task_id IN (${readPh})`,
+          [req.userId!, ...taskIds]
+        ),
+        query<any[]>(
+          `SELECT task_id, COUNT(*) as cnt FROM task_reads WHERE task_id IN (${readPh}) GROUP BY task_id`,
+          taskIds
+        ),
+      ]);
+      for (const r of readRows) { readMap[r.task_id] = true; }
+      for (const r of readCountRows) { readCountMap[r.task_id] = Number(r.cnt); }
+    }
+
+    // Fetch multiple deliverable types per task
+    let taskDelTypesMap: Record<string, { tipo_entregable_id: string; nombre: string; cantidad: number }[]> = {};
+    if (taskIds.length > 0) {
+      const dtPh = taskIds.map(() => '?').join(',');
+      const tdtRows = await query<any[]>(
+        `SELECT tdt.task_id, tdt.tipo_entregable_id, dt.nombre, tdt.cantidad
+         FROM task_deliverable_types tdt
+         LEFT JOIN deliverable_types dt ON dt.id = tdt.tipo_entregable_id
+         WHERE tdt.task_id IN (${dtPh})`,
+        taskIds
+      );
+      for (const r of tdtRows) {
+        if (!taskDelTypesMap[r.task_id]) taskDelTypesMap[r.task_id] = [];
+        taskDelTypesMap[r.task_id].push({
+          tipo_entregable_id: r.tipo_entregable_id,
+          nombre: r.nombre,
+          cantidad: r.cantidad,
+        });
+      }
+    }
+
+    const tasks = rows.map((r: any) => ({
+      ...r,
+      brands: r.brand_nombre ? { nombre: r.brand_nombre } : null,
+      desks: r.desk_nombre ? { nombre: r.desk_nombre } : null,
+      profiles: r.resp_nombre ? { nombre: r.resp_nombre, avatar_url: r.resp_avatar_url || null } : null,
+      responsables: respMap[r.id] || [],
+      feature: r.feature_name ? { name: r.feature_name } : null,
+      sprint: r.sprint_name ? { name: r.sprint_name } : null,
+      task_type: r.task_type_nombre ? { nombre: r.task_type_nombre } : null,
+      deliverable_type: r.deliverable_type_nombre ? { nombre: r.deliverable_type_nombre } : null,
+      deliverable_types_list: taskDelTypesMap[r.id] || [],
+      created_by_profile: r.created_by_nombre ? { nombre: r.created_by_nombre, avatar_url: r.created_by_avatar_url || null } : null,
+      created_by_rol: r.created_by_rol || null,
+      is_read: readMap[r.id] || false,
+      read_count: readCountMap[r.id] || 0,
+    }));
+    res.json({ tasks, total });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cargar tareas' });
+  }
+});
+
+
+// GET active timers — devuelve las tareas con timer activo del usuario actual.
+// Se usa al iniciar un timer en una tarea para detectar conflictos y ofrecer
+// pausar la anterior. Idealmente solo hay una (un usuario = un timer activo),
+// pero pueden ser varias si quedaron pegadas.
+tasksRouter.get("/tasks/active-timer", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const rows = await query<any[]>(
+      `SELECT t.id, t.titulo_tarea, t.timer_inicio, t.tiempo_trabajado,
+              b.nombre AS brand_nombre
+       FROM tasks t
+       LEFT JOIN brands b ON b.id = t.brand_id
+       WHERE t.timer_activo = 1
+         AND (t.responsable_user_id = ? OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?))
+       ORDER BY t.timer_inicio DESC`,
+      [req.userId, req.userId]
+    );
+    res.json(rows.map((r) => ({
+      id: r.id,
+      titulo: r.titulo_tarea,
+      brand_nombre: r.brand_nombre,
+      timer_inicio: r.timer_inicio,
+      tiempo_trabajado: Number(r.tiempo_trabajado || 0),
+    })));
+  } catch (e) {
+    console.error("[TIMER] active-timer error:", e);
+    res.status(500).json({ error: "Error al consultar timers activos" });
+  }
+});
+
+// GET single task by ID (for deep-linking from emails / daily)
+tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const taskId = req.params.id;
+    const row = await queryOne<any>(
+      `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre,
+              dep.nombre as department_nombre, dep.color as department_color,
+              p.nombre as resp_nombre, p.avatar_url as resp_avatar_url,
+              f.name as feature_name, sp.name as sprint_name,
+              tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre,
+              cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol
+       FROM tasks t
+       LEFT JOIN brands b ON b.id = t.brand_id
+       LEFT JOIN desks d ON d.id = t.desk_id
+       LEFT JOIN profiles p ON p.id = t.responsable_user_id
+       LEFT JOIN features f ON f.id = t.feature_id
+       LEFT JOIN sprints sp ON sp.id = t.sprint_id
+       LEFT JOIN task_types tt ON tt.id = t.task_type_id
+       LEFT JOIN deliverable_types dt ON dt.id = t.tipo_entregable_id
+       LEFT JOIN profiles cb ON cb.id = t.created_by
+       WHERE t.id = ?`,
+      [taskId]
+    );
+    if (!row) return res.status(404).json({ error: 'Tarea no encontrada' });
+
+    const respRows = await query<any[]>(
+      `SELECT tr.user_id, p.nombre, p.avatar_url FROM task_responsables tr LEFT JOIN profiles p ON p.id = tr.user_id WHERE tr.task_id = ?`,
+      [taskId]
+    );
+    const tdtRows = await query<any[]>(
+      `SELECT tdt.tipo_entregable_id, dt.nombre, tdt.cantidad FROM task_deliverable_types tdt LEFT JOIN deliverable_types dt ON dt.id = tdt.tipo_entregable_id WHERE tdt.task_id = ?`,
+      [taskId]
+    );
+    const readRow = await queryOne<{ cnt: number }>(
+      `SELECT COUNT(*) as cnt FROM task_reads WHERE task_id = ? AND user_id = ?`,
+      [taskId, req.userId!]
+    );
+    const readCountRow = await queryOne<{ cnt: number }>(
+      `SELECT COUNT(*) as cnt FROM task_reads WHERE task_id = ?`,
+      [taskId]
+    );
+
+    const task = {
+      ...row,
+      brands: row.brand_nombre ? { nombre: row.brand_nombre } : null,
+      desks: row.desk_nombre ? { nombre: row.desk_nombre } : null,
+      profiles: row.resp_nombre ? { nombre: row.resp_nombre, avatar_url: row.resp_avatar_url || null } : null,
+      responsables: respRows.map((r: any) => ({ user_id: r.user_id, nombre: r.nombre, avatar_url: r.avatar_url || null })),
+      feature: row.feature_name ? { name: row.feature_name } : null,
+      sprint: row.sprint_name ? { name: row.sprint_name } : null,
+      task_type: row.task_type_nombre ? { nombre: row.task_type_nombre } : null,
+      deliverable_type: row.deliverable_type_nombre ? { nombre: row.deliverable_type_nombre } : null,
+      deliverable_types_list: tdtRows.map((r: any) => ({ tipo_entregable_id: r.tipo_entregable_id, nombre: r.nombre, cantidad: r.cantidad })),
+      created_by_profile: row.created_by_nombre ? { nombre: row.created_by_nombre, avatar_url: row.created_by_avatar_url || null } : null,
+      created_by_rol: row.created_by_rol || null,
+      is_read: Number(readRow?.cnt ?? 0) > 0,
+      read_count: Number(readCountRow?.cnt ?? 0),
+    };
+    res.json(task);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cargar tarea' });
+  }
+});
+
+tasksRouter.post('/tasks', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const parsed = createTaskSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Datos de tarea inválidos', details: parsed.error.flatten().fieldErrors });
+    }
+    const body = parsed.data;
+
+    // Validate desk+brand compatibility if desk has brands assigned
+    if (body.desk_id && body.brand_id) {
+      const deskBrandCount = await queryOne<{ cnt: number }>(
+        'SELECT COUNT(*) as cnt FROM desk_brands WHERE desk_id = ?', [body.desk_id]
+      );
+      if (Number(deskBrandCount?.cnt) > 0) {
+        const match = await queryOne<{ id: string }>(
+          'SELECT id FROM desk_brands WHERE desk_id = ? AND brand_id = ?', [body.desk_id, body.brand_id]
+        );
+        if (!match) {
+          return res.status(400).json({ error: 'La marca seleccionada no está asignada a esta mesa' });
+        }
+      }
+    }
+
+    const id = uuid();
+    const enlaces = body.enlaces ? (Array.isArray(body.enlaces) ? JSON.stringify(body.enlaces) : body.enlaces) : null;
+    // Support both single responsable_user_id and array responsable_ids
+    const responsableIds: string[] = Array.isArray(body.responsable_ids) ? body.responsable_ids : (body.responsable_user_id ? [body.responsable_user_id] : []);
+    const primaryResponsable = responsableIds[0] || null;
+
+    await query(
+      `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, department_id, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, body.check_done ? 1 : 0, body.brand_id, body.desk_id || null, body.titulo_tarea, body.detalle || null,
+        body.cantidad_entregables ?? 1, primaryResponsable, body.departamento || null, body.department_id || null,
+        body.prioridad || 'media', body.estado || 'backlog', body.fecha_inicio || null, body.fecha_entrega,
+        enlaces, body.sprint_id || null, body.story_points ?? null, body.feature_id || null, body.task_type_id || null, body.tipo_entregable_id || null, req.userId ?? null,
+        body.estimated_hours ?? null, body.recurrence_type || 'none', body.recurrence_interval ?? null, body.recurrence_end_date || null
+      ]
+    );
+
+    // Insert into task_responsables
+    for (const uid of responsableIds) {
+      await query('INSERT IGNORE INTO task_responsables (id, task_id, user_id) VALUES (?, ?, ?)', [uuid(), id, uid]);
+    }
+
+    // Primer registro de history por departamento (si hay)
+    if (body.department_id) {
+      await query(
+        'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
+        [uuid(), id, body.department_id, primaryResponsable]
+      ).catch((e) => console.error('[TASKS] history insert (create):', e));
+    }
+
+    // Insert deliverable types (multi-type support)
+    if (Array.isArray(body.entregables) && body.entregables.length > 0) {
+      for (const ent of body.entregables) {
+        await query(
+          'INSERT INTO task_deliverable_types (id, task_id, tipo_entregable_id, cantidad) VALUES (?, ?, ?, ?)',
+          [uuid(), id, ent.tipo_entregable_id, ent.cantidad]
+        );
+      }
+    } else if (body.tipo_entregable_id) {
+      await query(
+        'INSERT INTO task_deliverable_types (id, task_id, tipo_entregable_id, cantidad) VALUES (?, ?, ?, ?)',
+        [uuid(), id, body.tipo_entregable_id, body.cantidad_entregables ?? 1]
+      );
+    }
+
+    // Notify each assignee and auto-sync to their Google Calendar
+    const titulo: string = asString(body.titulo_tarea) || 'Tarea';
+    for (const uid of responsableIds) {
+      if (uid && uid !== req.userId) {
+        notifyUser(uid, `Se te asignó la tarea: ${titulo}`, id);
+      }
+      if (uid) {
+        autoSyncTaskToCalendar(uid, id).catch(() => {});
+      }
+    }
+
+    const row = await queryOne<any>(`SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre AS department_nombre, dep.color AS department_color FROM tasks t LEFT JOIN brands b ON b.id = t.brand_id LEFT JOIN desks d ON d.id = t.desk_id LEFT JOIN departments dep ON dep.id = t.department_id WHERE t.id = ?`, [id]);
+    res.status(201).json({ ...row, brands: row?.brand_nombre ? { nombre: row.brand_nombre } : null, desks: row?.desk_nombre ? { nombre: row.desk_nombre } : null });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al crear tarea' });
+  }
+});
+
+tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id);
+    const body = req.body;
+    const role = await getUserRole(req.userId!);
+
+    const oldRow = await queryOne<any>('SELECT * FROM tasks WHERE id = ?', [id]);
+    const onlyFavorite = Object.keys(body).length === 1 && body.is_favorite !== undefined;
+
+    // Tasks created by admin or ejecutivo are protected: only admin or the creator can edit
+    let creatorRole: string | null = null;
+    if (oldRow?.created_by) {
+      creatorRole = await getUserRole(oldRow.created_by);
+    }
+    const isProtected = creatorRole === 'admin' || creatorRole === 'ejecutivo';
+
+    // Fields that equipo can always change on assigned tasks (even protected ones)
+    const operationalFields = new Set(['estado', 'timer_activo', 'timer_inicio', 'tiempo_trabajado', 'check_done', 'is_favorite']);
+    const bodyKeys = Object.keys(body);
+    const onlyOperational = bodyKeys.every(k => operationalFields.has(k));
+
+    const isResponsable = oldRow?.responsable_user_id === req.userId;
+    const isInResponsables = await queryOne<{ n: number }>(
+      'SELECT 1 as n FROM task_responsables WHERE task_id = ? AND user_id = ? LIMIT 1',
+      [id, req.userId!]
+    );
+    const isAssigned = isResponsable || !!isInResponsables;
+
+    let allowed = false;
+    if (role === 'admin') {
+      allowed = true;
+    } else if (role === 'ejecutivo') {
+      allowed = !isProtected || oldRow?.created_by === req.userId;
+    } else if (role === 'equipo') {
+      if (isProtected) {
+        // On protected tasks, equipo can only change operational fields if assigned
+        allowed = isAssigned && (onlyOperational || onlyFavorite);
+      } else {
+        allowed = onlyFavorite || isAssigned;
+      }
+    }
+    if (!allowed) {
+      console.log('[PATCH TASK] DENIED', { id, role, userId: req.userId, bodyKeys, onlyOperational, isAssigned, isProtected, creatorRole, responsable: oldRow?.responsable_user_id });
+      return res.status(403).json({ error: 'Sin permisos' });
+    }
+
+    // ── Reschedule: si cambia fecha_entrega, exigir motivo ──────────────────
+    const MOTIVOS_RESCHEDULE = ['INTERNO', 'CLIENTE', 'ALCANCE', 'FUERZA_MAYOR', 'SIN_CLASIFICAR'];
+    let rescheduleInfo: { oldFecha: string | null; newFecha: string | null; motivo: string; comentario: string | null } | null = null;
+    if (body.fecha_entrega !== undefined && oldRow) {
+      const normOld = oldRow.fecha_entrega ? new Date(oldRow.fecha_entrega).toISOString().slice(0, 10) : null;
+      const normNew = body.fecha_entrega ? String(body.fecha_entrega).slice(0, 10) : null;
+      if (normOld !== normNew) {
+        const motivo = String(body.motivo_reschedule || '').toUpperCase();
+        if (!MOTIVOS_RESCHEDULE.includes(motivo)) {
+          return res.status(400).json({ error: 'Debes indicar el motivo del cambio de fecha (motivo_reschedule)' });
+        }
+        rescheduleInfo = {
+          oldFecha: normOld,
+          newFecha: normNew,
+          motivo,
+          comentario: typeof body.comentario_reschedule === 'string' && body.comentario_reschedule.trim()
+            ? body.comentario_reschedule.trim().slice(0, 500) : null,
+        };
+      }
+    }
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    const map: Record<string, string> = {
+      check_done: 'check_done', brand_id: 'brand_id', desk_id: 'desk_id', titulo_tarea: 'titulo_tarea',
+      detalle: 'detalle', cantidad_entregables: 'cantidad_entregables', responsable_user_id: 'responsable_user_id',
+      departamento: 'departamento', department_id: 'department_id', prioridad: 'prioridad', estado: 'estado', fecha_inicio: 'fecha_inicio',
+      fecha_entrega: 'fecha_entrega', enlaces: 'enlaces', estado_envio: 'estado_envio',
+      tiempo_trabajado: 'tiempo_trabajado', timer_activo: 'timer_activo', timer_inicio: 'timer_inicio',
+      sprint_id: 'sprint_id', story_points: 'story_points', feature_id: 'feature_id',
+      task_type_id: 'task_type_id', tipo_entregable_id: 'tipo_entregable_id', is_favorite: 'is_favorite',
+      estimated_hours: 'estimated_hours', recurrence_type: 'recurrence_type',
+      recurrence_interval: 'recurrence_interval', recurrence_end_date: 'recurrence_end_date',
+    };
+
+    for (const [k, col] of Object.entries(map)) {
+      if (body[k] !== undefined) {
+        if (k === 'enlaces') {
+          fields.push(`${col} = ?`);
+          values.push(Array.isArray(body[k]) ? JSON.stringify(body[k]) : body[k]);
+        } else if (['check_done', 'timer_activo', 'is_favorite'].includes(k)) {
+          fields.push(`${col} = ?`);
+          values.push(body[k] ? 1 : 0);
+        } else if (k === 'timer_inicio' && body[k] != null) {
+          const d = new Date(body[k] as string);
+          fields.push(`${col} = ?`);
+          values.push(isNaN(d.getTime()) ? body[k] : d.toISOString().slice(0, 19).replace('T', ' '));
+        } else {
+          fields.push(`${col} = ?`);
+          values.push(body[k]);
+        }
+      }
+    }
+    // Permitimos PATCH solo con responsable_ids/entregables (sin otros fields del map)
+    const hasOtherFields = fields.length > 0;
+    const hasResponsableIds = Array.isArray(body.responsable_ids);
+    const hasEntregables = Array.isArray(body.entregables);
+    if (!hasOtherFields && !hasResponsableIds && !hasEntregables) {
+      return res.status(400).json({ error: 'Sin campos para actualizar' });
+    }
+
+    if (hasOtherFields) {
+      values.push(id);
+      await query(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, values);
+    }
+
+    // Registrar el reschedule (después de aplicar el UPDATE)
+    if (rescheduleInfo) {
+      await query(
+        'INSERT INTO task_reschedules (id, task_id, fecha_anterior, fecha_nueva, motivo, comentario, changed_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [uuid(), id, rescheduleInfo.oldFecha, rescheduleInfo.newFecha, rescheduleInfo.motivo, rescheduleInfo.comentario, req.userId]
+      );
+    }
+
+    // History de departamento: si cambio department_id, cerrar el registro
+    // actual abierto (set exited_at) y abrir uno nuevo con el nuevo depto.
+    if (body.department_id !== undefined && body.department_id !== oldRow?.department_id) {
+      try {
+        await query(
+          'UPDATE task_department_history SET exited_at = NOW(3) WHERE task_id = ? AND exited_at IS NULL',
+          [id]
+        );
+        if (body.department_id) {
+          const respForHistory = Array.isArray(body.responsable_ids) && body.responsable_ids.length > 0
+            ? body.responsable_ids[0]
+            : (body.responsable_user_id !== undefined ? body.responsable_user_id : oldRow?.responsable_user_id);
+          await query(
+            'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
+            [uuid(), id, body.department_id, respForHistory || null]
+          );
+        }
+      } catch (e) {
+        console.error('[TASKS] history hook (patch):', e);
+      }
+    }
+
+    // Handle multiple responsables
+    if (Array.isArray(body.responsable_ids)) {
+      await query('DELETE FROM task_responsables WHERE task_id = ?', [id]);
+      for (const uid of body.responsable_ids) {
+        await query('INSERT IGNORE INTO task_responsables (id, task_id, user_id) VALUES (?, ?, ?)', [uuid(), id, uid]);
+      }
+      // Keep responsable_user_id in sync with first responsable
+      const primary = body.responsable_ids[0] || null;
+      await query('UPDATE tasks SET responsable_user_id = ? WHERE id = ?', [primary, id]);
+      // Notify NEW assignees: in-app + email + Google Calendar sync.
+      // Solo mandamos email/notif a los que NO estaban antes.
+      const tituloNotif: string = asString(oldRow?.titulo_tarea) || 'Tarea';
+      const oldRespRows = await query<{ user_id: string }[]>(
+        // Old responsables snapshot (antes del DELETE de arriba ya no existen, así que comparamos contra la primera lectura)
+        'SELECT 1 as n', []
+      );
+      // Obtener old responsables del oldRow + tabla legacy: usamos la lista que existía ANTES del PATCH.
+      // En este punto la tabla ya fue actualizada, así que reconstruimos los old desde oldRow.responsable_user_id
+      // y de un snapshot que tomamos al inicio (TODO: si se necesita lista completa pre-PATCH, leer al principio).
+      const oldRespSet = new Set<string>();
+      if (oldRow?.responsable_user_id) oldRespSet.add(String(oldRow.responsable_user_id));
+
+      for (const uid of body.responsable_ids) {
+        const uidStr: string = asString(uid);
+        if (!uidStr) continue;
+        const isNew = !oldRespSet.has(uidStr);
+        if (uidStr !== req.userId) {
+          // Notif in-app siempre (al menos para nuevos)
+          if (isNew) notifyUser(uidStr, `Se te asignó la tarea: ${tituloNotif}`, id);
+        }
+        autoSyncTaskToCalendar(uidStr, id).catch(() => {});
+
+        // Email solo a nuevos asignados (no al autor, no a quien ya estaba)
+        if (isNew && uidStr !== req.userId) {
+          sendTaskAssignmentEmailFor(uidStr, id).catch((e) => console.error('[PATCH TASK] email fail:', e));
+        }
+      }
+    }
+
+    // Handle multiple deliverable types
+    if (Array.isArray(body.entregables)) {
+      await query('DELETE FROM task_deliverable_types WHERE task_id = ?', [id]);
+      for (const ent of body.entregables) {
+        if (ent.tipo_entregable_id) {
+          await query(
+            'INSERT INTO task_deliverable_types (id, task_id, tipo_entregable_id, cantidad) VALUES (?, ?, ?, ?)',
+            [uuid(), id, ent.tipo_entregable_id, ent.cantidad || 1]
+          );
+        }
+      }
+      // Keep legacy columns in sync with first entry
+      if (body.entregables.length > 0 && body.entregables[0].tipo_entregable_id) {
+        await query('UPDATE tasks SET tipo_entregable_id = ?, cantidad_entregables = ? WHERE id = ?',
+          [body.entregables[0].tipo_entregable_id, body.entregables[0].cantidad || 1, id]);
+      }
+    }
+
+    // If only responsable_user_id was updated (single), notif + email + auto-sync
+    if (body.responsable_user_id !== undefined && !Array.isArray(body.responsable_ids)) {
+      const singleResp: string = asString(body.responsable_user_id);
+      if (singleResp) {
+        autoSyncTaskToCalendar(singleResp, id).catch(() => {});
+        const wasAlreadyAssigned = String(oldRow?.responsable_user_id || '') === singleResp;
+        if (!wasAlreadyAssigned && singleResp !== req.userId) {
+          const tituloNotif2: string = asString(oldRow?.titulo_tarea) || 'Tarea';
+          notifyUser(singleResp, `Se te asignó la tarea: ${tituloNotif2}`, id);
+          sendTaskAssignmentEmailFor(singleResp, id).catch((e) => console.error('[PATCH TASK] email single fail:', e));
+        }
+      }
+    }
+
+    // Notify author when status or check_done changes (assignee finished or changed status)
+    const estadoChanged = body.estado !== undefined && oldRow?.estado !== body.estado;
+    const checkDoneChanged = body.check_done !== undefined && Number(oldRow?.check_done) !== (body.check_done ? 1 : 0);
+    const authorId: string = asString(oldRow?.created_by);
+    if ((estadoChanged || checkDoneChanged) && authorId && authorId !== req.userId) {
+      const tituloNotif: string = asString(oldRow?.titulo_tarea) || 'Tarea';
+      if (checkDoneChanged && body.check_done) {
+        notifyUser(authorId, `La tarea "${tituloNotif}" fue marcada como terminada`, id);
+      } else if (estadoChanged) {
+        const estadoStr: string = asString(body.estado);
+        notifyUser(authorId, `La tarea "${tituloNotif}" cambió a estado: ${estadoStr}`, id);
+      }
+    }
+
+    // If only responsable_user_id was updated (single assignee change), notify new assignee
+    const newRespId: string = asString(body.responsable_user_id);
+    if (body.responsable_user_id !== undefined && !Array.isArray(body.responsable_ids) && oldRow?.responsable_user_id !== newRespId && newRespId && newRespId !== req.userId) {
+      const tituloNotif: string = asString(oldRow?.titulo_tarea) || 'Tarea';
+      notifyUser(newRespId, `Se te asignó la tarea: ${tituloNotif}`, id);
+    }
+
+    // Recurrence: spawn next instance when a recurring task is completed
+    const isNowCompleted = (
+      (body.check_done === true && !Number(oldRow?.check_done)) ||
+      (body.estado === 'entregado' && oldRow?.estado !== 'entregado')
+    );
+    const recurrenceType = oldRow?.recurrence_type;
+    if (isNowCompleted && recurrenceType && recurrenceType !== 'none') {
+      spawnNextRecurrence(oldRow, req.userId!).catch((e) => console.error('[Recurrence] Error spawning next:', e));
+    }
+
+    // Log changes
+    if (oldRow) {
+      const changeData: Record<string, any> = {};
+      for (const [k] of Object.entries(map)) {
+        if (body[k] !== undefined) changeData[k] = body[k];
+      }
+      logTaskChanges(String(id), oldRow, changeData, req.userId!).catch(() => {});
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al actualizar tarea' });
+  }
+});
+
+// ========== TASK READS ==========
+tasksRouter.post('/tasks/:id/read', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const taskId = String(req.params.id);
+    const userId = req.userId!;
+    const id = uuid();
+    await query(
+      `INSERT IGNORE INTO task_reads (id, task_id, user_id, read_at) VALUES (?, ?, ?, NOW())`,
+      [id, taskId, userId]
+    );
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al registrar lectura' });
+  }
+});
+
+tasksRouter.get('/tasks/:id/reads', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const taskId = String(req.params.id);
+    const rows = await query<any[]>(
+      `SELECT tr.user_id, tr.read_at, p.nombre, p.avatar_url
+       FROM task_reads tr
+       LEFT JOIN profiles p ON p.id = tr.user_id
+       WHERE tr.task_id = ?
+       ORDER BY tr.read_at DESC`,
+      [taskId]
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cargar lecturas' });
+  }
+});
+
+// ========== SUBTASKS ==========
+// POST /tasks/:id/handoff — pasar una tarea al siguiente departamento (handoff de etapa)
+tasksRouter.post('/tasks/:id/handoff', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id);
+    const src = await queryOne<any>(
+      `SELECT t.*, b.nombre AS brand_nombre, dep.nombre AS department_nombre
+       FROM tasks t
+       LEFT JOIN brands b ON b.id = t.brand_id
+       LEFT JOIN departments dep ON dep.id = t.department_id
+       WHERE t.id = ?`,
+      [id]
+    );
+    if (!src) return res.status(404).json({ error: 'Tarea no encontrada' });
+
+    const canAccess = await canAccessTask(req.userId!, id);
+    if (!canAccess) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
+
+    const toDeptId = asString(req.body?.to_department_id);
+    if (!toDeptId) return res.status(400).json({ error: 'to_department_id requerido' });
+
+    const toDept = await queryOne<any>('SELECT id, nombre FROM departments WHERE id = ? AND activo = 1', [toDeptId]);
+    if (!toDept) return res.status(400).json({ error: 'Departamento destino inválido o inactivo' });
+
+    const respIds: string[] = Array.isArray(req.body?.to_responsable_ids)
+      ? req.body.to_responsable_ids.filter((x: unknown) => typeof x === 'string' && x.length > 0)
+      : [];
+    const primaryResp = respIds[0] || null;
+    const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim().slice(0, 1000) : null;
+    const dueDate = typeof req.body?.due_date === 'string' && req.body.due_date ? req.body.due_date : null;
+    const createNew = req.body?.create_new_task === true;
+
+    const fromDeptId = src.department_id || null;
+    const fromResp = src.responsable_user_id || null;
+    let targetTaskId: string | null = null;
+
+    if (createNew) {
+      // Crear una tarea nueva relacionada en el nuevo departamento
+      const newId = uuid();
+      await query(
+        `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables,
+          responsable_user_id, departamento, department_id, prioridad, estado, fecha_inicio, fecha_entrega,
+          enlaces, task_type_id, created_by)
+         VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?, ?, ?, ?)`,
+        [
+          newId, src.brand_id, src.desk_id, src.titulo_tarea, src.detalle, src.cantidad_entregables ?? 1,
+          primaryResp, toDept.nombre, toDeptId, src.prioridad || 'media',
+          src.fecha_inicio || null, dueDate || src.fecha_entrega, src.enlaces, src.task_type_id || null, req.userId ?? null,
+        ]
+      );
+      for (const uid of respIds) {
+        await query('INSERT IGNORE INTO task_responsables (id, task_id, user_id) VALUES (?, ?, ?)', [uuid(), newId, uid]);
+      }
+      await query(
+        'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
+        [uuid(), newId, toDeptId, primaryResp]
+      );
+      targetTaskId = newId;
+    } else {
+      // Pasar la MISMA tarea: cambiar departamento + responsables
+      const updates: string[] = ['department_id = ?'];
+      const vals: unknown[] = [toDeptId];
+      if (primaryResp) { updates.push('responsable_user_id = ?'); vals.push(primaryResp); }
+      if (dueDate) { updates.push('fecha_entrega = ?'); vals.push(dueDate); }
+      vals.push(id);
+      await query(`UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`, vals);
+
+      if (respIds.length > 0) {
+        await query('DELETE FROM task_responsables WHERE task_id = ?', [id]);
+        for (const uid of respIds) {
+          await query('INSERT IGNORE INTO task_responsables (id, task_id, user_id) VALUES (?, ?, ?)', [uuid(), id, uid]);
+        }
+      }
+      // Cerrar history actual y abrir nuevo
+      await query('UPDATE task_department_history SET exited_at = NOW(3) WHERE task_id = ? AND exited_at IS NULL', [id]);
+      await query(
+        'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
+        [uuid(), id, toDeptId, primaryResp]
+      );
+    }
+
+    // Registro del handoff
+    await query(
+      `INSERT INTO task_handoffs (id, source_task_id, target_task_id, from_department_id, to_department_id,
+        from_responsable_id, to_responsable_id, motivo, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [uuid(), id, targetTaskId, fromDeptId, toDeptId, fromResp, primaryResp, motivo, req.userId ?? null]
+    );
+
+    // Actividad
+    await logActivity('task', id, 'handoff', 'department_id', src.department_nombre || null, toDept.nombre, req.userId ?? null).catch(() => {});
+
+    // Notificar + email a los nuevos responsables
+    const notifyTaskId = targetTaskId || id;
+    const frontendUrl = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
+    let fromRespNombre: string | null = null;
+    if (fromResp) {
+      const fr = await queryOne<{ nombre: string }>('SELECT nombre FROM profiles WHERE id = ?', [fromResp]);
+      fromRespNombre = fr?.nombre || null;
+    }
+    for (const uid of respIds) {
+      notifyUser(uid, `Te pasaron una tarea a ${toDept.nombre}: ${src.titulo_tarea}`, notifyTaskId);
+      try {
+        const u = await queryOne<{ email: string; nombre: string }>('SELECT email, nombre FROM profiles WHERE id = ?', [uid]);
+        if (u?.email && (process.env.MAILGUN_API_KEY || process.env.SMTP_PASS)) {
+          const emailData = await taskHandoffEmail({
+            recipientName: u.nombre || 'Usuario',
+            taskTitle: String(src.titulo_tarea || 'Tarea'),
+            brandName: String(src.brand_nombre || 'Sin marca'),
+            fromDepartment: src.department_nombre || null,
+            toDepartment: toDept.nombre,
+            fromResponsable: fromRespNombre,
+            motivo,
+            fechaEntrega: (dueDate || src.fecha_entrega) ? new Date(dueDate || src.fecha_entrega).toISOString().slice(0, 10) : null,
+            frontendUrl,
+            taskId: notifyTaskId,
+          });
+          emailData.to = u.email;
+          await sendEmail(emailData);
+        }
+      } catch (e) {
+        console.error('[HANDOFF EMAIL] error:', e);
+      }
+    }
+
+    res.status(201).json({ ok: true, target_task_id: targetTaskId, same_task: !createNew });
+  } catch (e) {
+    console.error('[TASKS] handoff error:', e);
+    res.status(500).json({ error: 'Error al pasar la tarea de etapa' });
+  }
+});
+
+tasksRouter.get('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const rows = await query<any[]>(
+      `SELECT t.*, b.nombre as brand_nombre, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url
+       FROM tasks t
+       LEFT JOIN brands b ON b.id = t.brand_id
+       LEFT JOIN profiles p ON p.id = t.responsable_user_id
+       WHERE t.parent_task_id = ? ORDER BY t.sort_order ASC, t.created_at ASC`,
+      [id]
+    );
+
+    // Cargar responsables múltiples (task_responsables) para todas las subtareas en una sola query
+    const subIds = rows.map((r: any) => r.id);
+    const respMap: Record<string, { user_id: string; nombre: string; avatar_url: string | null }[]> = {};
+    if (subIds.length > 0) {
+      const ph = subIds.map(() => '?').join(',');
+      const respRows = await query<any[]>(
+        `SELECT tr.task_id, tr.user_id, p.nombre, p.avatar_url
+         FROM task_responsables tr
+         LEFT JOIN profiles p ON p.id = tr.user_id
+         WHERE tr.task_id IN (${ph})`,
+        subIds
+      );
+      for (const r of respRows) {
+        if (!respMap[r.task_id]) respMap[r.task_id] = [];
+        respMap[r.task_id].push({ user_id: r.user_id, nombre: r.nombre, avatar_url: r.avatar_url || null });
+      }
+    }
+
+    const subtasks = rows.map((r: any) => ({
+      ...r,
+      brands: r.brand_nombre ? { nombre: r.brand_nombre } : null,
+      profiles: r.resp_nombre ? { nombre: r.resp_nombre, avatar_url: r.resp_avatar_url || null } : null,
+      responsables: respMap[r.id] || [],
+    }));
+    res.json(subtasks);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cargar subtareas' });
+  }
+});
+
+tasksRouter.post('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const parentId = req.params.id;
+    const parent = await queryOne<any>('SELECT brand_id, desk_id, fecha_entrega FROM tasks WHERE id = ?', [parentId]);
+    if (!parent) return res.status(404).json({ error: 'Tarea padre no encontrada' });
+
+    const body = req.body;
+    const id = uuid();
+    const fechaEntrega = body.fecha_entrega || parent.fecha_entrega || new Date().toISOString().slice(0, 10);
+    const responsableId = body.responsable_user_id || null;
+    await query(
+      `INSERT INTO tasks (id, parent_task_id, brand_id, desk_id, titulo_tarea, detalle, prioridad, estado, fecha_entrega, responsable_user_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, parentId, parent.brand_id, parent.desk_id, body.titulo_tarea, body.detalle || null, body.prioridad || 'media', 'backlog', fechaEntrega, responsableId, req.userId ?? null]
+    );
+    const rid: string = asString(responsableId);
+    if (rid && rid !== req.userId) {
+      const subtaskTitle: string = asString(body.titulo_tarea) || 'Subtarea';
+      notifyUser(rid, `Se te asignó la subtarea: ${subtaskTitle}`, id);
+    }
+    logActivity('task', id, 'create', null, null, body.titulo_tarea, req.userId!).catch(() => {});
+    const row = await queryOne<any>('SELECT * FROM tasks WHERE id = ?', [id]);
+    res.status(201).json(row);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al crear subtarea' });
+  }
+});
+
+// DELETE subtarea (solo subtareas, no tareas padre)
+tasksRouter.delete('/tasks/:id/subtasks/:subId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const { id, subId } = req.params;
+    // Verificar que la subtarea pertenezca al padre
+    const sub = await queryOne<any>('SELECT id, parent_task_id, titulo_tarea FROM tasks WHERE id = ? AND parent_task_id = ?', [subId, id]);
+    if (!sub) return res.status(404).json({ error: 'Subtarea no encontrada' });
+    await query('DELETE FROM tasks WHERE id = ? AND parent_task_id = ?', [subId, id]);
+    logActivity("task", String(subId), 'delete', null, sub.titulo_tarea, null, req.userId!).catch(() => {});
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al eliminar subtarea' });
+  }
+});
+
+// PATCH reorder subtareas: body { ordered_ids: string[] }
+tasksRouter.patch('/tasks/:id/subtasks/reorder', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const { id: parentId } = req.params;
+    const ids = Array.isArray(req.body?.ordered_ids) ? req.body.ordered_ids.filter((x: unknown) => typeof x === 'string') : [];
+    if (ids.length === 0) return res.status(400).json({ error: 'ordered_ids requerido' });
+    // Update cada id con su posición
+    for (let i = 0; i < ids.length; i++) {
+      await query('UPDATE tasks SET sort_order = ? WHERE id = ? AND parent_task_id = ?', [String(i), ids[i], parentId]);
+    }
+    res.json({ ok: true, count: ids.length });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al reordenar subtareas' });
+  }
+});
+
+// ========== DEPENDENCIES ==========
+tasksRouter.get('/tasks/:id/dependencies', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const rows = await query<any[]>(
+      `SELECT td.*, t.titulo_tarea, t.estado
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.depends_on_task_id
+       WHERE td.task_id = ?
+       UNION ALL
+       SELECT td.*, t.titulo_tarea, t.estado
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.task_id
+       WHERE td.depends_on_task_id = ?`,
+      [id, id]
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cargar dependencias' });
+  }
+});
+
+tasksRouter.post('/tasks/:id/dependencies', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const taskId = req.params.id;
+    const { depends_on_task_id, dependency_type } = req.body;
+    if (!depends_on_task_id) return res.status(400).json({ error: 'depends_on_task_id requerido' });
+    if (taskId === depends_on_task_id) return res.status(400).json({ error: 'No se puede depender de sí misma' });
+
+    const id = uuid();
+    await query(
+      'INSERT INTO task_dependencies (id, task_id, depends_on_task_id, dependency_type) VALUES (?, ?, ?, ?)',
+      [id, taskId, depends_on_task_id, dependency_type || 'blocks']
+    );
+    res.status(201).json({ id, task_id: taskId, depends_on_task_id, dependency_type: dependency_type || 'blocks' });
+  } catch (e: any) {
+    if (e?.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Dependencia ya existe' });
+    console.error(e);
+    res.status(500).json({ error: 'Error al crear dependencia' });
+  }
+});
+
+tasksRouter.delete('/tasks/:id/dependencies/:depId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    await query('DELETE FROM task_dependencies WHERE id = ?', [req.params.depId]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al eliminar dependencia' });
+  }
+});
+
+// ========== COMMENTS ==========
+tasksRouter.get('/tasks/:taskId/comments', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const taskId = String(req.params.taskId || '');
+    const userId = req.userId!;
+    const allowed = await canAccessTask(userId, taskId);
+    if (!allowed) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
+
+    const rows = await query<any[]>(
+      `SELECT c.id, c.task_id, c.user_id, c.comentario, c.contenido_html, c.image_url, c.created_at,
+              p.nombre as user_nombre, p.avatar_url as user_avatar_url,
+              COUNT(cl.id) as likes_count,
+              MAX(CASE WHEN cl.user_id = ? THEN 1 ELSE 0 END) as liked_by_me
+       FROM comments c
+       LEFT JOIN profiles p ON p.id = c.user_id
+       LEFT JOIN comment_likes cl ON cl.comment_id = c.id
+       WHERE c.task_id = ?
+       GROUP BY c.id
+       ORDER BY c.created_at ASC`,
+      [userId, taskId]
+    );
+    res.json(rows.map((r) => ({
+      ...r,
+      user: r.user_nombre ? { nombre: r.user_nombre, avatar_url: r.user_avatar_url || null } : null,
+      likes_count: Number(r.likes_count) || 0,
+      liked_by_me: r.liked_by_me === 1 || r.liked_by_me === '1',
+    })));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cargar comentarios' });
+  }
+});
+
+tasksRouter.post('/tasks/:taskId/comments', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const taskId = String(req.params.taskId || '');
+    const { comentario, contenido_html, image_url } = req.body || {};
+    const allowed = await canAccessTask(req.userId!, taskId);
+    if (!allowed) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
+
+    const text = typeof comentario === 'string' ? comentario.trim() : '';
+    const html = typeof contenido_html === 'string' ? contenido_html.trim() : null;
+    const imgUrl = typeof image_url === 'string' && image_url.startsWith('http') ? image_url : null;
+    if (!text && !html && !imgUrl) return res.status(400).json({ error: 'El comentario no puede estar vacío' });
+
+    const id = uuid();
+    await query(
+      'INSERT INTO comments (id, task_id, user_id, comentario, contenido_html, image_url) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, taskId, req.userId, text || '', html, imgUrl]
+    );
+
+    const row = await queryOne<any>(
+      `SELECT c.id, c.task_id, c.user_id, c.comentario, c.contenido_html, c.image_url, c.created_at,
+              p.nombre as user_nombre, p.avatar_url as user_avatar_url
+       FROM comments c LEFT JOIN profiles p ON p.id = c.user_id WHERE c.id = ?`,
+      [id]
+    );
+    const comment = row ? { ...row, user: row.user_nombre ? { nombre: row.user_nombre, avatar_url: row.user_avatar_url || null } : null, likes_count: 0, liked_by_me: false } : null;
+
+    // Detectar @menciones y notificar (in-app + email con link a la tarea). Fire-and-forget.
+    const mentionText = text || (typeof contenido_html === 'string' ? contenido_html.replace(/<[^>]*>/g, ' ') : '');
+    if (mentionText && req.userId) {
+      processCommentMentions({ taskId, authorUserId: req.userId, text: mentionText }).catch((e) => {
+        console.error('[COMMENTS REST] processCommentMentions failed:', e);
+      });
+    }
+
+    res.status(201).json(comment);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al crear comentario' });
+  }
+});
+
+// ========== DELETE COMMENT ==========
+tasksRouter.delete('/comments/:commentId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const commentId = String(req.params.commentId || '');
+    const userId = req.userId!;
+    const comment = await queryOne<{ user_id: string }>('SELECT user_id FROM comments WHERE id = ?', [commentId]);
+    if (!comment) return res.status(404).json({ error: 'Comentario no encontrado' });
+    const isAdmin = await hasRole(userId, ['admin']);
+    if (comment.user_id !== userId && !isAdmin) {
+      return res.status(403).json({ error: 'No puedes eliminar este comentario' });
+    }
+    await query('DELETE FROM comment_likes WHERE comment_id = ?', [commentId]);
+    await query('DELETE FROM comments WHERE id = ?', [commentId]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al eliminar comentario' });
+  }
+});
+
+// ========== COMMENT LIKES ==========
+tasksRouter.post('/comments/:commentId/like', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const commentId = String(req.params.commentId || '');
+    const userId = req.userId!;
+    const existing = await queryOne<{ id: string }>(
+      'SELECT id FROM comment_likes WHERE comment_id = ? AND user_id = ?', [commentId, userId]
+    );
+    if (existing) {
+      await query('DELETE FROM comment_likes WHERE comment_id = ? AND user_id = ?', [commentId, userId]);
+    } else {
+      await query('INSERT INTO comment_likes (id, comment_id, user_id) VALUES (?, ?, ?)', [uuid(), commentId, userId]);
+    }
+    const row = await queryOne<{ cnt: number }>(
+      'SELECT COUNT(*) as cnt FROM comment_likes WHERE comment_id = ?', [commentId]
+    );
+    res.json({ liked: !existing, likes_count: Number(row?.cnt) || 0 });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al procesar like' });
+  }
+});
+
+// ========== BULK ACTIONS ==========
+tasksRouter.post('/tasks/bulk-update', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const role = await getUserRole(req.userId!);
+    if (!['admin', 'ejecutivo', 'equipo'].includes(role)) return res.status(403).json({ error: 'Sin permisos' });
+    const { task_ids, updates } = req.body;
+    if (!Array.isArray(task_ids) || task_ids.length === 0) return res.status(400).json({ error: 'task_ids requerido' });
+    if (task_ids.length > 50) return res.status(400).json({ error: 'Máximo 50 tareas por operación' });
+    if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'updates requerido' });
+
+    // Equipo can only bulk-update operational fields (estado, check_done)
+    const operationalFields = new Set(['estado', 'check_done']);
+    if (role === 'equipo') {
+      const updateKeys = Object.keys(updates);
+      if (!updateKeys.every(k => operationalFields.has(k))) {
+        return res.status(403).json({ error: 'Sin permisos para modificar esos campos' });
+      }
+    }
+
+    const allowedFields: Record<string, string> = {
+      estado: 'estado', prioridad: 'prioridad', responsable_user_id: 'responsable_user_id',
+      sprint_id: 'sprint_id', desk_id: 'desk_id', check_done: 'check_done',
+    };
+
+    const fields: string[] = [];
+    const vals: any[] = [];
+    for (const [k, col] of Object.entries(allowedFields)) {
+      if (updates[k] !== undefined) {
+        fields.push(`${col} = ?`);
+        vals.push(updates[k]);
+      }
+    }
+    if (fields.length === 0) return res.status(400).json({ error: 'Sin campos válidos para actualizar' });
+
+    const placeholders = task_ids.map(() => '?').join(',');
+    await query(`UPDATE tasks SET ${fields.join(', ')} WHERE id IN (${placeholders})`, [...vals, ...task_ids]);
+
+    // Log bulk activity
+    for (const tid of task_ids) {
+      for (const [k] of Object.entries(allowedFields)) {
+        if (updates[k] !== undefined) {
+          logActivity('task', tid, k === 'estado' ? 'status_change' : 'update', k, null, String(updates[k]), req.userId!).catch(() => {});
+        }
+      }
+    }
+
+    res.json({ success: true, updated: task_ids.length });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error en operación masiva' });
+  }
+});
+
+tasksRouter.post('/tasks/bulk-delete', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const role = await getUserRole(req.userId!);
+    const settingsRow = await queryOne<{ value: string | null }>("SELECT value FROM site_settings WHERE `key` = 'can_delete_tasks_roles'");
+    const rolesStr = settingsRow?.value || 'admin,ejecutivo';
+    const allowedRoles = rolesStr.split(',').map((r) => r.trim()).filter(Boolean);
+    if (!allowedRoles.includes(role)) return res.status(403).json({ error: 'Sin permisos para borrar tareas' });
+    const { task_ids } = req.body;
+    if (!Array.isArray(task_ids) || task_ids.length === 0) return res.status(400).json({ error: 'task_ids requerido' });
+    if (task_ids.length > 50) return res.status(400).json({ error: 'Máximo 50 tareas por operación' });
+
+    // Protect tasks created by admin/ejecutivo: only admin or the creator can delete
+    if (role !== 'admin') {
+      const placeholdersCheck = task_ids.map(() => '?').join(',');
+      const protectedTasks = await query<{ id: string }[]>(
+        `SELECT t.id FROM tasks t INNER JOIN profiles cb ON cb.id = t.created_by WHERE t.id IN (${placeholdersCheck}) AND cb.rol IN ('admin','ejecutivo') AND t.created_by != ?`,
+        [...task_ids, req.userId!]
+      );
+      if (protectedTasks.length > 0) {
+        return res.status(403).json({ error: 'No puedes eliminar tareas creadas por un admin o ejecutivo' });
+      }
+    }
+
+    const placeholders = task_ids.map(() => '?').join(',');
+    await query(`DELETE FROM tasks WHERE id IN (${placeholders})`, task_ids);
+
+    for (const tid of task_ids) {
+      logActivity('task', tid, 'delete', null, null, null, req.userId!).catch(() => {});
+    }
+
+    res.json({ success: true, deleted: task_ids.length });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al eliminar tareas' });
+  }
+});
+
+// ========== RECURRENCE HELPERS ==========
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + months);
+  return result;
+}
+
+async function spawnNextRecurrence(parentTask: any, userId: string): Promise<void> {
+  if (parentTask.recurrence_end_date) {
+    const endDate = new Date(parentTask.recurrence_end_date);
+    if (new Date() > endDate) return;
+  }
+
+  const currentDue = new Date(parentTask.fecha_entrega);
+  let nextDue: Date;
+  switch (parentTask.recurrence_type) {
+    case 'daily': nextDue = addDays(currentDue, 1); break;
+    case 'weekly': nextDue = addDays(currentDue, 7); break;
+    case 'biweekly': nextDue = addDays(currentDue, 14); break;
+    case 'monthly': nextDue = addMonths(currentDue, 1); break;
+    case 'custom': nextDue = addDays(currentDue, parentTask.recurrence_interval || 7); break;
+    default: return;
+  }
+
+  let nextStart: string | null = null;
+  if (parentTask.fecha_inicio) {
+    const origStart = new Date(parentTask.fecha_inicio);
+    const origDue = new Date(parentTask.fecha_entrega);
+    const diffMs = origDue.getTime() - origStart.getTime();
+    nextStart = new Date(nextDue.getTime() - diffMs).toISOString().slice(0, 10);
+  }
+
+  const newId = uuid();
+  const recurrenceParent = parentTask.recurrence_parent_id || parentTask.id;
+  const nextDueStr = nextDue.toISOString().slice(0, 10);
+
+  // GUARD anti-duplicado: si ya existe una ocurrencia para esta serie con esta misma
+  // fecha de entrega, NO crear otra. Hace el spawn idempotente — si el trigger se dispara
+  // 2 veces (ej. PATCH de check_done + PATCH de estado por separado) solo se crea una.
+  const yaExiste = await queryOne<{ id: string }>(
+    `SELECT id FROM tasks
+     WHERE fecha_entrega = ?
+       AND (recurrence_parent_id = ? OR id = ?)
+       AND recurrence_parent_id IS NOT NULL
+     LIMIT 1`,
+    [nextDueStr, recurrenceParent, recurrenceParent]
+  );
+  if (yaExiste) {
+    console.log('[Recurrence] Ocurrencia ya existe para', recurrenceParent, nextDueStr, '— no se duplica');
+    return;
+  }
+
+  await query(
+    `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle,
+     cantidad_entregables, responsable_user_id, departamento, department_id, prioridad, estado,
+     fecha_inicio, fecha_entrega, enlaces, feature_id, task_type_id,
+     tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval,
+     recurrence_end_date, recurrence_parent_id)
+     VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [newId, parentTask.brand_id, parentTask.desk_id, parentTask.titulo_tarea,
+     parentTask.detalle, parentTask.cantidad_entregables, parentTask.responsable_user_id,
+     parentTask.departamento, parentTask.department_id, parentTask.prioridad, nextStart,
+     nextDueStr, parentTask.enlaces,
+     parentTask.feature_id, parentTask.task_type_id, parentTask.tipo_entregable_id,
+     userId, parentTask.estimated_hours, parentTask.recurrence_type,
+     parentTask.recurrence_interval, parentTask.recurrence_end_date, recurrenceParent]
+  );
+
+  // Copy responsables
+  const resps = await query<any[]>('SELECT user_id FROM task_responsables WHERE task_id = ?', [parentTask.id]);
+  for (const r of resps) {
+    await query('INSERT IGNORE INTO task_responsables (id, task_id, user_id) VALUES (?, ?, ?)', [uuid(), newId, r.user_id]);
+  }
+}

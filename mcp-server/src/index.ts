@@ -1,0 +1,235 @@
+/**
+ * Tiusdei MCP — servidor remoto (HTTP).
+ *
+ * Implementación para la skill `speckit-to-tiusdei`. Es un MCP REMOTO: un
+ * servidor HTTP (transporte Streamable HTTP) desplegado en el VPS, junto a
+ * Tiusdei. Cada request trae el token del usuario en la cabecera Authorization
+ * — no hay token fijo en el servidor.
+ *
+ * Los devs lo conectan desde Claude Code con:
+ *   claude mcp add --transport http tiusdei https://tiusdei.qbit.ec/mcp \
+ *     --header "Authorization: Bearer <token>"
+ *
+ * Configuración (variables de entorno, ver .env.example):
+ *   PORT             Puerto donde escucha (default 3000). El endpoint es POST /mcp.
+ *   TIUSDEI_API_URL  Base URL de la API de Tiusdei, ej. http://127.0.0.1:3003/api
+ */
+
+import "dotenv/config";
+import express, { type Request, type Response } from "express";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
+
+const PORT = Number(process.env.PORT ?? 3000);
+const API_URL = process.env.TIUSDEI_API_URL;
+
+/** Extrae el token por-usuario de la cabecera Authorization. */
+function getToken(req: Request): string {
+  const auth = req.headers.authorization ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) {
+    // Error explícito y con nombre — nunca fallar en silencio.
+    throw new Error("TIUSDEI_TOKEN_MISSING: falta la cabecera 'Authorization: Bearer <token>'.");
+  }
+  return token;
+}
+
+/**
+ * Wrapper HTTP sobre la API de Tiusdei en el VPS.
+ *
+ * Cuando la API responde con error, el body trae { error: "TIUSDEI_*", message,
+ * details? }. Propagamos ese nombre tal cual para que la skill pueda reaccionar
+ * (ej. TIUSDEI_STALE_ASSIGNEE con el id ofensor).
+ */
+async function callTiusdei(
+  token: string,
+  path: string,
+  init?: RequestInit,
+): Promise<unknown> {
+  if (!API_URL) {
+    throw new Error("TIUSDEI_CONFIG_MISSING: define la variable de entorno TIUSDEI_API_URL.");
+  }
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  const raw = await res.text();
+  let body: unknown = undefined;
+  if (raw) {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      body = raw;
+    }
+  }
+
+  if (!res.ok) {
+    // Surfacear el error CON NOMBRE que devuelve la API de Tiusdei.
+    if (body && typeof body === "object" && "error" in body) {
+      const e = body as { error: string; message?: string; details?: unknown };
+      const detail = e.details ? ` ${JSON.stringify(e.details)}` : "";
+      throw new Error(`${e.error}: ${e.message ?? "error de Tiusdei"}${detail}`);
+    }
+    const text = typeof body === "string" ? body : JSON.stringify(body ?? "");
+    throw new Error(`TIUSDEI_HTTP_${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  return body;
+}
+
+/** Campos de una tarea — compartidos por create_task y create_tasks. */
+const createTaskShape = {
+  title: z.string(),
+  brandId: z.string(),
+  deskId: z.string(),
+  assigneeIds: z.array(z.string()),
+  department: z.string().optional(),
+  taskType: z.string(),
+  priority: z.string(),
+  status: z.string(),
+  startDate: z.string().describe("Fecha en formato YYYY-MM-DD"),
+  dueDate: z.string().describe("Fecha en formato YYYY-MM-DD"),
+  detail: z.string(),
+  links: z.array(z.string()).optional(),
+};
+
+/** Construye un servidor MCP fresco ligado al token de un usuario. */
+function buildServer(token: string): McpServer {
+  const server = new McpServer({ name: "tiusdei-mcp", version: "1.0.0" });
+
+  /** Lista las marcas visibles para el token actual. Devuelve [{ id, name }]. */
+  server.registerTool(
+    "list_brands",
+    {
+      description: "List the Tiusdei brands visible to the current token.",
+      inputSchema: {},
+    },
+    async () => {
+      const brands = await callTiusdei(token, "/brands");
+      return { content: [{ type: "text", text: JSON.stringify(brands) }] };
+    },
+  );
+
+  /** Lista las mesas (desks) visibles para el token actual. Devuelve [{ id, name }]. */
+  server.registerTool(
+    "list_desks",
+    {
+      description: "List the Tiusdei desks (mesas) visible to the current token.",
+      inputSchema: {},
+    },
+    async () => {
+      const desks = await callTiusdei(token, "/desks");
+      return { content: [{ type: "text", text: JSON.stringify(desks) }] };
+    },
+  );
+
+  /** Lista los miembros (assignees) de una mesa. Devuelve [{ id, name }]. */
+  server.registerTool(
+    "list_assignees",
+    {
+      description: "List the team members (assignees) of a Tiusdei desk.",
+      inputSchema: { deskId: z.string().describe("Desk id from list_desks") },
+    },
+    async ({ deskId }) => {
+      const assignees = await callTiusdei(token, `/desks/${encodeURIComponent(deskId)}/assignees`);
+      return { content: [{ type: "text", text: JSON.stringify(assignees) }] };
+    },
+  );
+
+  /** Valores válidos para los campos seleccionables de Tiusdei. */
+  server.registerTool(
+    "get_enums",
+    {
+      description:
+        "Return the valid values for Tiusdei's selectable enums: priority, status, taskType, deliverableType.",
+      inputSchema: {},
+    },
+    async () => {
+      const enums = await callTiusdei(token, "/enums");
+      return { content: [{ type: "text", text: JSON.stringify(enums) }] };
+    },
+  );
+
+  /** Crea UNA Tarea en Tiusdei. Devuelve { id, url }. */
+  server.registerTool(
+    "create_task",
+    {
+      description: "Create a Task in Tiusdei. Returns the created task id and url.",
+      inputSchema: createTaskShape,
+    },
+    async (input) => {
+      // Las claves de `input` coinciden 1:1 con el body que espera POST /api/tasks.
+      const created = await callTiusdei(token, "/tasks", {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      const result =
+        created && typeof created === "object" ? created : { value: created };
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, ...result }) }],
+      };
+    },
+  );
+
+  /**
+   * Crea VARIAS Tareas en una sola llamada. Best-effort: una tarea que falle no
+   * bloquea a las demás. Devuelve un resultado POR CADA tarea, en el mismo orden
+   * del array de entrada: { results: [{ ok, id, url } | { ok:false, error, message }], created, failed }.
+   * Úsala en vez de llamar create_task en bucle cuando hay que publicar una lista.
+   */
+  server.registerTool(
+    "create_tasks",
+    {
+      description:
+        "Create multiple Tasks in Tiusdei in a single call. Best-effort: a failing task does not block the others. Returns one result per task, in input order: { results: [{ ok:true, id, url } | { ok:false, error, message }], created, failed }. Prefer this over calling create_task in a loop.",
+      inputSchema: {
+        tasks: z
+          .array(z.object(createTaskShape))
+          .describe("Lista de tareas a crear. Cada objeto tiene exactamente los mismos campos que create_task."),
+      },
+    },
+    async ({ tasks }) => {
+      const result = await callTiusdei(token, "/tasks/bulk", {
+        method: "POST",
+        body: JSON.stringify({ tasks }),
+      });
+      // La API ya devuelve { results, created, failed }; lo pasamos tal cual.
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  return server;
+}
+
+const app = express();
+app.use(express.json());
+
+// Streamable HTTP sin estado: un server + transporte fresco por request.
+app.post("/mcp", async (req: Request, res: Response) => {
+  try {
+    const token = getToken(req);
+    const server = buildServer(token);
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+    res.on("close", () => {
+      void transport.close();
+      void server.close();
+    });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.listen(PORT, () => {
+  // Log a stderr para no interferir con el tráfico del protocolo.
+  console.error(`Tiusdei MCP escuchando en :${PORT}/mcp`);
+});

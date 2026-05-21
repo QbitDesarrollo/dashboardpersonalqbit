@@ -118,7 +118,7 @@ export default function ClientPortal() {
 
   const getStatusLabel = (estado: string) => {
     const labels: Record<string, string> = {
-      backlog: 'Backlog',
+      backlog: 'Pendiente',
       en_proceso: 'En Proceso',
       en_revision: 'En Revisión',
       aprobado: 'Aprobado',

@@ -112,6 +112,14 @@ export async function addDeskMember(deskId: string, userId: string) {
   return res.json();
 }
 
+export async function addDeskMembers(deskId: string, userIds: string[]) {
+  const res = await request(`/api/data/desks/${deskId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ user_ids: userIds }),
+  });
+  return res.json();
+}
+
 export async function removeDeskMember(deskId: string, userId: string) {
   const res = await request(`/api/data/desks/${deskId}/members/${userId}`, { method: 'DELETE' });
   return res.json();
@@ -591,6 +599,18 @@ export async function getSubtasks(taskId: string) {
 
 export async function createSubtask(parentId: string, data: { titulo_tarea: string; detalle?: string; prioridad?: string; fecha_entrega?: string; responsable_user_id?: string }) {
   const res = await request(`/api/data/tasks/${parentId}/subtasks`, { method: 'POST', body: JSON.stringify(data) });
+  return res.json();
+}
+
+export async function deleteSubtask(parentId: string, subId: string) {
+  const res = await request(`/api/data/tasks/${parentId}/subtasks/${subId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function reorderSubtasks(parentId: string, orderedIds: string[]) {
+  const res = await request(`/api/data/tasks/${parentId}/subtasks/reorder`, { method: 'PATCH', body: JSON.stringify({ ordered_ids: orderedIds }) });
+  if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
@@ -1329,6 +1349,528 @@ export async function getTeamAttendance(dateFrom?: string, dateTo?: string) {
   if (dateFrom) params.set('date_from', dateFrom);
   if (dateTo) params.set('date_to', dateTo);
   const res = await request(`/api/data/team-monitor/attendance?${params}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== WhatsApp ==========
+
+export async function getWAStatus() {
+  const res = await request('/api/data/whatsapp/status');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function connectWA() {
+  const res = await request('/api/data/whatsapp/connect', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function disconnectWA() {
+  const res = await request('/api/data/whatsapp/disconnect', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function syncWAGroups() {
+  const res = await request('/api/data/whatsapp/sync-groups', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getWAGroups() {
+  const res = await request('/api/data/whatsapp/groups');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function patchWAGroup(id: string, data: Record<string, unknown>) {
+  const res = await request(`/api/data/whatsapp/groups/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getWAGroupMembers(groupId: string) {
+  const res = await request(`/api/data/whatsapp/groups/${groupId}/members`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function patchWAMember(id: string, data: Record<string, unknown>) {
+  const res = await request(`/api/data/whatsapp/members/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getWAMessages(params: { group_id?: string; limit?: number; offset?: number; sla?: string }) {
+  const qs = new URLSearchParams();
+  if (params.group_id) qs.set('group_id', params.group_id);
+  if (params.limit) qs.set('limit', String(params.limit));
+  if (params.offset) qs.set('offset', String(params.offset));
+  if (params.sla) qs.set('sla', params.sla);
+  const res = await request(`/api/data/whatsapp/messages?${qs}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getWASlaRules() {
+  const res = await request('/api/data/whatsapp/sla-rules');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function createWASlaRule(data: Record<string, unknown>) {
+  const res = await request('/api/data/whatsapp/sla-rules', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function patchWASlaRule(id: string, data: Record<string, unknown>) {
+  const res = await request(`/api/data/whatsapp/sla-rules/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteWASlaRule(id: string) {
+  const res = await request(`/api/data/whatsapp/sla-rules/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getWAStats() {
+  const res = await request('/api/data/whatsapp/stats');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+
+// ========== Metrics & Cumplimiento ==========
+
+export async function getDeadlineHistory(taskId: string) {
+  const res = await request(`/api/data/tasks/${taskId}/deadline-history`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{
+    task_id: string;
+    fecha_entrega_actual: string | null;
+    fecha_entrega_original: string | null;
+    reschedule_count: number;
+    history: Array<{ old: string | null; new: string | null; motivo: string; comentario: string | null; by: string; by_user_id: string | null; at: string }>;
+  }>;
+}
+
+export interface CumplimientoFilters {
+  from?: string;
+  to?: string;
+  desk_id?: string;
+  responsable_id?: string;
+}
+
+export interface CumplimientoResponsable {
+  user_id: string;
+  nombre: string;
+  email: string | null;
+  avatar_url: string | null;
+  rol: string | null;
+  tareas_total: number;
+  entregadas_a_tiempo: number;
+  entregadas_tarde: number;
+  vencidas_no_entregadas: number;
+  en_proceso: number;
+  promedio_reschedules: number;
+  porcentaje_cumplimiento: number | null;
+}
+
+export async function getCumplimiento(filters: CumplimientoFilters = {}) {
+  const params = new URLSearchParams();
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+  if (filters.desk_id) params.set('desk_id', filters.desk_id);
+  if (filters.responsable_id) params.set('responsable_id', filters.responsable_id);
+  const qs = params.toString();
+  const res = await request(`/api/data/metrics/cumplimiento${qs ? '?' + qs : ''}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{
+    from: string;
+    to: string;
+    total_responsables: number;
+    total_tareas: number;
+    responsables: CumplimientoResponsable[];
+  }>;
+}
+
+// ========== Incidencias / Novedades ==========
+
+export interface Incidencia {
+  id: string;
+  titulo: string;
+  descripcion: string | null;
+  tipo: 'BUG' | 'MEJORA' | 'QUEJA' | 'CONSULTA';
+  prioridad: 'BAJA' | 'MEDIA' | 'ALTA' | 'CRITICA';
+  estado: 'ABIERTO' | 'EN_PROGRESO' | 'RESUELTO' | 'CERRADO';
+  modulo: string | null;
+  creado_por_id: string | null;
+  asignado_a_id: string | null;
+  fecha_creacion: string;
+  fecha_actualizacion: string;
+  fecha_cierre: string | null;
+  creado_por_nombre?: string | null;
+  creado_por_avatar?: string | null;
+  asignado_a_nombre?: string | null;
+  asignado_a_avatar?: string | null;
+  comentarios_count?: number;
+}
+
+export interface IncidenciaKPIs {
+  abiertos: number;
+  en_progreso: number;
+  resueltos: number;
+  cerrados: number;
+  total: number;
+  horas_promedio: number | null;
+}
+
+export interface IncidenciaComentario {
+  id: string;
+  incidencia_id: string;
+  usuario_id: string;
+  comentario: string;
+  es_resolucion: number;
+  fecha: string;
+  usuario_nombre?: string | null;
+  usuario_avatar?: string | null;
+}
+
+export interface IncidenciaActividad {
+  id: string;
+  incidencia_id: string;
+  usuario_id: string;
+  accion: string;
+  fecha: string;
+  usuario_nombre?: string | null;
+  usuario_avatar?: string | null;
+}
+
+export interface IncidenciaFilters {
+  estado?: string;
+  tipo?: string;
+  prioridad?: string;
+  modulo?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function getIncidencias(filters: IncidenciaFilters = {}) {
+  const params = new URLSearchParams();
+  if (filters.estado && filters.estado !== 'all') params.set('estado', filters.estado);
+  if (filters.tipo && filters.tipo !== 'all') params.set('tipo', filters.tipo);
+  if (filters.prioridad && filters.prioridad !== 'all') params.set('prioridad', filters.prioridad);
+  if (filters.modulo && filters.modulo !== 'all') params.set('modulo', filters.modulo);
+  if (filters.limit != null) params.set('limit', String(filters.limit));
+  if (filters.offset != null) params.set('offset', String(filters.offset));
+  const qs = params.toString();
+  const res = await request(`/api/data/incidencias${qs ? '?' + qs : ''}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ incidencias: Incidencia[]; total: number; kpis: IncidenciaKPIs }>;
+}
+
+export async function getIncidencia(id: string) {
+  const res = await request(`/api/data/incidencias/${id}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ incidencia: Incidencia; comentarios: IncidenciaComentario[]; actividad: IncidenciaActividad[] }>;
+}
+
+export async function createIncidencia(data: {
+  titulo: string;
+  descripcion?: string;
+  tipo?: string;
+  prioridad?: string;
+  modulo?: string;
+}) {
+  const res = await request('/api/data/incidencias', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<Incidencia>;
+}
+
+export async function addIncidenciaComentario(id: string, comentario: string, esResolucion = false) {
+  const res = await request(`/api/data/incidencias/${id}/comentarios`, {
+    method: 'POST',
+    body: JSON.stringify({ comentario, es_resolucion: esResolucion }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<IncidenciaComentario>;
+}
+
+export async function setIncidenciaEstado(id: string, estado: string) {
+  const res = await request(`/api/data/incidencias/${id}/estado`, {
+    method: 'PATCH',
+    body: JSON.stringify({ estado }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function setIncidenciaPrioridad(id: string, prioridad: string) {
+  const res = await request(`/api/data/incidencias/${id}/prioridad`, {
+    method: 'PATCH',
+    body: JSON.stringify({ prioridad }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function asignarIncidencia(id: string, asignadoAId: string | null) {
+  const res = await request(`/api/data/incidencias/${id}/asignar`, {
+    method: 'PATCH',
+    body: JSON.stringify({ asignado_a_id: asignadoAId }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteIncidencia(id: string) {
+  const res = await request(`/api/data/incidencias/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getIncidenciaAsignables() {
+  const res = await request('/api/data/incidencias-asignables');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<Array<{ id: string; nombre: string; email: string; avatar_url: string | null; rol: string }>>;
+}
+
+export interface Novedad {
+  id: string;
+  titulo: string;
+  descripcion: string | null;
+  tipo: 'FEATURE' | 'FIX' | 'MEJORA' | 'SEGURIDAD';
+  version: string | null;
+  incidencia_id: string | null;
+  creado_por_id: string;
+  fecha: string;
+  creado_por_nombre?: string | null;
+  creado_por_avatar?: string | null;
+  incidencia_titulo?: string | null;
+}
+
+export async function getNovedades() {
+  const res = await request('/api/data/novedades');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ novedades: Novedad[] }>;
+}
+
+export async function createNovedad(data: {
+  titulo: string;
+  descripcion?: string;
+  tipo?: string;
+  version?: string;
+  incidencia_id?: string;
+}) {
+  const res = await request('/api/data/novedades', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<Novedad>;
+}
+
+export async function deleteNovedad(id: string) {
+  const res = await request(`/api/data/novedades/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== API Tokens (MCP de Tiusdei) ==========
+export interface ApiToken {
+  id: string;
+  token_prefix: string;
+  label: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  revoked_at: string | null;
+}
+
+export async function getApiTokens() {
+  const res = await request("/api/data/api-tokens");
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<ApiToken[]>;
+}
+
+export async function createApiToken(label?: string) {
+  const res = await request("/api/data/api-tokens", {
+    method: "POST",
+    body: JSON.stringify({ label: label || undefined }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    try { throw new Error(JSON.parse(txt).error || txt); } catch { throw new Error(txt); }
+  }
+  return res.json() as Promise<{
+    id: string;
+    token: string;
+    token_prefix: string;
+    label: string;
+    created_at: string;
+  }>;
+}
+
+export async function revokeApiToken(id: string) {
+  const res = await request(`/api/data/api-tokens/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ ok: true }>;
+}
+
+// ========== Editor: upload de imagen inline (paste/drag&drop) ==========
+export async function uploadEditorImage(file: File): Promise<{ url: string }> {
+  const fd = new FormData();
+  fd.append("image", file);
+  const token = localStorage.getItem("tiusdei_token") || localStorage.getItem("token");
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}/api/data/editor/upload-image`, {
+    method: "POST",
+    headers,
+    body: fd,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ========== Timers activos del usuario ==========
+export interface ActiveTimer {
+  id: string;
+  titulo: string;
+  brand_nombre: string | null;
+  timer_inicio: string;
+  tiempo_trabajado: number;
+}
+
+export async function getActiveTimers(): Promise<ActiveTimer[]> {
+  const res = await request("/api/data/tasks/active-timer");
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<ActiveTimer[]>;
+}
+
+// ========== Departamentos / Pipeline / Handoff ==========
+export interface Department {
+  id: string;
+  nombre: string;
+  orden: number;
+  color: string | null;
+  next_department_id: string | null;
+  next_department_nombre?: string | null;
+  activo: boolean;
+}
+
+export interface DepartmentMetric {
+  department_id: string;
+  nombre: string;
+  color: string | null;
+  periodos: number;
+  tareas: number;
+  abiertos: number;
+  avg_seconds: number;
+  avg_horas: number;
+  avg_dias: number;
+}
+
+export async function getDepartments() {
+  const res = await request('/api/data/departments');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<Department[]>;
+}
+
+export async function createDepartment(data: { nombre: string; orden?: number; color?: string; next_department_id?: string | null }) {
+  const res = await request('/api/data/departments', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
+  return res.json() as Promise<Department>;
+}
+
+export async function patchDepartment(id: string, data: Partial<{ nombre: string; orden: number; color: string; next_department_id: string | null; activo: boolean }>) {
+  const res = await request(`/api/data/departments/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
+  return res.json() as Promise<Department>;
+}
+
+export async function deleteDepartment(id: string) {
+  const res = await request(`/api/data/departments/${id}`, { method: 'DELETE' });
+  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
+  return res.json() as Promise<{ ok: true }>;
+}
+
+export async function taskHandoff(taskId: string, data: {
+  to_department_id: string;
+  to_responsable_ids?: string[];
+  motivo?: string;
+  due_date?: string;
+  create_new_task?: boolean;
+}) {
+  const res = await request(`/api/data/tasks/${taskId}/handoff`, { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
+  return res.json() as Promise<{ ok: true; target_task_id: string | null; same_task: boolean }>;
+}
+
+export async function getDepartmentMetrics(params: { desk_id?: string; brand_id?: string; from?: string; to?: string } = {}) {
+  const qs = new URLSearchParams();
+  if (params.desk_id) qs.set('desk_id', params.desk_id);
+  if (params.brand_id) qs.set('brand_id', params.brand_id);
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
+  const q = qs.toString();
+  const res = await request(`/api/data/metrics/department-times${q ? '?' + q : ''}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ from: string | null; to: string | null; departments: DepartmentMetric[] }>;
+}
+
+// ========== Consola interna de errores (admin) ==========
+export interface ErrorLog {
+  id: string;
+  level: string;
+  tag: string | null;
+  message: string;
+  stack: string | null;
+  route: string | null;
+  method: string | null;
+  status_code: number | null;
+  user_id: string | null;
+  user_nombre: string | null;
+  count: number;
+  resolved: boolean;
+  created_at: string;
+  last_seen_at: string;
+}
+
+export async function getErrorLogs(params: { resolved?: 0 | 1; level?: string; q?: string; limit?: number; offset?: number } = {}) {
+  const qs = new URLSearchParams();
+  if (params.resolved === 0 || params.resolved === 1) qs.set('resolved', String(params.resolved));
+  if (params.level) qs.set('level', params.level);
+  if (params.q) qs.set('q', params.q);
+  if (params.limit) qs.set('limit', String(params.limit));
+  if (params.offset) qs.set('offset', String(params.offset));
+  const q = qs.toString();
+  const res = await request(`/api/data/error-logs${q ? '?' + q : ''}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ logs: ErrorLog[]; total: number; limit: number; offset: number }>;
+}
+
+export async function getErrorLogStats() {
+  const res = await request('/api/data/error-logs/stats');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ abiertos: number; resueltos: number; ultima_hora: number; fatales: number }>;
+}
+
+export async function resolveErrorLog(id: string, resolved = true) {
+  const res = await request(`/api/data/error-logs/${id}/resolve`, { method: 'PATCH', body: JSON.stringify({ resolved }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function resolveAllErrorLogs() {
+  const res = await request('/api/data/error-logs/resolve-all', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function clearErrorLogs(all = false) {
+  const res = await request(`/api/data/error-logs${all ? '?all=1' : ''}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

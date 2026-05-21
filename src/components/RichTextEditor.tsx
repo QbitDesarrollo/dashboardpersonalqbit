@@ -7,6 +7,8 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
 import LinkExtension from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
+import { uploadEditorImage } from '@/lib/apiClient';
 import Color from '@tiptap/extension-color';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { useEffect, useCallback } from 'react';
@@ -133,6 +135,13 @@ export function RichTextEditor({
       Placeholder.configure({
         placeholder,
       }),
+      Image.configure({
+        inline: false,
+        allowBase64: false,
+        HTMLAttributes: {
+          class: 'rounded-lg border border-border max-w-full h-auto my-2',
+        },
+      }),
     ],
     content,
     editable,
@@ -140,6 +149,40 @@ export function RichTextEditor({
       onChange(editor.getHTML());
     },
     editorProps: {
+      handlePaste: (view, event) => {
+        const items = Array.from(event.clipboardData?.items || []);
+        const imageItem = items.find((it) => it.type.startsWith("image/"));
+        if (!imageItem) return false;
+        const file = imageItem.getAsFile();
+        if (!file) return false;
+        event.preventDefault();
+        (async () => {
+          try {
+            const { url } = await uploadEditorImage(file);
+            view.dispatch(view.state.tr.replaceSelectionWith(view.state.schema.nodes.image.create({ src: url })));
+          } catch (e) {
+            console.error("[EDITOR] No se pudo subir la imagen pegada:", e);
+          }
+        })();
+        return true;
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false;
+        const files = Array.from(event.dataTransfer?.files || []).filter((f) => f.type.startsWith("image/"));
+        if (files.length === 0) return false;
+        event.preventDefault();
+        (async () => {
+          for (const file of files) {
+            try {
+              const { url } = await uploadEditorImage(file);
+              view.dispatch(view.state.tr.replaceSelectionWith(view.state.schema.nodes.image.create({ src: url })));
+            } catch (e) {
+              console.error("[EDITOR] No se pudo subir la imagen droppeada:", e);
+            }
+          }
+        })();
+        return true;
+      },
       attributes: {
         class: cn(
           'prose prose-sm dark:prose-invert max-w-none focus:outline-none px-4 py-3',
@@ -460,6 +503,12 @@ export function RichTextViewer({ content }: { content: string }) {
         HTMLAttributes: {
           class: 'text-primary underline underline-offset-2 cursor-pointer',
           target: '_blank',
+        },
+      }),
+      Image.configure({
+        inline: false,
+        HTMLAttributes: {
+          class: 'rounded-lg border border-border max-w-full h-auto my-2',
         },
       }),
     ],

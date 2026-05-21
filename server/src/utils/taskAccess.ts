@@ -7,11 +7,18 @@ import { getUserRole } from './roles.js';
  * ejecutivo/equipo: solo tareas de sus mesas o asignadas a él.
  * cliente: solo si la tarea está en una marca asignada al cliente.
  */
-export async function canAccessTask(userId: string, taskId: string): Promise<boolean> {
-  const task = await queryOne<{ brand_id: string; desk_id: string | null; responsable_user_id: string | null }>(
-    'SELECT brand_id, desk_id, responsable_user_id FROM tasks WHERE id = ?', [taskId]
+export async function canAccessTask(userId: string, taskId: string, _depth: number = 0): Promise<boolean> {
+  const task = await queryOne<{ brand_id: string; desk_id: string | null; responsable_user_id: string | null; parent_task_id: string | null }>(
+    'SELECT brand_id, desk_id, responsable_user_id, parent_task_id FROM tasks WHERE id = ?', [taskId]
   );
   if (!task) return false;
+
+  // FIX: si es subtarea, heredar acceso del padre. Si tienes acceso al padre, puedes comentar en sus subtareas.
+  // Limit recursion depth a 5 niveles para evitar loops/abuso.
+  if (task.parent_task_id && _depth < 5) {
+    const parentAccess = await canAccessTask(userId, task.parent_task_id, _depth + 1);
+    if (parentAccess) return true;
+  }
 
   const role = await getUserRole(userId);
   if (role === 'admin') return true;
