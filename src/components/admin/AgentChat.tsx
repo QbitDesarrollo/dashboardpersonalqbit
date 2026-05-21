@@ -3,7 +3,7 @@ import * as api from '@/lib/apiClient';
 import type { AgentMessage } from '@/lib/apiClient';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Send, ImagePlus, Sparkles, Plus, X, Bot, User } from 'lucide-react';
+import { Loader2, Send, ImagePlus, Sparkles, Plus, X, Bot, User, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -75,6 +75,32 @@ export function AgentChat() {
     setSessionId(null); setMessages([]); setInput(''); setPendingImages([]); setRunning(false);
   };
 
+  const [promoting, setPromoting] = useState(false);
+  const handlePromote = async () => {
+    if (!confirm('¿Promover los cambios de la copia a PRODUCCIÓN?\n\nSe valida el build y un health-check; si algo falla hay rollback automático. Solo promové lo que ya revisaste.')) return;
+    setPromoting(true);
+    try {
+      await api.agentPromote();
+      toast.info('Promoción iniciada — validando build y desplegando…');
+      const start = Date.now();
+      const poll = setInterval(async () => {
+        try {
+          const acts = await api.getAgentActions();
+          const last = acts.find((a) => a.tipo === 'promote');
+          if (last && ['aplicado', 'fallido'].includes(last.estado)) {
+            clearInterval(poll); setPromoting(false);
+            if (last.estado === 'aplicado') toast.success('Promovido a producción ✓');
+            else toast.error('Promoción falló — se hizo rollback. Revisá el detalle.');
+          }
+        } catch { /* */ }
+        if (Date.now() - start > 200000) { clearInterval(poll); setPromoting(false); }
+      }, 4000);
+    } catch (e) {
+      setPromoting(false);
+      toast.error(e instanceof Error ? e.message : 'Error al promover');
+    }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-220px)] min-h-[420px] border rounded-xl overflow-hidden bg-card">
       {/* header */}
@@ -82,7 +108,11 @@ export function AgentChat() {
         <Sparkles className="h-4 w-4 text-primary" />
         <span className="text-sm font-semibold">Asistente de mantenimiento</span>
         <span className="text-[11px] text-muted-foreground hidden sm:inline">— trabaja en una copia aislada; nada toca producción sin que apruebes</span>
-        <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={newChat}><Plus className="h-3.5 w-3.5" />Nueva</Button>
+        <Button variant="outline" size="sm" className="ml-auto h-7 text-xs" onClick={handlePromote} disabled={promoting}>
+          {promoting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />}
+          Promover a producción
+        </Button>
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={newChat}><Plus className="h-3.5 w-3.5" />Nueva</Button>
       </div>
 
       {/* mensajes */}
