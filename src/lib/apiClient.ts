@@ -1874,3 +1874,54 @@ export async function clearErrorLogs(all = false) {
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+// ========== Agente de mantenimiento (chat admin) ==========
+export interface AgentMessage { id: string; role: 'user' | 'assistant' | 'system' | 'tool'; content: string; created_at: string; }
+export interface AgentSession { id: string; titulo: string | null; status: 'idle' | 'running'; created_at: string; updated_at: string; }
+export interface AgentAction { id: string; origen: string; tipo: string; titulo: string; detalle: string | null; estado: string; riesgo: string; created_at: string; }
+
+export async function getAgentSessions() {
+  const res = await request('/api/data/agent/sessions');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<AgentSession[]>;
+}
+
+export async function getAgentMessages(sessionId: string) {
+  const res = await request(`/api/data/agent/sessions/${sessionId}/messages`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ status: 'idle' | 'running'; messages: AgentMessage[] }>;
+}
+
+export async function sendAgentChat(message: string, sessionId?: string, imagePaths: string[] = []) {
+  const res = await request('/api/data/agent/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message, session_id: sessionId, image_paths: imagePaths }),
+  });
+  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
+  return res.json() as Promise<{ session_id: string; status: string }>;
+}
+
+export async function uploadAgentImage(file: File): Promise<{ path: string }> {
+  const fd = new FormData();
+  fd.append('image', file);
+  const token = localStorage.getItem('tiusdei_token');
+  const res = await fetch(`${API_BASE}/api/data/agent/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getAgentActions() {
+  const res = await request('/api/data/agent/actions');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<AgentAction[]>;
+}
+
+export async function agentPromote() {
+  const res = await request('/api/data/agent/promote', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ action_id: string; status: string }>;
+}

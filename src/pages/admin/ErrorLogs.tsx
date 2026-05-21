@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, AlertTriangle, RefreshCw, Check, Trash2, ChevronDown, ChevronRight, Bug } from 'lucide-react';
+import { Loader2, AlertTriangle, RefreshCw, Check, Trash2, ChevronDown, ChevronRight, Bug, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { AgentChat } from '@/components/admin/AgentChat';
 
 const LEVEL_COLORS: Record<string, string> = {
   fatal: 'bg-red-600 text-white',
@@ -30,6 +31,7 @@ export default function ErrorLogs() {
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [auto, setAuto] = useState(true);
+  const [view, setView] = useState<'errores' | 'chat'>('errores');
 
   const load = useCallback(async () => {
     try {
@@ -102,6 +104,15 @@ export default function ErrorLogs() {
         <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-4 w-4" />Refrescar</Button>
       </div>
 
+      {/* Tabs: Consola de errores | Asistente IA */}
+      <div className="flex rounded-lg border overflow-hidden w-fit">
+        <button onClick={() => setView('errores')} className={cn('px-4 py-1.5 text-sm font-medium', view === 'errores' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}>Consola de errores</button>
+        <button onClick={() => setView('chat')} className={cn('px-4 py-1.5 text-sm font-medium flex items-center gap-1.5', view === 'chat' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}><Sparkles className="h-3.5 w-3.5" />Asistente IA</button>
+      </div>
+
+      {view === 'chat' && <AgentChat />}
+
+      {view === 'errores' && (<>
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -194,6 +205,7 @@ export default function ErrorLogs() {
           })}
         </div>
       )}
+      </>)}
     </div>
   );
 }

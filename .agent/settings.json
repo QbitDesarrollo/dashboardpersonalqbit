@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "node /var/www/tiusdei/.agent/agent-guard.cjs" }
+        ]
+      }
+    ]
+  }
+}
