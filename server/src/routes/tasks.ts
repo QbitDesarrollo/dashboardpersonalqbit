@@ -355,6 +355,10 @@ tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
     );
     if (!row) return res.status(404).json({ error: 'Tarea no encontrada' });
 
+    // Seguridad: verificar acceso antes de devolver la tarea (evita IDOR entre mesas/tenants)
+    const allowed = await canAccessTask(req.userId!, String(taskId));
+    if (!allowed) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
+
     const respRows = await query<any[]>(
       `SELECT tr.user_id, p.nombre, p.avatar_url FROM task_responsables tr LEFT JOIN profiles p ON p.id = tr.user_id WHERE tr.task_id = ?`,
       [taskId]
@@ -1115,7 +1119,7 @@ tasksRouter.post('/tasks/:taskId/comments', requireAuth, async (req: AuthRequest
   try {
     const taskId = String(req.params.taskId || '');
     const { comentario, contenido_html, image_url } = req.body || {};
-    const allowed = await canAccessTask(req.userId!, taskId);
+    const allowed = await canAccessTask(req.userId!, String(taskId));
     if (!allowed) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
 
     const text = typeof comentario === 'string' ? comentario.trim() : '';
