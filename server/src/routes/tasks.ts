@@ -728,7 +728,9 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       (body.estado === 'entregado' && oldRow?.estado !== 'entregado')
     );
     const recurrenceType = oldRow?.recurrence_type;
+    let recurrenceSpawned = false;
     if (isNowCompleted && recurrenceType && recurrenceType !== 'none') {
+      recurrenceSpawned = true;
       spawnNextRecurrence(oldRow, req.userId!).catch((e) => console.error('[Recurrence] Error spawning next:', e));
     }
 
@@ -741,7 +743,7 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       logTaskChanges(String(id), oldRow, changeData, req.userId!).catch(() => {});
     }
 
-    res.json({ success: true });
+    res.json({ success: true, recurrence_spawned: recurrenceSpawned });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al actualizar tarea' });

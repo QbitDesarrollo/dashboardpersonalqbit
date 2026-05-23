@@ -745,7 +745,14 @@ export default function Tasks() {
     try {
       const result: any = await api.patchTask(taskId, { estado: status });
       if (result?.error) throw new Error(result.error);
-      toast.success('Estado actualizado');
+      if (result?.recurrence_spawned) {
+        toast.success('Estado actualizado', {
+          description: 'Se creó la próxima ocurrencia de la tarea recurrente. Buscala en la lista.',
+          duration: 7000,
+        });
+      } else {
+        toast.success('Estado actualizado');
+      }
       fetchData();
     } catch (error: any) {
       toast.error('Error', { description: error.message });
