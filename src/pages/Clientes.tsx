@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { RichTextViewer } from '@/components/RichTextEditor';
 import { ClientCommentBox } from '@/components/clientes/ClientCommentBox';
+import { RichEditorField } from '@/components/clientes/RichEditorField';
 import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -138,13 +139,15 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
   const [taskOpen, setTaskOpen] = useState(false);
   const [titulo, setTitulo] = useState('');
   const [fecha, setFecha] = useState('');
+  const [detalle, setDetalle] = useState('');
+  const [taskResetKey, setTaskResetKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const createTask = async () => {
     if (!titulo.trim()) return;
     setSaving(true);
     try {
-      await api.createClientTask(board.id, { titulo_tarea: titulo.trim(), fecha_cliente: fecha || undefined });
-      toast.success('Tarea creada (visible para el cliente + en la agencia)'); setTaskOpen(false); setTitulo(''); setFecha(''); load();
+      await api.createClientTask(board.id, { titulo_tarea: titulo.trim(), fecha_cliente: fecha || undefined, detalle: detalle || undefined });
+      toast.success('Tarea creada (visible para el cliente + en la agencia)'); setTaskOpen(false); setTitulo(''); setFecha(''); setDetalle(''); setTaskResetKey((k) => k + 1); load();
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Error'); } finally { setSaving(false); }
   };
 
@@ -208,7 +211,7 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
               <Card key={r.id}><CardContent className="p-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-medium text-sm">{r.titulo} {r.estado !== 'pendiente' && <Badge variant="outline" className={cn('ml-1 text-[10px]', r.estado === 'aprobado' ? 'text-green-700 border-green-200' : 'text-rose-600 border-rose-200')}>{r.estado}</Badge>}</div>
-                  {r.detalle && <div className="text-xs text-muted-foreground mt-0.5">{r.detalle}</div>}
+                  {r.detalle && <div className="text-xs text-muted-foreground mt-0.5"><RichTextViewer content={r.detalle} /></div>}
                   <div className="text-[11px] text-muted-foreground mt-1">por {r.autor_nombre} · {fmt(r.created_at)}</div>
                 </div>
                 {r.estado === 'pendiente' && <div className="flex gap-1.5 shrink-0">
@@ -247,11 +250,14 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
       </Dialog>
 
       <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Nueva tarea para el cliente</DialogTitle><DialogDescription>Aparece en el tablero del cliente y, en paralelo, en la agencia. La fecha del cliente queda fija; la interna la ajustás después.</DialogDescription></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5"><Label className="text-xs">Título *</Label><Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="ej. Diseño campaña Día del Padre" /></div>
             <div className="space-y-1.5"><Label className="text-xs flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />Fecha acordada con el cliente</Label><Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Detalle (opcional)</Label>
+              <RichEditorField placeholder="Brief, referencias, links… puedes pegar imágenes." minHeight="100px" resetKey={taskResetKey} onChange={setDetalle} uploadImage={api.uploadEditorImage} />
+            </div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setTaskOpen(false)}>Cancelar</Button><Button onClick={createTask} disabled={saving || !titulo.trim()}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Crear</Button></DialogFooter>
         </DialogContent>
