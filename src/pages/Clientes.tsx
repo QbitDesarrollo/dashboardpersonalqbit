@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -151,6 +152,24 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
     catch { toast.error('Error'); }
   };
 
+  // Detalle de tarea + comentarios (Nicole comenta como ella misma — sin pedir nombre)
+  const [openTask, setOpenTask] = useState<ClientBoardTask | null>(null);
+  const [comments, setComments] = useState<{ id: string; autor_nombre: string; es_interno: boolean; comentario: string; created_at: string }[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const openDetail = async (t: ClientBoardTask) => {
+    setOpenTask(t); setComments([]); setNewComment(''); setLoadingComments(true);
+    try { setComments(await api.getClientTaskComments(board.id, t.id)); } catch { /* */ }
+    finally { setLoadingComments(false); }
+  };
+  const sendComment = async () => {
+    if (!openTask || !newComment.trim()) return;
+    try {
+      const c = await api.postClientTaskComment(board.id, openTask.id, newComment.trim());
+      setComments((prev) => [...prev, c]); setNewComment('');
+    } catch { toast.error('No se pudo enviar'); }
+  };
+
   const pendientes = requests.filter((r) => r.estado === 'pendiente');
 
   return (
@@ -179,10 +198,11 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
                 <th className="text-left font-medium px-4 py-2.5">Tarea</th><th className="text-left font-medium px-4 py-2.5">Estado</th>
                 <th className="text-left font-medium px-4 py-2.5">Fecha cliente</th><th className="text-left font-medium px-4 py-2.5">Fecha interna</th></tr></thead>
               <tbody className="divide-y">{tasks.map((t) => (
-                <tr key={t.id}><td className="px-4 py-2.5 font-medium">{t.titulo_tarea}</td>
+                <tr key={t.id} className="hover:bg-muted/40 cursor-pointer" onClick={() => openDetail(t)}><td className="px-4 py-2.5 font-medium">{t.titulo_tarea}</td>
                   <td className="px-4 py-2.5"><Badge variant="outline" className="text-[10px]">{t.estado}</Badge></td>
                   <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_cliente)}</td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_entrega)}<span className="text-[10px] text-slate-400 ml-1">(equipo)</span></td></tr>
+                  <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_entrega)}<span className="text-[10px] text-slate-400 ml-1">(equipo)</span></td>
+                  <td className="px-4 py-2.5 text-right text-muted-foreground"><MessageSquare className="h-3.5 w-3.5 inline" /></td></tr>
               ))}</tbody></table></CardContent></Card>
         ) : (
           requests.length === 0 ? <p className="text-sm text-muted-foreground text-center py-10">Sin solicitudes del cliente.</p>
@@ -200,6 +220,36 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
               </CardContent></Card>
             ))}</div>
         )}
+
+      {/* Detalle de tarea + comentarios (zona compartida con el cliente) */}
+      <Dialog open={!!openTask} onOpenChange={(o) => { if (!o) setOpenTask(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{openTask?.titulo_tarea}</DialogTitle>
+            <DialogDescription className="flex items-center gap-2">
+              {openTask && <Badge variant="outline" className="text-[10px]">{openTask.estado}</Badge>}
+              <span className="text-xs">Cliente: {fmt(openTask?.fecha_cliente ?? null)} · Interna: {fmt(openTask?.fecha_entrega ?? null)}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" />Conversación con el cliente</p>
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+              {loadingComments ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mx-auto my-4" />
+                : comments.length === 0 ? <p className="text-xs text-muted-foreground py-3 text-center">Sin comentarios todavía.</p>
+                : comments.map((c) => (
+                  <div key={c.id} className={cn('rounded-lg px-3 py-2 text-sm', c.es_interno ? 'bg-primary/10' : 'bg-muted')}>
+                    <div className="text-[11px] text-muted-foreground mb-0.5">{c.es_interno ? '🏢 ' : '👤 '}{c.autor_nombre}</div>
+                    {c.comentario}
+                  </div>
+                ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Textarea value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="Escribe al cliente… (sale con tu usuario)" rows={1} className="resize-none min-h-[40px]" onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendComment(); } }} />
+              <Button size="icon" className="h-10 shrink-0" onClick={sendComment} disabled={!newComment.trim()}><Send className="h-4 w-4" /></Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
         <DialogContent className="max-w-md">

@@ -158,3 +158,39 @@ clientBoardsRouter.patch('/client-boards/:id/requests/:rid', requireAuth, async 
     }
   } catch (e) { console.error('[CLIENT-BOARDS] resolve request:', e); res.status(500).json({ error: 'Error' }); }
 });
+
+// ── Comentarios de una tarea del tablero (lado INTERNO: atribuye al usuario logueado) ──
+// Es el MISMO hilo que ve el cliente (client_board_comments). Nicole comenta como ella misma.
+clientBoardsRouter.get('/client-boards/:id/tasks/:taskId/comments', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await ensureExec(req, res))) return;
+    const id = String(req.params.id);
+    const taskId = String(req.params.taskId);
+    const t = await queryOne<any>('SELECT id FROM tasks WHERE id = ? AND client_board_id = ?', [taskId, id]);
+    if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
+    const rows = await query<any[]>(
+      'SELECT id, autor_nombre, es_interno, comentario, created_at FROM client_board_comments WHERE board_id = ? AND task_id = ? ORDER BY created_at',
+      [id, taskId]
+    );
+    res.json(rows.map((r) => ({ ...r, es_interno: !!r.es_interno })));
+  } catch (e) { console.error('[CLIENT-BOARDS] get comments:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+clientBoardsRouter.post('/client-boards/:id/tasks/:taskId/comments', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await ensureExec(req, res))) return;
+    const id = String(req.params.id);
+    const taskId = String(req.params.taskId);
+    const t = await queryOne<any>('SELECT id FROM tasks WHERE id = ? AND client_board_id = ?', [taskId, id]);
+    if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
+    const comentario = typeof req.body?.comentario === 'string' ? req.body.comentario.trim().slice(0, 2000) : '';
+    if (!comentario) return res.status(400).json({ error: 'Comentario vacío' });
+    // Nombre automático del usuario logueado (no se lo pide)
+    const me = await queryOne<{ nombre: string }>('SELECT nombre FROM profiles WHERE id = ?', [req.userId]);
+    const autor = me?.nombre || 'Agencia';
+    const cid = uuid();
+    await query('INSERT INTO client_board_comments (id, board_id, task_id, autor_nombre, es_interno, comentario) VALUES (?, ?, ?, ?, 1, ?)',
+      [cid, id, taskId, autor, comentario]);
+    res.status(201).json({ id: cid, autor_nombre: autor, es_interno: true, comentario, created_at: new Date().toISOString() });
+  } catch (e) { console.error('[CLIENT-BOARDS] post comment:', e); res.status(500).json({ error: 'Error' }); }
+});

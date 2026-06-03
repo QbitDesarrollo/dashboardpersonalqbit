@@ -2023,3 +2023,15 @@ export async function postPublicRequest(token: string, data: { titulo: string; d
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+// Comentarios internos del tablero cliente (atribuye al usuario logueado)
+export async function getClientTaskComments(boardId: string, taskId: string) {
+  const res = await request(`/api/data/client-boards/${boardId}/tasks/${taskId}/comments`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ id: string; autor_nombre: string; es_interno: boolean; comentario: string; created_at: string }[]>;
+}
+export async function postClientTaskComment(boardId: string, taskId: string, comentario: string) {
+  const res = await request(`/api/data/client-boards/${boardId}/tasks/${taskId}/comments`, { method: "POST", body: JSON.stringify({ comentario }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
