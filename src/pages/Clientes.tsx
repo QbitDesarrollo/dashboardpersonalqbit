@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -13,9 +14,9 @@ import {
 import { RichTextViewer } from '@/components/RichTextEditor';
 import { ClientCommentBox } from '@/components/clientes/ClientCommentBox';
 import { RichEditorField } from '@/components/clientes/RichEditorField';
-import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare } from 'lucide-react';
+import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare, FolderKanban } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, getInitials } from '@/lib/utils';
 
 interface Brand { id: string; nombre: string }
 
@@ -23,6 +24,10 @@ function fmt(s: string | null): string {
   if (!s) return '—';
   try { return new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); } catch { return s; }
 }
+
+const STATUS_LABEL: Record<string, string> = { backlog: 'Pendiente', en_proceso: 'En proceso', en_revision: 'En revisión', revision_interna: 'Revisión interna', revision_cliente: 'Revisión cliente', aprobado: 'Aprobado', entregado: 'Entregado', bloqueado: 'Bloqueado' };
+const STATUS_CLS: Record<string, string> = { backlog: 'bg-slate-100 text-slate-600 border-slate-200', en_proceso: 'bg-blue-100 text-blue-700 border-blue-200', en_revision: 'bg-amber-100 text-amber-700 border-amber-200', revision_interna: 'bg-amber-100 text-amber-700 border-amber-200', revision_cliente: 'bg-purple-100 text-purple-700 border-purple-200', aprobado: 'bg-emerald-100 text-emerald-700 border-emerald-200', entregado: 'bg-green-100 text-green-700 border-green-200', bloqueado: 'bg-rose-100 text-rose-700 border-rose-200' };
+const SALUD_DOT: Record<string, string> = { verde: 'bg-emerald-500', amarillo: 'bg-amber-500', rojo: 'bg-rose-500' };
 
 function diasInfo(fechaCliente: string | null, estado: string): { txt: string; cls: string } | null {
   if (!fechaCliente) return null;
@@ -91,13 +96,17 @@ export default function Clientes() {
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="cursor-pointer" onClick={() => setSelected(b)}>
-                      <div className="font-semibold">{b.brand_nombre}</div>
+                      <div className="font-semibold flex items-center gap-2"><span className={cn('inline-block h-2.5 w-2.5 rounded-full', SALUD_DOT[b.salud || 'verde'])} />{b.brand_nombre}</div>
                       <div className="text-xs text-muted-foreground">{b.cliente_nombre || 'Sin nombre de cliente'}</div>
                     </div>
                     {(b.requests_pendientes ?? 0) > 0 && <Badge className="bg-amber-500">{b.requests_pendientes} solicitud(es)</Badge>}
                   </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full" style={{ width: `${b.avance ?? 0}%`, backgroundColor: (b.vencidas ?? 0) > 0 ? '#ef4444' : '#10b981' }} /></div>
+                    <span className="text-xs font-medium text-muted-foreground w-9 text-right">{b.avance ?? 0}%</span>
+                  </div>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{b.tareas ?? 0} tareas</span>
+                    <span>{b.tareas ?? 0} tareas{(b.proyectos ?? 0) > 0 && <> · {b.proyectos} proyecto(s)</>}{(b.vencidas ?? 0) > 0 && <span className="text-rose-500"> · {b.vencidas} vencida(s)</span>}</span>
                     <div className="flex gap-1.5">
                       <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => copyLink(b.token)}>
                         {copied === b.token ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}Link
@@ -205,19 +214,33 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
       {loading ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         : tab === 'tareas' ? (
           tasks.length === 0 ? <p className="text-sm text-muted-foreground text-center py-10">Sin tareas. Creá la primera con "Tarea".</p>
-          : <Card><CardContent className="p-0"><table className="w-full text-sm">
-              <thead className="bg-muted/40 text-muted-foreground text-xs uppercase"><tr>
-                <th className="text-left font-medium px-4 py-2.5">Tarea</th><th className="text-left font-medium px-4 py-2.5">Estado</th>
-                <th className="text-left font-medium px-4 py-2.5">Creada</th><th className="text-left font-medium px-4 py-2.5">Fecha cliente</th><th className="text-left font-medium px-4 py-2.5">Fecha interna</th><th className="text-left font-medium px-4 py-2.5">Tiempo</th></tr></thead>
-              <tbody className="divide-y">{tasks.map((t) => { const d = diasInfo(t.fecha_cliente, t.estado); return (
-                <tr key={t.id} className="hover:bg-muted/40 cursor-pointer" onClick={() => openDetail(t)}><td className="px-4 py-2.5 font-medium">{t.titulo_tarea}</td>
-                  <td className="px-4 py-2.5"><Badge variant="outline" className="text-[10px]">{t.estado}</Badge></td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.created_at)}</td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_cliente)}</td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_entrega)}<span className="text-[10px] text-slate-400 ml-1">(equipo)</span></td>
-                  <td className="px-4 py-2.5"><span className={cn('text-xs', d?.cls || 'text-muted-foreground')}>{d?.txt || '—'}</span></td>
-                  <td className="px-4 py-2.5 text-right text-muted-foreground"><MessageSquare className="h-3.5 w-3.5 inline" /></td></tr>
-              ); })}</tbody></table></CardContent></Card>
+          : (() => {
+              const byProj: Record<string, ClientBoardTask[]> = {};
+              for (const t of tasks) { const k = t.project_id || '__sin__'; (byProj[k] ||= []).push(t); }
+              const groups = Object.entries(byProj).map(([k, items]) => ({ key: k, nombre: k === '__sin__' ? 'Sin proyecto' : (items[0].project_nombre || 'Proyecto'), items }));
+              return (
+                <div className="space-y-4">
+                  {groups.map((g) => (
+                    <div key={g.key} className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground"><FolderKanban className="h-4 w-4" />{g.nombre}<Badge variant="secondary" className="text-[10px]">{g.items.length}</Badge></div>
+                      <Card><CardContent className="p-0"><table className="w-full text-sm">
+                        <thead className="bg-muted/40 text-muted-foreground text-xs uppercase"><tr>
+                          <th className="text-left font-medium px-4 py-2.5">Tarea</th><th className="text-left font-medium px-4 py-2.5">Estado</th>
+                          <th className="text-left font-medium px-4 py-2.5">Responsable</th>
+                          <th className="text-left font-medium px-4 py-2.5">Fecha cliente</th><th className="text-left font-medium px-4 py-2.5">Fecha interna</th><th className="text-left font-medium px-4 py-2.5">Tiempo</th></tr></thead>
+                        <tbody className="divide-y">{g.items.map((t) => { const d = diasInfo(t.fecha_cliente, t.estado); return (
+                          <tr key={t.id} className="hover:bg-muted/40 cursor-pointer" onClick={() => openDetail(t)}><td className="px-4 py-2.5 font-medium">{t.titulo_tarea}</td>
+                            <td className="px-4 py-2.5"><Badge variant="outline" className={cn('text-[10px]', STATUS_CLS[t.estado] || '')}>{STATUS_LABEL[t.estado] || t.estado}</Badge></td>
+                            <td className="px-4 py-2.5">{t.responsable_nombre ? <span className="flex items-center gap-1.5"><Avatar className="h-5 w-5">{t.responsable_avatar && <AvatarImage src={t.responsable_avatar} />}<AvatarFallback className="text-[8px]">{getInitials(t.responsable_nombre)}</AvatarFallback></Avatar><span className="text-xs">{t.responsable_nombre}</span></span> : <span className="text-xs text-slate-300">—</span>}</td>
+                            <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_cliente)}</td>
+                            <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_entrega)}<span className="text-[10px] text-slate-400 ml-1">(equipo)</span></td>
+                            <td className="px-4 py-2.5"><span className={cn('text-xs', d?.cls || 'text-muted-foreground')}>{d?.txt || '—'}</span></td></tr>
+                        ); })}</tbody></table></CardContent></Card>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()
         ) : (
           requests.length === 0 ? <p className="text-sm text-muted-foreground text-center py-10">Sin solicitudes del cliente.</p>
           : <div className="space-y-2">{requests.map((r) => (

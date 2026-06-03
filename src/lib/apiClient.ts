@@ -1937,6 +1937,11 @@ export interface ClientBoard {
   activo: boolean;
   created_at: string;
   tareas?: number;
+  listas?: number;
+  vencidas?: number;
+  proyectos?: number;
+  avance?: number;
+  salud?: string;
   requests_pendientes?: number;
 }
 export interface ClientBoardTask {
@@ -1947,7 +1952,10 @@ export interface ClientBoardTask {
   fecha_entrega: string | null;
   created_at: string;
   enlaces?: string | null;
+  project_id?: string | null;
+  project_nombre?: string | null;
   responsable_nombre?: string | null;
+  responsable_avatar?: string | null;
 }
 export interface ClientRequest {
   id: string;

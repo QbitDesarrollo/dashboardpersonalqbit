@@ -32,12 +32,20 @@ clientBoardsRouter.get('/client-boards', requireAuth, async (req: AuthRequest, r
       `SELECT cb.id, cb.brand_id, cb.token, cb.cliente_nombre, cb.titulo, cb.activo, cb.created_at,
               b.nombre AS brand_nombre,
               (SELECT COUNT(*) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1) AS tareas,
+              (SELECT COUNT(*) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1 AND t.estado IN ('entregado','aprobado')) AS listas,
+              (SELECT COUNT(*) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1 AND t.estado NOT IN ('entregado','aprobado') AND t.fecha_cliente IS NOT NULL AND t.fecha_cliente < CURDATE()) AS vencidas,
+              (SELECT COUNT(DISTINCT t.project_id) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1 AND t.project_id IS NOT NULL) AS proyectos,
               (SELECT COUNT(*) FROM client_requests r WHERE r.board_id = cb.id AND r.estado = 'pendiente') AS requests_pendientes
        FROM client_boards cb
        LEFT JOIN brands b ON b.id = cb.brand_id
        ORDER BY cb.created_at DESC`
     );
-    res.json(rows.map((r) => ({ ...r, activo: !!r.activo, tareas: Number(r.tareas), requests_pendientes: Number(r.requests_pendientes) })));
+    res.json(rows.map((r) => {
+      const tareas = Number(r.tareas) || 0; const listas = Number(r.listas) || 0; const vencidas = Number(r.vencidas) || 0;
+      const avance = tareas > 0 ? Math.round((listas / tareas) * 100) : 0;
+      const salud = vencidas > 0 ? 'rojo' : (tareas > 0 && listas === tareas ? 'verde' : 'verde');
+      return { ...r, activo: !!r.activo, tareas, listas, vencidas, proyectos: Number(r.proyectos) || 0, requests_pendientes: Number(r.requests_pendientes), avance, salud };
+    }));
   } catch (e) { console.error('[CLIENT-BOARDS] list:', e); res.status(500).json({ error: 'Error' }); }
 });
 
@@ -78,10 +86,13 @@ clientBoardsRouter.get('/client-boards/:id', requireAuth, async (req: AuthReques
     if (!board) return res.status(404).json({ error: 'Tablero no encontrado' });
     const tasks = await query<any[]>(
       `SELECT t.id, t.titulo_tarea, t.estado, t.fecha_cliente, t.fecha_entrega, t.created_at, t.enlaces,
-              p.nombre AS responsable_nombre
-       FROM tasks t LEFT JOIN profiles p ON p.id = t.responsable_user_id
+              t.project_id, pr.nombre AS project_nombre,
+              p.nombre AS responsable_nombre, p.avatar_url AS responsable_avatar
+       FROM tasks t
+       LEFT JOIN profiles p ON p.id = t.responsable_user_id
+       LEFT JOIN projects pr ON pr.id = t.project_id
        WHERE t.client_board_id = ? AND t.cliente_visible = 1
-       ORDER BY t.created_at DESC`, [id]
+       ORDER BY pr.nombre, t.created_at DESC`, [id]
     );
     res.json({ board: { ...board, activo: !!board.activo }, tasks });
   } catch (e) { console.error('[CLIENT-BOARDS] detail:', e); res.status(500).json({ error: 'Error' }); }
