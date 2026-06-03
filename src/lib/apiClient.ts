@@ -2035,3 +2035,19 @@ export async function postClientTaskComment(boardId: string, taskId: string, com
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+// Cliente público: cambiar status (aprobar/pedir cambios) + subir imagen
+export async function setPublicTaskStatus(token: string, taskId: string, estado: "aprobado" | "en_proceso", autor_nombre: string) {
+  const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}/tasks/${taskId}/status`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ estado, autor_nombre }),
+  });
+  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
+  return res.json();
+}
+export async function uploadPublicClientImage(token: string, file: File): Promise<{ url: string }> {
+  const fd = new FormData();
+  fd.append("image", file);
+  const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}/upload-image`, { method: "POST", body: fd });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}

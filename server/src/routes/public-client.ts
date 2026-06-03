@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { query, queryOne, uuid } from '../db/mysql.js';
 import rateLimit from 'express-rate-limit';
+import multerPC from 'multer';
+import pathPC from 'path';
+import fsPC from 'fs';
 
 /**
  * Módulo de clientes — lado PÚBLICO (cliente sin login).
@@ -130,4 +133,53 @@ publicClientRouter.post('/public/client/:token/requests', publicLimiter, async (
       [id, board.id, titulo, detalle, nombre || 'Cliente']);
     res.status(201).json({ id, ok: true });
   } catch (e) { console.error('[PUBLIC-CLIENT] request:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Cambiar status (cliente aprueba o pide cambios) ──
+// SOLO permitido: revision_cliente -> aprobado  |  revision_cliente -> en_proceso
+publicClientRouter.patch('/public/client/:token/tasks/:taskId/status', publicLimiter, async (req, res) => {
+  try {
+    const board = await boardByToken(String(req.params.token));
+    if (!board || !board.activo) return res.status(404).json({ error: 'No disponible' });
+    const taskId = String(req.params.taskId);
+    const t = await queryOne<any>('SELECT id, estado, titulo_tarea FROM tasks WHERE id = ? AND client_board_id = ? AND cliente_visible = 1', [taskId, board.id]);
+    if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
+
+    const nuevo = String(req.body?.estado || '');
+    const nombre = typeof req.body?.autor_nombre === 'string' ? req.body.autor_nombre.trim().slice(0, 120) : 'Cliente';
+    // El cliente solo puede actuar sobre tareas que están EN SU REVISIÓN
+    if (t.estado !== 'revision_cliente') {
+      return res.status(409).json({ error: 'Esta tarea no está esperando tu revisión' });
+    }
+    if (nuevo !== 'aprobado' && nuevo !== 'en_proceso') {
+      return res.status(400).json({ error: 'Solo podés Aprobar o Pedir cambios' });
+    }
+    await query('UPDATE tasks SET estado = ? WHERE id = ?', [nuevo, taskId]);
+    // Deja constancia en el hilo como comentario del cliente
+    const accionTxt = nuevo === 'aprobado' ? '✅ Aprobó la tarea.' : '🔄 Pidió cambios (volvió a En proceso).';
+    await query('INSERT INTO client_board_comments (id, board_id, task_id, autor_nombre, es_interno, comentario) VALUES (?, ?, ?, ?, 0, ?)',
+      [uuid(), board.id, taskId, nombre || 'Cliente', accionTxt]);
+    res.json({ ok: true, estado: nuevo });
+  } catch (e) { console.error('[PUBLIC-CLIENT] status:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Subida de imagen para comentarios del cliente (sin login, token-gated) ──
+const CLIENT_UPLOAD_DIR = pathPC.join(process.cwd(), 'uploads', 'client');
+if (!fsPC.existsSync(CLIENT_UPLOAD_DIR)) fsPC.mkdirSync(CLIENT_UPLOAD_DIR, { recursive: true });
+const clientImgUpload = multerPC({
+  storage: multerPC.diskStorage({
+    destination: (_r: any, _f: any, cb: any) => cb(null, CLIENT_UPLOAD_DIR),
+    filename: (_r: any, file: any, cb: any) => cb(null, `${uuid()}${pathPC.extname(file.originalname || '') || '.png'}`),
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_r: any, file: any, cb: any) => cb(null, !!file.mimetype && file.mimetype.startsWith('image/')),
+});
+publicClientRouter.post('/public/client/:token/upload-image', publicLimiter, clientImgUpload.single('image'), async (req: any, res) => {
+  try {
+    const board = await boardByToken(String(req.params.token));
+    if (!board || !board.activo) return res.status(404).json({ error: 'No disponible' });
+    if (!req.file) return res.status(400).json({ error: 'No se envió imagen' });
+    const base = (process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec').replace(/\/$/, '');
+    res.status(201).json({ url: `${base}/uploads/client/${req.file.filename}` });
+  } catch (e) { console.error('[PUBLIC-CLIENT] upload:', e); res.status(500).json({ error: 'Error' }); }
 });

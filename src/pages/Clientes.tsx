@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare, Send } from 'lucide-react';
+import { RichTextViewer } from '@/components/RichTextEditor';
+import { ClientCommentBox } from '@/components/clientes/ClientCommentBox';
+import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -156,18 +157,15 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
   const [openTask, setOpenTask] = useState<ClientBoardTask | null>(null);
   const [comments, setComments] = useState<{ id: string; autor_nombre: string; es_interno: boolean; comentario: string; created_at: string }[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
-  const [newComment, setNewComment] = useState('');
   const openDetail = async (t: ClientBoardTask) => {
-    setOpenTask(t); setComments([]); setNewComment(''); setLoadingComments(true);
+    setOpenTask(t); setComments([]); setLoadingComments(true);
     try { setComments(await api.getClientTaskComments(board.id, t.id)); } catch { /* */ }
     finally { setLoadingComments(false); }
   };
-  const sendComment = async () => {
-    if (!openTask || !newComment.trim()) return;
-    try {
-      const c = await api.postClientTaskComment(board.id, openTask.id, newComment.trim());
-      setComments((prev) => [...prev, c]); setNewComment('');
-    } catch { toast.error('No se pudo enviar'); }
+  const sendComment = async (html: string) => {
+    if (!openTask) return;
+    const c = await api.postClientTaskComment(board.id, openTask.id, html);
+    setComments((prev) => [...prev, c]);
   };
 
   const pendientes = requests.filter((r) => r.estado === 'pendiente');
@@ -237,16 +235,13 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
               {loadingComments ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mx-auto my-4" />
                 : comments.length === 0 ? <p className="text-xs text-muted-foreground py-3 text-center">Sin comentarios todavía.</p>
                 : comments.map((c) => (
-                  <div key={c.id} className={cn('rounded-lg px-3 py-2 text-sm', c.es_interno ? 'bg-primary/10' : 'bg-muted')}>
+                  <div key={c.id} className={cn('rounded-lg px-3 py-2', c.es_interno ? 'bg-primary/10' : 'bg-muted')}>
                     <div className="text-[11px] text-muted-foreground mb-0.5">{c.es_interno ? '🏢 ' : '👤 '}{c.autor_nombre}</div>
-                    {c.comentario}
+                    <div className="text-sm"><RichTextViewer content={c.comentario} /></div>
                   </div>
                 ))}
             </div>
-            <div className="flex gap-2 pt-1">
-              <Textarea value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="Escribe al cliente… (sale con tu usuario)" rows={1} className="resize-none min-h-[40px]" onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendComment(); } }} />
-              <Button size="icon" className="h-10 shrink-0" onClick={sendComment} disabled={!newComment.trim()}><Send className="h-4 w-4" /></Button>
-            </div>
+            {openTask && <ClientCommentBox placeholder="Escribe al cliente… (sale con tu usuario)" onSubmit={sendComment} uploadImage={api.uploadEditorImage} />}
           </div>
         </DialogContent>
       </Dialog>
