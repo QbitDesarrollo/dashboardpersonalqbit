@@ -34,6 +34,21 @@ function fmtFecha(s: string | null): string {
   if (!s) return '—';
   try { return new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; }
 }
+function fmtCorta(s: string | null): string {
+  if (!s) return '—';
+  try { return new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); } catch { return s; }
+}
+// Días: atraso (vencido) o cuánto falta (disponible). Null si ya está cerrada.
+function diasInfo(fechaCliente: string | null, estadoRaw: string): { txt: string; cls: string } | null {
+  if (!fechaCliente) return null;
+  if (['aprobado', 'entregado'].includes(estadoRaw)) return { txt: 'Listo', cls: 'text-emerald-600' };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dl = new Date(fechaCliente.slice(0, 10) + 'T00:00:00');
+  const diff = Math.round((dl.getTime() - today.getTime()) / 86400000);
+  if (diff < 0) return { txt: `${Math.abs(diff)} d de atraso`, cls: 'text-rose-600 font-medium' };
+  if (diff === 0) return { txt: 'Vence hoy', cls: 'text-amber-600 font-medium' };
+  return { txt: `Faltan ${diff} d`, cls: 'text-emerald-600' };
+}
 
 function KanbanCard({ t, onOpen }: { t: PublicClientTask; onOpen: () => void }) {
   const draggable = t.estado_raw === 'revision_cliente';
@@ -45,9 +60,10 @@ function KanbanCard({ t, onOpen }: { t: PublicClientTask; onOpen: () => void }) 
         <span className="font-medium text-sm text-slate-800 flex-1 cursor-pointer" onClick={onOpen}>{t.titulo}</span>
       </div>
       <div className="flex items-center justify-between text-xs text-slate-500 pl-0.5">
-        <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{fmtFecha(t.fecha_cliente)}</span>
-        {t.dias_atraso > 0 && <span className="text-rose-500">{t.dias_atraso}d</span>}
+        <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />Entrega {fmtCorta(t.fecha_cliente)}</span>
+        {(() => { const d = diasInfo(t.fecha_cliente, t.estado_raw); return d ? <span className={d.cls}>{d.txt}</span> : null; })()}
       </div>
+      <div className="text-[10px] text-slate-400 pl-0.5">Creada {fmtCorta(t.creada)}</div>
       {t.links.length > 0 && <a href={t.links[0]} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-xs text-primary hover:underline"><ExternalLink className="h-3 w-3" />Entregable</a>}
       {draggable && <div className="text-[10px] text-purple-500 pl-0.5">↔ Arrastra para aprobar o pedir cambios</div>}
     </div>
@@ -197,17 +213,22 @@ export default function ClientBoardPublic() {
                   {!isCol && (
                     <table className="w-full text-sm border-t">
                       <thead className="bg-slate-50 text-slate-400 text-[11px] uppercase">
-                        <tr><th className="text-left font-medium px-4 py-2">Proyecto</th><th className="text-left font-medium px-4 py-2 w-32">Fecha</th><th className="text-left font-medium px-4 py-2 w-28">Entregable</th><th className="px-4 py-2 w-10"></th></tr>
+                        <tr><th className="text-left font-medium px-4 py-2">Proyecto</th><th className="text-left font-medium px-4 py-2 w-24">Creada</th><th className="text-left font-medium px-4 py-2 w-24">Entrega</th><th className="text-left font-medium px-4 py-2 w-32">Tiempo</th><th className="text-left font-medium px-4 py-2 w-24">Entregable</th><th className="px-4 py-2 w-10"></th></tr>
                       </thead>
                       <tbody className="divide-y">
-                        {byCol[c.key].map((t) => (
+                        {byCol[c.key].map((t) => {
+                          const d = diasInfo(t.fecha_cliente, t.estado_raw);
+                          return (
                           <tr key={t.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => openDetail(t)}>
                             <td className="px-4 py-2.5 font-medium text-slate-800">{t.titulo}</td>
-                            <td className="px-4 py-2.5 text-slate-600"><span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5 text-slate-400" />{fmtFecha(t.fecha_cliente)}</span>{t.dias_atraso > 0 && <span className="text-[11px] text-rose-500">{t.dias_atraso}d atraso</span>}</td>
+                            <td className="px-4 py-2.5 text-slate-500">{fmtCorta(t.creada)}</td>
+                            <td className="px-4 py-2.5 text-slate-600">{fmtCorta(t.fecha_cliente)}</td>
+                            <td className="px-4 py-2.5"><span className={cn('text-xs', d?.cls || 'text-slate-400')}>{d?.txt || '—'}</span></td>
                             <td className="px-4 py-2.5">{t.links.length > 0 ? <a href={t.links[0]} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-primary hover:underline text-xs"><ExternalLink className="h-3.5 w-3.5" />Ver</a> : <span className="text-slate-300 text-xs">—</span>}</td>
                             <td className="px-4 py-2.5 text-right"><MessageSquare className="h-3.5 w-3.5 text-slate-400 inline" /></td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}
@@ -223,7 +244,12 @@ export default function ClientBoardPublic() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{openTask?.titulo}</DialogTitle>
-            <DialogDescription className="flex items-center gap-2 flex-wrap">{openTask && <Badge variant="outline" className="text-[10px]">{openTask.estado}</Badge>}{openTask?.fecha_cliente && <span className="text-xs">· {fmtFecha(openTask.fecha_cliente)}</span>}</DialogDescription>
+            <DialogDescription className="flex items-center gap-2 flex-wrap text-xs">
+              {openTask && <Badge variant="outline" className="text-[10px]">{openTask.estado}</Badge>}
+              {openTask && <span>Creada: {fmtCorta(openTask.creada)}</span>}
+              {openTask?.fecha_cliente && <span>· Entrega: {fmtFecha(openTask.fecha_cliente)}</span>}
+              {openTask && (() => { const d = diasInfo(openTask.fecha_cliente, openTask.estado_raw); return d ? <span className={d.cls}>· {d.txt}</span> : null; })()}
+            </DialogDescription>
           </DialogHeader>
           {openTask?.estado_raw === 'revision_cliente' && (
             <div className="flex gap-2 p-3 rounded-lg bg-purple-50 border border-purple-200">

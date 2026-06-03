@@ -24,6 +24,17 @@ function fmt(s: string | null): string {
   try { return new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); } catch { return s; }
 }
 
+function diasInfo(fechaCliente: string | null, estado: string): { txt: string; cls: string } | null {
+  if (!fechaCliente) return null;
+  if (['aprobado', 'entregado'].includes(estado)) return { txt: 'Listo', cls: 'text-emerald-600' };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dl = new Date(fechaCliente.slice(0, 10) + 'T00:00:00');
+  const diff = Math.round((dl.getTime() - today.getTime()) / 86400000);
+  if (diff < 0) return { txt: `${Math.abs(diff)} d de atraso`, cls: 'text-rose-600 font-medium' };
+  if (diff === 0) return { txt: 'Vence hoy', cls: 'text-amber-600 font-medium' };
+  return { txt: `Faltan ${diff} d`, cls: 'text-emerald-600' };
+}
+
 export default function Clientes() {
   const [boards, setBoards] = useState<ClientBoard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -197,14 +208,16 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
           : <Card><CardContent className="p-0"><table className="w-full text-sm">
               <thead className="bg-muted/40 text-muted-foreground text-xs uppercase"><tr>
                 <th className="text-left font-medium px-4 py-2.5">Tarea</th><th className="text-left font-medium px-4 py-2.5">Estado</th>
-                <th className="text-left font-medium px-4 py-2.5">Fecha cliente</th><th className="text-left font-medium px-4 py-2.5">Fecha interna</th></tr></thead>
-              <tbody className="divide-y">{tasks.map((t) => (
+                <th className="text-left font-medium px-4 py-2.5">Creada</th><th className="text-left font-medium px-4 py-2.5">Fecha cliente</th><th className="text-left font-medium px-4 py-2.5">Fecha interna</th><th className="text-left font-medium px-4 py-2.5">Tiempo</th></tr></thead>
+              <tbody className="divide-y">{tasks.map((t) => { const d = diasInfo(t.fecha_cliente, t.estado); return (
                 <tr key={t.id} className="hover:bg-muted/40 cursor-pointer" onClick={() => openDetail(t)}><td className="px-4 py-2.5 font-medium">{t.titulo_tarea}</td>
                   <td className="px-4 py-2.5"><Badge variant="outline" className="text-[10px]">{t.estado}</Badge></td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.created_at)}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_cliente)}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_entrega)}<span className="text-[10px] text-slate-400 ml-1">(equipo)</span></td>
+                  <td className="px-4 py-2.5"><span className={cn('text-xs', d?.cls || 'text-muted-foreground')}>{d?.txt || '—'}</span></td>
                   <td className="px-4 py-2.5 text-right text-muted-foreground"><MessageSquare className="h-3.5 w-3.5 inline" /></td></tr>
-              ))}</tbody></table></CardContent></Card>
+              ); })}</tbody></table></CardContent></Card>
         ) : (
           requests.length === 0 ? <p className="text-sm text-muted-foreground text-center py-10">Sin solicitudes del cliente.</p>
           : <div className="space-y-2">{requests.map((r) => (
