@@ -2051,3 +2051,55 @@ export async function uploadPublicClientImage(token: string, file: File): Promis
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+// ========== Proyectos (Cliente → Proyecto → Tareas) ==========
+export interface Project {
+  id: string; brand_id: string; brand_nombre?: string;
+  nombre: string; descripcion: string | null;
+  estado: "en_curso" | "pausado" | "terminado" | "cancelado";
+  salud: "verde" | "amarillo" | "rojo"; salud_manual: boolean;
+  fecha_inicio: string | null; fecha_fin: string | null;
+  lider_user_id: string | null; lider_nombre?: string | null;
+  desk_id: string | null; color: string | null; activo: boolean;
+  total_tareas: number; tareas_listas: number; vencidas: number; avance: number;
+  created_at: string;
+}
+export interface ProjectTask {
+  id: string; titulo_tarea: string; estado: string; prioridad: string;
+  fecha_entrega: string | null; fecha_cliente: string | null; created_at: string;
+  responsable_nombre: string | null; responsable_avatar: string | null;
+}
+export async function getProjects(params: { brand_id?: string; estado?: string } = {}) {
+  const qs = new URLSearchParams();
+  if (params.brand_id) qs.set("brand_id", params.brand_id);
+  if (params.estado) qs.set("estado", params.estado);
+  const q = qs.toString();
+  const res = await request(`/api/data/projects${q ? "?" + q : ""}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<Project[]>;
+}
+export async function getProject(id: string) {
+  const res = await request(`/api/data/projects/${id}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ project: Project; tasks: ProjectTask[] }>;
+}
+export async function createProject(data: Record<string, unknown>) {
+  const res = await request("/api/data/projects", { method: "POST", body: JSON.stringify(data) });
+  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
+  return res.json() as Promise<Project>;
+}
+export async function patchProject(id: string, data: Record<string, unknown>) {
+  const res = await request(`/api/data/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<Project>;
+}
+export async function deleteProject(id: string) {
+  const res = await request(`/api/data/projects/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+export async function assignTasksToProject(id: string, task_ids: string[]) {
+  const res = await request(`/api/data/projects/${id}/assign-tasks`, { method: "POST", body: JSON.stringify({ task_ids }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}

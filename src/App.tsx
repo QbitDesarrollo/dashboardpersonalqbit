@@ -18,6 +18,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const TasksKanban = lazy(() => import("./pages/TasksKanban"));
 const PipelineBoard = lazy(() => import("./pages/PipelineBoard"));
+const Proyectos = lazy(() => import("./pages/Proyectos"));
 const TasksGantt = lazy(() => import("./pages/TasksGantt"));
 const TasksCalendar = lazy(() => import("./pages/TasksCalendar"));
 const TasksWorkload = lazy(() => import("./pages/TasksWorkload"));
@@ -127,6 +128,11 @@ const App = () => (
             <Route path="/tareas/pipeline" element={
               <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><PipelineBoard /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/proyectos" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
+                <AppLayout><Proyectos /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/tareas/gantt" element={

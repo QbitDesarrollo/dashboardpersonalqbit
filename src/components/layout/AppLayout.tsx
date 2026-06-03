@@ -54,6 +54,7 @@ import {
   Bug,
   Sparkles,
   Workflow,
+  FolderKanban,
   Plug,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -94,6 +95,7 @@ const navigation: NavItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
   { title: 'Tareas', href: '/tareas', icon: <CheckSquare className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Pipeline', href: '/tareas/pipeline', icon: <Workflow className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Proyectos', href: '/proyectos', icon: <FolderKanban className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Scrum', href: '/scrum', icon: <Target className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Daily Mesas', href: '/daily-mesas', icon: <Users className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   { title: 'Archivos', href: '/archivos', icon: <Files className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
