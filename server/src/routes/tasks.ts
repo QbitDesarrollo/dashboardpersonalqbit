@@ -20,6 +20,7 @@ const createTaskSchema = z.object({
   responsable_ids: z.array(z.string()).max(20).optional(),
   departamento: z.string().max(200).nullable().optional(),
   department_id: z.string().nullable().optional(),
+  project_id: z.string().nullable().optional(),
   prioridad: z.enum(['alta', 'media', 'baja']).optional().default('media'),
   estado: z.enum(['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado']).optional().default('backlog'),
   fecha_inicio: z.string().nullable().optional(),
@@ -121,7 +122,7 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
          LEFT JOIN deliverable_types dt ON dt.id = t.tipo_entregable_id
          LEFT JOIN departments dep ON dep.id = t.department_id
          LEFT JOIN profiles cb ON cb.id = t.created_by`;
-    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre as department_nombre, dep.color as department_color, t.fecha_cliente, t.cliente_visible, t.client_board_id, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol,
+    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre as department_nombre, dep.color as department_color, t.fecha_cliente, t.cliente_visible, t.client_board_id, t.project_id, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol,
        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count,
        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id AND (st.check_done = 1 OR st.estado IN ('entregado','aprobado'))) AS subtask_done_count
        ${baseFrom}`;
@@ -431,10 +432,10 @@ tasksRouter.post('/tasks', requireAuth, async (req: AuthRequest, res) => {
     const primaryResponsable = responsableIds[0] || null;
 
     await query(
-      `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, department_id, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, department_id, project_id, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, body.check_done ? 1 : 0, body.brand_id, body.desk_id || null, body.titulo_tarea, body.detalle || null,
-        body.cantidad_entregables ?? 1, primaryResponsable, body.departamento || null, body.department_id || null,
+        body.cantidad_entregables ?? 1, primaryResponsable, body.departamento || null, body.department_id || null, body.project_id || null,
         body.prioridad || 'media', body.estado || 'backlog', body.fecha_inicio || null, body.fecha_entrega,
         enlaces, body.sprint_id || null, body.story_points ?? null, body.feature_id || null, body.task_type_id || null, body.tipo_entregable_id || null, req.userId ?? null,
         body.estimated_hours ?? null, body.recurrence_type || 'none', body.recurrence_interval ?? null, body.recurrence_end_date || null
@@ -560,7 +561,7 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
     const map: Record<string, string> = {
       check_done: 'check_done', brand_id: 'brand_id', desk_id: 'desk_id', titulo_tarea: 'titulo_tarea',
       detalle: 'detalle', cantidad_entregables: 'cantidad_entregables', responsable_user_id: 'responsable_user_id',
-      departamento: 'departamento', department_id: 'department_id', prioridad: 'prioridad', estado: 'estado', fecha_inicio: 'fecha_inicio',
+      departamento: 'departamento', department_id: 'department_id', project_id: 'project_id', prioridad: 'prioridad', estado: 'estado', fecha_inicio: 'fecha_inicio',
       fecha_entrega: 'fecha_entrega', fecha_cliente: 'fecha_cliente', cliente_visible: 'cliente_visible', enlaces: 'enlaces', estado_envio: 'estado_envio',
       tiempo_trabajado: 'tiempo_trabajado', timer_activo: 'timer_activo', timer_inicio: 'timer_inicio',
       sprint_id: 'sprint_id', story_points: 'story_points', feature_id: 'feature_id',
