@@ -97,6 +97,7 @@ import { sendTaskNotification } from '@/lib/api';
 import { RichTextEditor, RichTextViewer } from '@/components/RichTextEditor';
 import { CustomFieldsForm } from '@/components/tasks/CustomFieldsForm';
 import { DepartmentSelect, DepartmentBadge } from '@/components/tasks/DepartmentSelect';
+import { ProjectSelect } from '@/components/tasks/ProjectSelect';
 import { HandoffDialog } from '@/components/tasks/HandoffDialog';
 
 interface Task {
@@ -112,6 +113,7 @@ interface Task {
   department_id: string | null;
   department_nombre?: string | null;
   department_color?: string | null;
+  project_id?: string | null;
   prioridad: 'alta' | 'media' | 'baja';
   estado: 'backlog' | 'en_proceso' | 'en_revision' | 'revision_interna' | 'revision_cliente' | 'aprobado' | 'entregado' | 'bloqueado';
   fecha_inicio: string | null;
@@ -289,6 +291,7 @@ export default function Tasks() {
     titulo_tarea: '',
     detalle: '',
     brand_id: '',
+    project_id: '',
     desk_id: '',
     responsable_user_id: '',
     responsable_ids: [] as string[],
@@ -641,6 +644,7 @@ export default function Tasks() {
       responsable_ids: formData.responsable_ids.length > 0 ? formData.responsable_ids : (formData.responsable_user_id ? [formData.responsable_user_id] : []),
       departamento: formData.departamento || null,
       department_id: formData.department_id || null,
+      project_id: formData.project_id || null,
       prioridad: formData.prioridad,
       estado: formData.estado,
       fecha_inicio: formData.fecha_inicio || null,
@@ -675,6 +679,7 @@ export default function Tasks() {
       titulo_tarea: '',
       detalle: '',
       brand_id: '',
+      project_id: '',
       desk_id: defaultDeskId,
       responsable_user_id: '',
       responsable_ids: [],
@@ -724,6 +729,7 @@ export default function Tasks() {
       responsable_ids: task.responsables?.map(r => r.user_id) || (task.responsable_user_id ? [task.responsable_user_id] : []),
       departamento: task.departamento || '',
       department_id: task.department_id || '',
+      project_id: task.project_id || '',
       prioridad: task.prioridad,
       estado: task.estado,
       fecha_inicio: task.fecha_inicio ? task.fecha_inicio.substring(0, 10) : '',
@@ -1227,6 +1233,15 @@ export default function Tasks() {
                     <DepartmentSelect
                       value={formData.department_id}
                       onChange={(depId) => setFormData({ ...formData, department_id: depId || '' })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="project">Proyecto</Label>
+                    <ProjectSelect
+                      brandId={formData.brand_id}
+                      value={formData.project_id}
+                      onChange={(pid) => setFormData({ ...formData, project_id: pid || '' })}
                     />
                   </div>
 
