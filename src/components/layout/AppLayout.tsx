@@ -101,6 +101,7 @@ const navigation: NavItem[] = [
   { title: 'Informes', href: '/informes', icon: <FileText className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Cumplimiento', href: '/informes/cumplimiento', icon: <TrendingUp className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'MCP', href: '/mcp', icon: <Plug className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Clientes', href: '/clientes', icon: <Users className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   { title: 'Incidencias', href: '/incidencias', icon: <Bug className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   { title: 'Novedades', href: '/novedades', icon: <Sparkles className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   // { title: 'Mi Dashboard', href: '/mi-dashboard', icon: <BarChart3 className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },

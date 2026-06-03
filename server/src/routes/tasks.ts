@@ -121,7 +121,7 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
          LEFT JOIN deliverable_types dt ON dt.id = t.tipo_entregable_id
          LEFT JOIN departments dep ON dep.id = t.department_id
          LEFT JOIN profiles cb ON cb.id = t.created_by`;
-    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre as department_nombre, dep.color as department_color, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol,
+    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre as department_nombre, dep.color as department_color, t.fecha_cliente, t.cliente_visible, t.client_board_id, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol,
        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count,
        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id AND (st.check_done = 1 OR st.estado IN ('entregado','aprobado'))) AS subtask_done_count
        ${baseFrom}`;
@@ -561,7 +561,7 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       check_done: 'check_done', brand_id: 'brand_id', desk_id: 'desk_id', titulo_tarea: 'titulo_tarea',
       detalle: 'detalle', cantidad_entregables: 'cantidad_entregables', responsable_user_id: 'responsable_user_id',
       departamento: 'departamento', department_id: 'department_id', prioridad: 'prioridad', estado: 'estado', fecha_inicio: 'fecha_inicio',
-      fecha_entrega: 'fecha_entrega', enlaces: 'enlaces', estado_envio: 'estado_envio',
+      fecha_entrega: 'fecha_entrega', fecha_cliente: 'fecha_cliente', cliente_visible: 'cliente_visible', enlaces: 'enlaces', estado_envio: 'estado_envio',
       tiempo_trabajado: 'tiempo_trabajado', timer_activo: 'timer_activo', timer_inicio: 'timer_inicio',
       sprint_id: 'sprint_id', story_points: 'story_points', feature_id: 'feature_id',
       task_type_id: 'task_type_id', tipo_entregable_id: 'tipo_entregable_id', is_favorite: 'is_favorite',
@@ -574,7 +574,7 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
         if (k === 'enlaces') {
           fields.push(`${col} = ?`);
           values.push(Array.isArray(body[k]) ? JSON.stringify(body[k]) : body[k]);
-        } else if (['check_done', 'timer_activo', 'is_favorite'].includes(k)) {
+        } else if (['check_done', 'timer_activo', 'is_favorite', 'cliente_visible'].includes(k)) {
           fields.push(`${col} = ?`);
           values.push(body[k] ? 1 : 0);
         } else if (k === 'timer_inicio' && body[k] != null) {

@@ -1,0 +1,160 @@
+import { Router } from 'express';
+import { requireAuth, AuthRequest } from '../middleware/auth.js';
+import { query, queryOne, uuid } from '../db/mysql.js';
+import { hasRole } from '../utils/roles.js';
+import crypto from 'crypto';
+
+/**
+ * Módulo de clientes — lado INTERNO (ejecutivos logueados).
+ * Gestiona los tableros de cliente: crear, listar, generar link público,
+ * crear tareas cara-al-cliente (que viven en la misma tabla `tasks` con
+ * `cliente_visible=1` y `fecha_cliente` congelada), y resolver requerimientos.
+ *
+ * El lado PÚBLICO (cliente sin login, por token) está en public-client.ts.
+ */
+export const clientBoardsRouter = Router();
+
+async function ensureExec(req: AuthRequest, res: any): Promise<boolean> {
+  const ok = await hasRole(req.userId!, ['admin', 'ejecutivo']);
+  if (!ok) { res.status(403).json({ error: 'Solo admin/ejecutivo' }); return false; }
+  return true;
+}
+
+function genToken(): string {
+  return 'cb_' + crypto.randomBytes(20).toString('hex'); // 43 chars
+}
+
+// ── Listar tableros ──
+clientBoardsRouter.get('/client-boards', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await ensureExec(req, res))) return;
+    const rows = await query<any[]>(
+      `SELECT cb.id, cb.brand_id, cb.token, cb.cliente_nombre, cb.titulo, cb.activo, cb.created_at,
+              b.nombre AS brand_nombre,
+              (SELECT COUNT(*) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1) AS tareas,
+              (SELECT COUNT(*) FROM client_requests r WHERE r.board_id = cb.id AND r.estado = 'pendiente') AS requests_pendientes
+       FROM client_boards cb
+       LEFT JOIN brands b ON b.id = cb.brand_id
+       ORDER BY cb.created_at DESC`
+    );
+    res.json(rows.map((r) => ({ ...r, activo: !!r.activo, tareas: Number(r.tareas), requests_pendientes: Number(r.requests_pendientes) })));
+  } catch (e) { console.error('[CLIENT-BOARDS] list:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Crear tablero (genera token) ──
+clientBoardsRouter.post('/client-boards', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await ensureExec(req, res))) return;
+    const brandId = typeof req.body?.brand_id === 'string' ? req.body.brand_id : '';
+    if (!brandId) return res.status(400).json({ error: 'brand_id requerido' });
+    const brand = await queryOne<any>('SELECT id, nombre FROM brands WHERE id = ?', [brandId]);
+    if (!brand) return res.status(400).json({ error: 'Marca no encontrada' });
+
+    // Un tablero por marca (idempotente)
+    const existing = await queryOne<any>('SELECT id FROM client_boards WHERE brand_id = ?', [brandId]);
+    if (existing) return res.status(409).json({ error: 'Ya existe un tablero para esta marca', id: existing.id });
+
+    const id = uuid();
+    const token = genToken();
+    const clienteNombre = typeof req.body?.cliente_nombre === 'string' ? req.body.cliente_nombre.trim().slice(0, 120) : null;
+    const titulo = typeof req.body?.titulo === 'string' ? req.body.titulo.trim().slice(0, 160) : `Proyectos — ${brand.nombre}`;
+    await query(
+      'INSERT INTO client_boards (id, brand_id, token, cliente_nombre, titulo, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, brandId, token, clienteNombre, titulo, req.userId]
+    );
+    const row = await queryOne<any>('SELECT * FROM client_boards WHERE id = ?', [id]);
+    res.status(201).json({ ...row, activo: !!row.activo, brand_nombre: brand.nombre });
+  } catch (e) { console.error('[CLIENT-BOARDS] create:', e); res.status(500).json({ error: 'Error al crear tablero' }); }
+});
+
+// ── Detalle del tablero + sus tareas (vista interna, con ambas fechas) ──
+clientBoardsRouter.get('/client-boards/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await ensureExec(req, res))) return;
+    const id = String(req.params.id);
+    const board = await queryOne<any>(
+      `SELECT cb.*, b.nombre AS brand_nombre FROM client_boards cb LEFT JOIN brands b ON b.id = cb.brand_id WHERE cb.id = ?`, [id]
+    );
+    if (!board) return res.status(404).json({ error: 'Tablero no encontrado' });
+    const tasks = await query<any[]>(
+      `SELECT t.id, t.titulo_tarea, t.estado, t.fecha_cliente, t.fecha_entrega, t.created_at, t.enlaces,
+              p.nombre AS responsable_nombre
+       FROM tasks t LEFT JOIN profiles p ON p.id = t.responsable_user_id
+       WHERE t.client_board_id = ? AND t.cliente_visible = 1
+       ORDER BY t.created_at DESC`, [id]
+    );
+    res.json({ board: { ...board, activo: !!board.activo }, tasks });
+  } catch (e) { console.error('[CLIENT-BOARDS] detail:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Crear tarea cara-al-cliente (clona en paralelo = misma fila, dos fechas) ──
+clientBoardsRouter.post('/client-boards/:id/tasks', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await ensureExec(req, res))) return;
+    const id = String(req.params.id);
+    const board = await queryOne<any>('SELECT id, brand_id FROM client_boards WHERE id = ?', [id]);
+    if (!board) return res.status(404).json({ error: 'Tablero no encontrado' });
+
+    const titulo = typeof req.body?.titulo_tarea === 'string' ? req.body.titulo_tarea.trim() : '';
+    if (!titulo) return res.status(400).json({ error: 'Título requerido' });
+    const fecha = typeof req.body?.fecha_cliente === 'string' && req.body.fecha_cliente ? req.body.fecha_cliente : null;
+    const detalle = typeof req.body?.detalle === 'string' ? req.body.detalle : null;
+
+    const taskId = uuid();
+    // Al crear: fecha_cliente = fecha_entrega (luego el ejecutivo cambia la interna sin tocar la del cliente)
+    await query(
+      `INSERT INTO tasks (id, check_done, brand_id, titulo_tarea, detalle, cantidad_entregables,
+        prioridad, estado, fecha_entrega, fecha_cliente, cliente_visible, client_board_id, created_by, recurrence_type)
+       VALUES (?, 0, ?, ?, ?, 1, 'media', 'backlog', ?, ?, 1, ?, ?, 'none')`,
+      [taskId, board.brand_id, titulo, detalle, fecha, fecha, id, req.userId ?? null]
+    );
+    const row = await queryOne<any>('SELECT id, titulo_tarea, estado, fecha_cliente, fecha_entrega, created_at FROM tasks WHERE id = ?', [taskId]);
+    res.status(201).json(row);
+  } catch (e) { console.error('[CLIENT-BOARDS] create task:', e); res.status(500).json({ error: 'Error al crear tarea' }); }
+});
+
+// ── Requerimientos del cliente (bandeja) ──
+clientBoardsRouter.get('/client-boards/:id/requests', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await ensureExec(req, res))) return;
+    const id = String(req.params.id);
+    const rows = await query<any[]>(
+      'SELECT id, titulo, detalle, autor_nombre, estado, task_id, created_at, resolved_at FROM client_requests WHERE board_id = ? ORDER BY created_at DESC',
+      [id]
+    );
+    res.json(rows);
+  } catch (e) { console.error('[CLIENT-BOARDS] requests:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Resolver requerimiento: aprobar (crea tarea cara-cliente) o rechazar ──
+clientBoardsRouter.patch('/client-boards/:id/requests/:rid', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await ensureExec(req, res))) return;
+    const id = String(req.params.id);
+    const rid = String(req.params.rid);
+    const accion = req.body?.accion; // 'aprobar' | 'rechazar'
+    const board = await queryOne<any>('SELECT id, brand_id FROM client_boards WHERE id = ?', [id]);
+    if (!board) return res.status(404).json({ error: 'Tablero no encontrado' });
+    const reqRow = await queryOne<any>('SELECT * FROM client_requests WHERE id = ? AND board_id = ?', [rid, id]);
+    if (!reqRow) return res.status(404).json({ error: 'Requerimiento no encontrado' });
+    if (reqRow.estado !== 'pendiente') return res.status(409).json({ error: 'El requerimiento ya fue resuelto' });
+
+    if (accion === 'aprobar') {
+      const fecha = typeof req.body?.fecha_cliente === 'string' && req.body.fecha_cliente ? req.body.fecha_cliente : null;
+      const taskId = uuid();
+      await query(
+        `INSERT INTO tasks (id, check_done, brand_id, titulo_tarea, detalle, cantidad_entregables,
+          prioridad, estado, fecha_entrega, fecha_cliente, cliente_visible, client_board_id, created_by, recurrence_type)
+         VALUES (?, 0, ?, ?, ?, 1, 'media', 'backlog', ?, ?, 1, ?, ?, 'none')`,
+        [taskId, board.brand_id, reqRow.titulo, reqRow.detalle, fecha, fecha, id, req.userId ?? null]
+      );
+      await query('UPDATE client_requests SET estado = "aprobado", task_id = ?, resuelto_por = ?, resolved_at = NOW(3) WHERE id = ?', [taskId, req.userId, rid]);
+      res.json({ ok: true, task_id: taskId });
+    } else if (accion === 'rechazar') {
+      await query('UPDATE client_requests SET estado = "rechazado", resuelto_por = ?, resolved_at = NOW(3) WHERE id = ?', [req.userId, rid]);
+      res.json({ ok: true });
+    } else {
+      res.status(400).json({ error: 'accion debe ser aprobar o rechazar' });
+    }
+  } catch (e) { console.error('[CLIENT-BOARDS] resolve request:', e); res.status(500).json({ error: 'Error' }); }
+});

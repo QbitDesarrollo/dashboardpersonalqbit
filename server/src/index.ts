@@ -50,6 +50,8 @@ import { teamMonitorRouter } from './routes/team-monitor.js';
 import { whatsappRouter } from './routes/whatsapp.js';
 import { errorLogsRouter } from './routes/error-logs.js';
 import { agentRouter } from './routes/agent.js';
+import { clientBoardsRouter } from './routes/client-boards.js';
+import { publicClientRouter } from './routes/public-client.js';
 import { initErrorCapture, errorLogMiddleware } from './utils/errorLog.js';
 import { setSocketIO } from './services/whatsapp.js';
 import { apiTokensRouter } from './routes/api-tokens.js';
@@ -139,6 +141,7 @@ app.use('/api/', apiLimiter);
 
 // --- Routes ---
 app.use('/api', publicFormsPublicRouter);
+app.use('/api', publicClientRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/data', profilesRouter);
@@ -177,6 +180,7 @@ app.use('/api/data', teamMonitorRouter);
 app.use('/api/data', whatsappRouter);
 app.use('/api/data', errorLogsRouter);
 app.use('/api/data', agentRouter);
+app.use('/api/data', clientBoardsRouter);
 app.use('/api/data', apiTokensRouter);
 app.use('/api', mcpRouter);
 app.use('/api/config', configRouter);

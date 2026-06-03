@@ -49,6 +49,8 @@ const AdminErrorLogs = lazy(() => import("./pages/admin/ErrorLogs"));
 const Templates = lazy(() => import("./pages/Templates"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PublicFormView = lazy(() => import("./pages/PublicFormView"));
+const ClientBoardPublic = lazy(() => import("./pages/ClientBoardPublic"));
+const Clientes = lazy(() => import("./pages/Clientes"));
 const PublicForms = lazy(() => import("./pages/admin/PublicForms"));
 const Automations = lazy(() => import("./pages/admin/Automations"));
 const Integrations = lazy(() => import("./pages/admin/Integrations"));
@@ -90,6 +92,7 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/form/:slug" element={<PublicFormView />} />
+            <Route path="/c/:token" element={<ClientBoardPublic />} />
             <Route path="/auth/google/success" element={<GoogleAuthSuccess />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
@@ -243,6 +246,12 @@ const App = () => (
             <Route path="/cliente" element={
               <ProtectedRoute allowedRoles={['cliente']}>
                 <AppLayout><ClientPortal /></AppLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/clientes" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
+                <AppLayout><Clientes /></AppLayout>
               </ProtectedRoute>
             } />
 

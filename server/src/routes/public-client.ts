@@ -1,0 +1,133 @@
+import { Router } from 'express';
+import { query, queryOne, uuid } from '../db/mysql.js';
+import rateLimit from 'express-rate-limit';
+
+/**
+ * Módulo de clientes — lado PÚBLICO (cliente sin login).
+ * Acceso por token de enlace persistente. Devuelve SOLO datos pensados para el
+ * cliente: NUNCA fecha_entrega interna, responsables, ni datos operativos.
+ *
+ * Montado en /api (sin requireAuth). Rutas: /public/client/:token...
+ */
+export const publicClientRouter = Router();
+
+// Rate limit defensivo para los endpoints públicos
+const publicLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
+
+async function boardByToken(token: string) {
+  if (!token || token.length > 80) return null;
+  return queryOne<any>(
+    `SELECT cb.id, cb.brand_id, cb.cliente_nombre, cb.titulo, cb.activo, b.nombre AS brand_nombre
+     FROM client_boards cb LEFT JOIN brands b ON b.id = cb.brand_id
+     WHERE cb.token = ? LIMIT 1`, [token]
+  );
+}
+
+// Etiquetas de estado pensadas para el cliente (oculta jerga interna)
+const ESTADO_CLIENTE: Record<string, string> = {
+  backlog: 'Pendiente',
+  en_proceso: 'En proceso',
+  en_revision: 'En revisión',
+  revision_interna: 'En revisión',
+  revision_cliente: 'Para tu revisión',
+  aprobado: 'Aprobado',
+  entregado: 'Entregado',
+  bloqueado: 'En pausa',
+};
+
+// ── Ver el tablero (tareas visibles, campos mínimos) ──
+publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) => {
+  try {
+    const board = await boardByToken(String(req.params.token));
+    if (!board || !board.activo) return res.status(404).json({ error: 'Tablero no disponible' });
+
+    const tasks = await query<any[]>(
+      `SELECT id, titulo_tarea, estado, fecha_cliente, created_at, enlaces
+       FROM tasks
+       WHERE client_board_id = ? AND cliente_visible = 1
+       ORDER BY (fecha_cliente IS NULL), fecha_cliente ASC, created_at DESC`,
+      [board.id]
+    );
+
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const out = tasks.map((t) => {
+      let links: string[] = [];
+      if (Array.isArray(t.enlaces)) links = t.enlaces;
+      else if (typeof t.enlaces === 'string' && t.enlaces) { try { links = JSON.parse(t.enlaces); } catch { links = []; } }
+      let diasAtraso = 0;
+      if (t.fecha_cliente && !['entregado', 'aprobado'].includes(t.estado)) {
+        const fc = new Date(t.fecha_cliente + 'T00:00:00');
+        const diff = Math.floor((hoy.getTime() - fc.getTime()) / 86400000);
+        if (diff > 0) diasAtraso = diff;
+      }
+      return {
+        id: t.id,
+        titulo: t.titulo_tarea,
+        estado: ESTADO_CLIENTE[t.estado] || t.estado,
+        estado_raw: t.estado,
+        fecha_cliente: t.fecha_cliente,
+        creada: t.created_at,
+        dias_atraso: diasAtraso,
+        links,
+      };
+    });
+
+    res.json({
+      titulo: board.titulo,
+      marca: board.brand_nombre,
+      cliente_nombre: board.cliente_nombre,
+      tasks: out,
+    });
+  } catch (e) { console.error('[PUBLIC-CLIENT] board:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Comentarios de una tarea (ver) ──
+publicClientRouter.get('/public/client/:token/tasks/:taskId/comments', publicLimiter, async (req, res) => {
+  try {
+    const board = await boardByToken(String(req.params.token));
+    if (!board || !board.activo) return res.status(404).json({ error: 'No disponible' });
+    const taskId = String(req.params.taskId);
+    // Verificar que la tarea pertenece a este board y es visible
+    const t = await queryOne<any>('SELECT id FROM tasks WHERE id = ? AND client_board_id = ? AND cliente_visible = 1', [taskId, board.id]);
+    if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
+    const rows = await query<any[]>(
+      'SELECT id, autor_nombre, es_interno, comentario, created_at FROM client_board_comments WHERE board_id = ? AND task_id = ? ORDER BY created_at',
+      [board.id, taskId]
+    );
+    res.json(rows.map((r) => ({ ...r, es_interno: !!r.es_interno })));
+  } catch (e) { console.error('[PUBLIC-CLIENT] comments:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Comentar en una tarea (cliente, firma con su nombre) ──
+publicClientRouter.post('/public/client/:token/tasks/:taskId/comments', publicLimiter, async (req, res) => {
+  try {
+    const board = await boardByToken(String(req.params.token));
+    if (!board || !board.activo) return res.status(404).json({ error: 'No disponible' });
+    const taskId = String(req.params.taskId);
+    const t = await queryOne<any>('SELECT id FROM tasks WHERE id = ? AND client_board_id = ? AND cliente_visible = 1', [taskId, board.id]);
+    if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
+    const nombre = typeof req.body?.autor_nombre === 'string' ? req.body.autor_nombre.trim().slice(0, 120) : 'Cliente';
+    const comentario = typeof req.body?.comentario === 'string' ? req.body.comentario.trim().slice(0, 2000) : '';
+    if (!comentario) return res.status(400).json({ error: 'Comentario vacío' });
+    const id = uuid();
+    await query('INSERT INTO client_board_comments (id, board_id, task_id, autor_nombre, es_interno, comentario) VALUES (?, ?, ?, ?, 0, ?)',
+      [id, board.id, taskId, nombre || 'Cliente', comentario]);
+    res.status(201).json({ id, autor_nombre: nombre || 'Cliente', comentario, es_interno: false, created_at: new Date().toISOString() });
+  } catch (e) { console.error('[PUBLIC-CLIENT] add comment:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Pedir un requerimiento (entra a la bandeja del ejecutivo) ──
+publicClientRouter.post('/public/client/:token/requests', publicLimiter, async (req, res) => {
+  try {
+    const board = await boardByToken(String(req.params.token));
+    if (!board || !board.activo) return res.status(404).json({ error: 'No disponible' });
+    const titulo = typeof req.body?.titulo === 'string' ? req.body.titulo.trim().slice(0, 200) : '';
+    if (!titulo) return res.status(400).json({ error: 'Título requerido' });
+    const detalle = typeof req.body?.detalle === 'string' ? req.body.detalle.trim().slice(0, 2000) : null;
+    const nombre = typeof req.body?.autor_nombre === 'string' ? req.body.autor_nombre.trim().slice(0, 120) : 'Cliente';
+    const id = uuid();
+    await query('INSERT INTO client_requests (id, board_id, titulo, detalle, autor_nombre) VALUES (?, ?, ?, ?, ?)',
+      [id, board.id, titulo, detalle, nombre || 'Cliente']);
+    res.status(201).json({ id, ok: true });
+  } catch (e) { console.error('[PUBLIC-CLIENT] request:', e); res.status(500).json({ error: 'Error' }); }
+});

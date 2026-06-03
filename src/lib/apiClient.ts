@@ -1925,3 +1925,101 @@ export async function agentPromote() {
   if (!res.ok) throw new Error(await res.text());
   return res.json() as Promise<{ action_id: string; status: string }>;
 }
+
+// ========== Módulo de clientes (interno + público) ==========
+export interface ClientBoard {
+  id: string;
+  brand_id: string;
+  brand_nombre?: string;
+  token: string;
+  cliente_nombre: string | null;
+  titulo: string | null;
+  activo: boolean;
+  created_at: string;
+  tareas?: number;
+  requests_pendientes?: number;
+}
+export interface ClientBoardTask {
+  id: string;
+  titulo_tarea: string;
+  estado: string;
+  fecha_cliente: string | null;
+  fecha_entrega: string | null;
+  created_at: string;
+  enlaces?: string | null;
+  responsable_nombre?: string | null;
+}
+export interface ClientRequest {
+  id: string;
+  titulo: string;
+  detalle: string | null;
+  autor_nombre: string | null;
+  estado: 'pendiente' | 'aprobado' | 'rechazado';
+  task_id: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+// --- interno (ejecutivos) ---
+export async function getClientBoards() {
+  const res = await request('/api/data/client-boards');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<ClientBoard[]>;
+}
+export async function createClientBoard(data: { brand_id: string; cliente_nombre?: string; titulo?: string }) {
+  const res = await request('/api/data/client-boards', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
+  return res.json() as Promise<ClientBoard>;
+}
+export async function getClientBoard(id: string) {
+  const res = await request(`/api/data/client-boards/${id}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ board: ClientBoard; tasks: ClientBoardTask[] }>;
+}
+export async function createClientTask(boardId: string, data: { titulo_tarea: string; fecha_cliente?: string; detalle?: string }) {
+  const res = await request(`/api/data/client-boards/${boardId}/tasks`, { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
+  return res.json() as Promise<ClientBoardTask>;
+}
+export async function getClientRequests(boardId: string) {
+  const res = await request(`/api/data/client-boards/${boardId}/requests`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<ClientRequest[]>;
+}
+export async function resolveClientRequest(boardId: string, requestId: string, accion: 'aprobar' | 'rechazar', fecha_cliente?: string) {
+  const res = await request(`/api/data/client-boards/${boardId}/requests/${requestId}`, {
+    method: 'PATCH', body: JSON.stringify({ accion, fecha_cliente }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// --- público (cliente sin login, no usa request()/token de sesión) ---
+export interface PublicClientTask {
+  id: string; titulo: string; estado: string; estado_raw: string;
+  fecha_cliente: string | null; creada: string; dias_atraso: number; links: string[];
+}
+export async function getPublicClientBoard(token: string) {
+  const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}`);
+  if (!res.ok) throw new Error('Tablero no disponible');
+  return res.json() as Promise<{ titulo: string; marca: string; cliente_nombre: string | null; tasks: PublicClientTask[] }>;
+}
+export async function getPublicTaskComments(token: string, taskId: string) {
+  const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}/tasks/${taskId}/comments`);
+  if (!res.ok) throw new Error('No disponible');
+  return res.json() as Promise<{ id: string; autor_nombre: string; es_interno: boolean; comentario: string; created_at: string }[]>;
+}
+export async function postPublicComment(token: string, taskId: string, autor_nombre: string, comentario: string) {
+  const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}/tasks/${taskId}/comments`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autor_nombre, comentario }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+export async function postPublicRequest(token: string, data: { titulo: string; detalle?: string; autor_nombre: string }) {
+  const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}/requests`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
