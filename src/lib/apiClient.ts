@@ -1997,12 +1997,16 @@ export async function resolveClientRequest(boardId: string, requestId: string, a
 // --- público (cliente sin login, no usa request()/token de sesión) ---
 export interface PublicClientTask {
   id: string; titulo: string; estado: string; estado_raw: string;
-  fecha_cliente: string | null; creada: string; dias_atraso: number; links: string[];
+  fecha_cliente: string | null; creada: string; dias_atraso: number; links: string[]; project_id?: string | null;
+}
+export interface PublicProject {
+  id: string; nombre: string; estado: string; salud: string; avance: number;
+  fecha_fin: string | null; total_tareas: number; tareas_listas: number; color: string | null;
 }
 export async function getPublicClientBoard(token: string) {
   const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}`);
   if (!res.ok) throw new Error('Tablero no disponible');
-  return res.json() as Promise<{ titulo: string; marca: string; cliente_nombre: string | null; tasks: PublicClientTask[] }>;
+  return res.json() as Promise<{ titulo: string; marca: string; cliente_nombre: string | null; projects: PublicProject[]; tasks: PublicClientTask[] }>;
 }
 export async function getPublicTaskComments(token: string, taskId: string) {
   const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}/tasks/${taskId}/comments`);

@@ -45,7 +45,7 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
     if (!board || !board.activo) return res.status(404).json({ error: 'Tablero no disponible' });
 
     const tasks = await query<any[]>(
-      `SELECT id, titulo_tarea, estado, fecha_cliente, created_at, enlaces
+      `SELECT id, titulo_tarea, estado, fecha_cliente, created_at, enlaces, project_id
        FROM tasks
        WHERE client_board_id = ? AND cliente_visible = 1
        ORDER BY (fecha_cliente IS NULL), fecha_cliente ASC, created_at DESC`,
@@ -72,13 +72,42 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
         creada: t.created_at,
         dias_atraso: diasAtraso,
         links,
+        project_id: t.project_id || null,
       };
+    });
+
+    // Proyectos del cliente (solo los que tienen tareas visibles en este tablero)
+    const projRows = await query<any[]>(
+      `SELECT pr.id, pr.nombre, pr.estado, pr.salud, pr.fecha_fin, pr.color,
+              COUNT(t.id) AS total,
+              SUM(t.estado IN ('entregado','aprobado')) AS listas,
+              SUM(t.estado NOT IN ('entregado','aprobado') AND t.fecha_cliente IS NOT NULL AND t.fecha_cliente < CURDATE()) AS vencidas
+       FROM projects pr
+       INNER JOIN tasks t ON t.project_id = pr.id AND t.client_board_id = ? AND t.cliente_visible = 1
+       WHERE pr.brand_id = ? AND pr.activo = 1
+       GROUP BY pr.id, pr.nombre, pr.estado, pr.salud, pr.fecha_fin, pr.color
+       ORDER BY FIELD(pr.estado,'en_curso','pausado','terminado','cancelado'), pr.fecha_fin`,
+      [board.id, board.brand_id]
+    );
+    const hoy2 = new Date(); hoy2.setHours(0, 0, 0, 0);
+    const projects = projRows.map((r) => {
+      const total = Number(r.total) || 0;
+      const listas = Number(r.listas) || 0;
+      const avance = total > 0 ? Math.round((listas / total) * 100) : 0;
+      let salud = r.salud as string | null;
+      if (!salud) {
+        if (Number(r.vencidas) > 0) salud = 'rojo';
+        else if (r.fecha_fin && new Date(String(r.fecha_fin).slice(0, 10) + 'T00:00:00') < hoy2 && r.estado === 'en_curso') salud = 'rojo';
+        else salud = 'verde';
+      }
+      return { id: r.id, nombre: r.nombre, estado: r.estado, salud, avance, fecha_fin: r.fecha_fin, total_tareas: total, tareas_listas: listas, color: r.color };
     });
 
     res.json({
       titulo: board.titulo,
       marca: board.brand_nombre,
       cliente_nombre: board.cliente_nombre,
+      projects,
       tasks: out,
     });
   } catch (e) { console.error('[PUBLIC-CLIENT] board:', e); res.status(500).json({ error: 'Error' }); }

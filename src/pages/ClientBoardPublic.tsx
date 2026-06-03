@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import * as api from '@/lib/apiClient';
-import type { PublicClientTask } from '@/lib/apiClient';
+import type { PublicClientTask, PublicProject } from '@/lib/apiClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +18,7 @@ import { RichEditorField } from '@/components/clientes/RichEditorField';
 import {
   Loader2, ExternalLink, Plus, CalendarDays, AlertCircle, CheckCircle2, ThumbsUp, RotateCcw,
   GripVertical, LayoutGrid, List as ListIcon, ChevronDown, ChevronRight, MessageSquare, Send,
+  FolderKanban, ArrowLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -86,21 +87,29 @@ function Column({ col, tasks, onOpen }: { col: typeof COLS[number]; tasks: Publi
   );
 }
 
+const SALUD_DOT: Record<string, string> = { verde: 'bg-emerald-500', amarillo: 'bg-amber-500', rojo: 'bg-rose-500' };
+const ESTADO_PROY: Record<string, string> = { en_curso: 'En curso', pausado: 'Pausado', terminado: 'Terminado', cancelado: 'Cancelado' };
+
 export default function ClientBoardPublic() {
   const { token = '' } = useParams();
-  const [data, setData] = useState<{ titulo: string; marca: string; cliente_nombre: string | null; tasks: PublicClientTask[] } | null>(null);
+  const [data, setData] = useState<{ titulo: string; marca: string; cliente_nombre: string | null; projects: PublicProject[]; tasks: PublicClientTask[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [nombre, setNombre] = useState<string>('');
   const [askName, setAskName] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [view, setView] = useState<'kanban' | 'lista'>('kanban');
+  const [view, setView] = useState<'proyectos' | 'kanban' | 'lista'>('proyectos');
+  const [selProject, setSelProject] = useState<PublicProject | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const NAME_KEY = `client_name_${token}`;
 
   const load = useCallback(async () => {
-    try { setData(await api.getPublicClientBoard(token)); } catch { setError(true); } finally { setLoading(false); }
+    try {
+      const d = await api.getPublicClientBoard(token);
+      setData(d);
+      if (!d.projects || d.projects.length === 0) setView('kanban');
+    } catch { setError(true); } finally { setLoading(false); }
   }, [token]);
 
   useEffect(() => {
@@ -165,10 +174,12 @@ export default function ClientBoardPublic() {
     </div>
   );
 
+  const visibleTasks = selProject ? data.tasks.filter((t) => t.project_id === selProject.id) : data.tasks;
   const byCol: Record<string, PublicClientTask[]> = {};
   for (const c of COLS) byCol[c.key] = [];
-  for (const t of data.tasks) (byCol[colOf(t.estado_raw)] ||= []).push(t);
+  for (const t of visibleTasks) (byCol[colOf(t.estado_raw)] ||= []).push(t);
   const activeTask = data.tasks.find((t) => t.id === activeId);
+  const openProject = (p: PublicProject) => { setSelProject(p); setView('kanban'); };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -181,6 +192,7 @@ export default function ClientBoardPublic() {
           <div className="flex items-center gap-2">
             {/* Toggle de vista */}
             <div className="flex rounded-lg border overflow-hidden">
+              {data.projects.length > 0 && <button onClick={() => { setView('proyectos'); setSelProject(null); }} className={cn('px-3 py-1.5 text-xs font-medium flex items-center gap-1.5', view === 'proyectos' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')}><FolderKanban className="h-3.5 w-3.5" />Proyectos</button>}
               <button onClick={() => setView('kanban')} className={cn('px-3 py-1.5 text-xs font-medium flex items-center gap-1.5', view === 'kanban' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')}><LayoutGrid className="h-3.5 w-3.5" />Tablero</button>
               <button onClick={() => setView('lista')} className={cn('px-3 py-1.5 text-xs font-medium flex items-center gap-1.5', view === 'lista' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')}><ListIcon className="h-3.5 w-3.5" />Lista</button>
             </div>
@@ -190,8 +202,36 @@ export default function ClientBoardPublic() {
       </header>
 
       <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6 overflow-x-auto">
+        {selProject && view !== 'proyectos' && (
+          <div className="mb-4 flex items-center gap-3 bg-white rounded-lg border p-3">
+            <button onClick={() => { setSelProject(null); setView('proyectos'); }} className="text-slate-500 hover:text-slate-700"><ArrowLeft className="h-4 w-4" /></button>
+            <span className={cn('inline-block h-2.5 w-2.5 rounded-full', SALUD_DOT[selProject.salud])} />
+            <span className="font-semibold text-slate-800">{selProject.nombre}</span>
+            <span className="text-xs text-slate-500 ml-auto">{selProject.avance}% · {selProject.tareas_listas}/{selProject.total_tareas} entregables</span>
+          </div>
+        )}
         {data.tasks.length === 0 ? (
           <div className="text-center py-20 text-slate-400"><CheckCircle2 className="h-12 w-12 mx-auto mb-3 opacity-40" />Todavía no hay proyectos cargados.</div>
+        ) : view === 'proyectos' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.projects.map((p) => (
+              <button key={p.id} onClick={() => openProject(p)} className="text-left bg-white rounded-xl border p-4 space-y-3 hover:border-purple-300 hover:shadow-md transition-all">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-semibold text-slate-800 flex items-center gap-2"><span className={cn('inline-block h-2.5 w-2.5 rounded-full', SALUD_DOT[p.salud])} />{p.nombre}</div>
+                  <Badge variant="outline" className="text-[10px] shrink-0">{ESTADO_PROY[p.estado] || p.estado}</Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p.avance}%`, backgroundColor: p.salud === 'rojo' ? '#ef4444' : p.salud === 'amarillo' ? '#f59e0b' : '#10b981' }} /></div>
+                  <span className="text-xs font-medium text-slate-500 w-9 text-right">{p.avance}%</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span>{p.tareas_listas}/{p.total_tareas} entregables</span>
+                  {p.fecha_fin && <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{fmtCorta(p.fecha_fin)}</span>}
+                </div>
+                <div className="text-[11px] text-purple-500 font-medium">Ver detalle →</div>
+              </button>
+            ))}
+          </div>
         ) : view === 'kanban' ? (
           <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setActiveId(e.active.id as string)} onDragEnd={handleDragEnd}>
             <div className="flex gap-3 pb-4" style={{ touchAction: 'pan-x' }}>{COLS.map((c) => <Column key={c.key} col={c} tasks={byCol[c.key]} onOpen={openDetail} />)}</div>
