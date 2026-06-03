@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { RichTextViewer } from '@/components/RichTextEditor';
 import { ClientCommentBox } from '@/components/clientes/ClientCommentBox';
+import { ProjectSelect } from '@/components/tasks/ProjectSelect';
 import { RichEditorField } from '@/components/clientes/RichEditorField';
 import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare, FolderKanban } from 'lucide-react';
 import { toast } from 'sonner';
@@ -191,6 +192,17 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
     setComments((prev) => [...prev, c]);
   };
 
+  const changeTaskEstado = async (estado: string) => {
+    if (!openTask) return;
+    try { await api.patchTask(openTask.id, { estado }); setOpenTask({ ...openTask, estado }); load(); toast.success('Estado actualizado'); }
+    catch { toast.error('No se pudo cambiar el estado'); }
+  };
+  const changeTaskProject = async (pid: string | null) => {
+    if (!openTask) return;
+    try { await api.patchTask(openTask.id, { project_id: pid }); setOpenTask({ ...openTask, project_id: pid }); load(); toast.success('Proyecto actualizado'); }
+    catch { toast.error('No se pudo asignar el proyecto'); }
+  };
+
   const pendientes = requests.filter((r) => r.estado === 'pendiente');
 
   return (
@@ -243,7 +255,7 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
             })()
         ) : (
           requests.length === 0 ? <p className="text-sm text-muted-foreground text-center py-10">Sin solicitudes del cliente.</p>
-          : <div className="space-y-2">{requests.map((r) => (
+          : <div className="space-y-2">{[...requests].sort((a, b) => (a.estado === 'pendiente' ? 0 : 1) - (b.estado === 'pendiente' ? 0 : 1)).map((r) => (
               <Card key={r.id}><CardContent className="p-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-medium text-sm">{r.titulo} {r.estado !== 'pendiente' && <Badge variant="outline" className={cn('ml-1 text-[10px]', r.estado === 'aprobado' ? 'text-green-700 border-green-200' : 'text-rose-600 border-rose-200')}>{r.estado}</Badge>}</div>
@@ -260,14 +272,26 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
 
       {/* Detalle de tarea + comentarios (zona compartida con el cliente) */}
       <Dialog open={!!openTask} onOpenChange={(o) => { if (!o) setOpenTask(null); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>{openTask?.titulo_tarea}</DialogTitle>
-            <DialogDescription className="flex items-center gap-2">
-              {openTask && <Badge variant="outline" className="text-[10px]">{openTask.estado}</Badge>}
+            <DialogDescription>
               <span className="text-xs">Cliente: {fmt(openTask?.fecha_cliente ?? null)} · Interna: {fmt(openTask?.fecha_entrega ?? null)}</span>
             </DialogDescription>
           </DialogHeader>
+          {openTask && (
+            <div className="grid grid-cols-2 gap-3 pb-1 border-b">
+              <div className="space-y-1.5 pb-3"><Label className="text-xs">Estado</Label>
+                <Select value={openTask.estado} onValueChange={changeTaskEstado}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>{Object.entries(STATUS_LABEL).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 pb-3"><Label className="text-xs">Proyecto</Label>
+                <ProjectSelect brandId={board.brand_id} value={openTask.project_id} onChange={changeTaskProject} />
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" />Conversación con el cliente</p>
             <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
