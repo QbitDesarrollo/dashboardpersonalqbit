@@ -14,6 +14,7 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
   const [isRunning, setIsRunning] = useState(isActive);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<Date | null>(startTime ? new Date(startTime) : null);
+  const warnThresholdRef = useRef(0); // Pieza 2: umbral de aviso de timer largo
 
   // Calculate elapsed time when timer was already running
   useEffect(() => {
@@ -157,6 +158,18 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
       toast.error('Error al pausar timer', { description: error.message });
     }
   }, [taskId, initialTime]);
+
+  // Pieza 2 (Timer control): avisar cada 2h "¿Sigues trabajando?" y pausar si dice que no.
+  useEffect(() => {
+    if (!isRunning) { warnThresholdRef.current = 0; return; }
+    if (warnThresholdRef.current === 0) { warnThresholdRef.current = (Math.floor(elapsedTime / 7200) + 1) * 7200; return; }
+    if (elapsedTime >= warnThresholdRef.current) {
+      warnThresholdRef.current = elapsedTime + 7200;
+      const horas = Math.floor(elapsedTime / 3600);
+      const sigue = window.confirm(`⏱️ Llevas ${horas}h con esta tarea activa.\n\n¿Sigues trabajando en ella?\n\n[Aceptar] = sí, sigo trabajando\n[Cancelar] = pausar el timer ahora`);
+      if (!sigue) { stopTimer(); }
+    }
+  }, [elapsedTime, isRunning, stopTimer]);
 
   const resetTimer = useCallback(async () => {
     try {
