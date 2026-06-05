@@ -206,6 +206,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 import { runDeadlineWarning } from './jobs/deadlineWarning.js';
 import { runInactivityMonitor } from './jobs/inactivityMonitor.js';
 import { runTimeEntryAutoClose } from './jobs/timeEntryAutoClose.js';
+import { runEodTimerAlert } from './jobs/eodTimerAlert.js';
 
 const httpServer = http.createServer(app);
 setupSocket(httpServer);
@@ -222,6 +223,8 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   // Job: monitor de inactividad (cada 60 segundos)
   setInterval(runInactivityMonitor, 60 * 1000);
   setInterval(runTimeEntryAutoClose, 30 * 60 * 1000); // cada 30 min
+  setInterval(runEodTimerAlert, 30 * 60 * 1000); // Pieza 3 Timer: alerta cierre fin del día
+  runEodTimerAlert();
   runTimeEntryAutoClose().catch(() => {}); // run once on boot
   console.log('[TIUSDEI API] WebSocket (comentarios en tiempo real) activo');
 });
