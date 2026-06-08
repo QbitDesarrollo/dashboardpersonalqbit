@@ -237,7 +237,7 @@ export default function Cumplimiento() {
                     <SortableHead label="A tiempo" k="entregadas_a_tiempo" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
                     <SortableHead label="Tarde" k="entregadas_tarde" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
                     <SortableHead label="Vencidas" k="vencidas_no_entregadas" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
-                    <SortableHead label="Reagendado" k="promedio_reschedules" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
+                    <SortableHead label="Reagendamientos" k="promedio_reschedules" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
                     <SortableHead label="% Cumplimiento" k="porcentaje_cumplimiento" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
                   </TableRow>
                 </TableHeader>
@@ -261,21 +261,26 @@ export default function Cumplimiento() {
                       <TableCell className="text-right text-sm text-amber-700">{r.entregadas_tarde}</TableCell>
                       <TableCell className="text-right text-sm text-red-700">{r.vencidas_no_entregadas}</TableCell>
                       <TableCell className="text-right text-sm">
-                        {r.promedio_reschedules > 0 ? (
-                          <span className={cn(
-                            "px-1.5 py-0.5 rounded text-xs font-medium",
-                            r.promedio_reschedules >= 2 ? "bg-red-100 text-red-700" :
-                            r.promedio_reschedules >= 1 ? "bg-amber-100 text-amber-700" :
-                            "bg-blue-100 text-blue-700"
-                          )}>
-                            {r.promedio_reschedules.toFixed(1)}×
-                          </span>
-                        ) : <span className="text-muted-foreground">0</span>}
-                        {(r.reschedules_total ?? 0) > 0 && (
-                          <div className="text-[11px] text-muted-foreground mt-0.5">
-                            {r.reschedules_total} reagend.{(r.reschedules_internos ?? 0) > 0 ? ` · ${r.reschedules_internos} interno(s)` : ''}
+                        {(r.reschedules_total ?? 0) > 0 ? (
+                          <div className="inline-flex flex-col items-end gap-0.5">
+                            <span className="text-base font-semibold leading-none" title="Veces que se movio la fecha de entrega en total">
+                              {r.reschedules_total} {(r.reschedules_total === 1) ? 'vez' : 'veces'}
+                            </span>
+                            <span className={cn(
+                              "px-1.5 py-0.5 rounded text-[11px] font-medium",
+                              r.promedio_reschedules >= 2 ? "bg-red-100 text-red-700" :
+                              r.promedio_reschedules >= 1 ? "bg-amber-100 text-amber-700" :
+                              "bg-green-100 text-green-700"
+                            )} title="Promedio de reagendamientos por tarea">
+                              {r.promedio_reschedules.toFixed(1)} por tarea
+                            </span>
+                            {(r.reschedules_internos ?? 0) > 0 && (
+                              <span className="text-[10px] text-muted-foreground" title="Reagendamientos internos: los unicos que bajan el % de cumplimiento">
+                                {r.reschedules_internos} interno{(r.reschedules_internos === 1) ? '' : 's'}
+                              </span>
+                            )}
                           </div>
-                        )}
+                        ) : <span className="text-green-700" title="Nunca se movio la fecha. Ideal.">0</span>}
                       </TableCell>
                       <TableCell className="text-right">
                         {r.porcentaje_cumplimiento !== null ? (
@@ -315,6 +320,9 @@ export default function Cumplimiento() {
       <p className="text-[11px] text-muted-foreground italic px-1">
         ℹ️ "A tiempo" significa que la tarea fue entregada antes o el día de la <strong>primera fecha</strong> que se prometió, no la última (no premia reagendar).
         Tareas sin fecha de entrega o sin estado entregado todavía cuentan en "En proceso" hasta que se entreguen o venzan.
+      </p>
+      <p className="text-[11px] text-muted-foreground italic px-1">
+        🔁 <strong>Reagendamientos</strong>: cuántas <strong>veces se movió la fecha de entrega</strong>. El número grande es el total; abajo, el promedio por tarea (<span className="text-green-700">verde</span> bien, <span className="text-amber-700">ámbar</span> regular, <span className="text-red-700">rojo</span> alto). Solo los <strong>internos</strong> &mdash; cuando el equipo movió la fecha sin causa de cliente, alcance o fuerza mayor &mdash; <strong>bajan el % de cumplimiento</strong>.
       </p>
     </div>
   );
