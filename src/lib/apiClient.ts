@@ -1478,6 +1478,8 @@ export interface CumplimientoResponsable {
   vencidas_no_entregadas: number;
   en_proceso: number;
   promedio_reschedules: number;
+  reschedules_total?: number;
+  reschedules_internos?: number;
   porcentaje_cumplimiento: number | null;
 }
 

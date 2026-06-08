@@ -271,6 +271,11 @@ export default function Cumplimiento() {
                             {r.promedio_reschedules.toFixed(1)}×
                           </span>
                         ) : <span className="text-muted-foreground">0</span>}
+                        {(r.reschedules_total ?? 0) > 0 && (
+                          <div className="text-[11px] text-muted-foreground mt-0.5">
+                            {r.reschedules_total} reagend.{(r.reschedules_internos ?? 0) > 0 ? ` · ${r.reschedules_internos} interno(s)` : ''}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {r.porcentaje_cumplimiento !== null ? (
