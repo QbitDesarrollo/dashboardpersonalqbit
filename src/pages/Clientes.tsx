@@ -162,6 +162,8 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
   const [taskOpen, setTaskOpen] = useState(false);
   const [titulo, setTitulo] = useState('');
   const [fecha, setFecha] = useState('');
+  const [estadoNuevo, setEstadoNuevo] = useState('backlog');
+  const [filtroEstado, setFiltroEstado] = useState<string>('todos');
   const [detalle, setDetalle] = useState('');
   const [taskResetKey, setTaskResetKey] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -169,8 +171,8 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
     if (!titulo.trim()) return;
     setSaving(true);
     try {
-      await api.createClientTask(board.id, { titulo_tarea: titulo.trim(), fecha_cliente: fecha || undefined, detalle: detalle || undefined });
-      toast.success('Tarea creada (visible para el cliente + en la agencia)'); setTaskOpen(false); setTitulo(''); setFecha(''); setDetalle(''); setTaskResetKey((k) => k + 1); load();
+      await api.createClientTask(board.id, { titulo_tarea: titulo.trim(), fecha_cliente: fecha || undefined, detalle: detalle || undefined, estado: estadoNuevo });
+      toast.success('Tarea creada (visible para el cliente + en la agencia)'); setTaskOpen(false); setTitulo(''); setFecha(''); setDetalle(''); setEstadoNuevo('backlog'); setTaskResetKey((k) => k + 1); load();
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Error'); } finally { setSaving(false); }
   };
 
@@ -239,13 +241,26 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
 
       {loading ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         : tab === 'tareas' ? (
-          tasks.length === 0 ? <p className="text-sm text-muted-foreground text-center py-10">Sin tareas. Creá la primera con "Tarea".</p>
+          tasks.length === 0 ? <p className="text-sm text-muted-foreground text-center py-10">Sin tareas. Crea la primera con "Tarea".</p>
           : (() => {
+              const visibles = filtroEstado === 'todos' ? tasks : tasks.filter((t) => t.estado === filtroEstado);
               const byProj: Record<string, ClientBoardTask[]> = {};
-              for (const t of tasks) { const k = t.project_id || '__sin__'; (byProj[k] ||= []).push(t); }
+              for (const t of visibles) { const k = t.project_id || '__sin__'; (byProj[k] ||= []).push(t); }
               const groups = Object.entries(byProj).map(([k, items]) => ({ key: k, nombre: k === '__sin__' ? 'Sin proyecto' : (items[0].project_nombre || 'Proyecto'), items }));
+              const estadosPresentes = Array.from(new Set(tasks.map((t) => t.estado)));
               return (
                 <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button onClick={() => setFiltroEstado('todos')} className={cn('px-2.5 py-1 rounded-full text-xs border transition-colors', filtroEstado === 'todos' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground hover:bg-muted')}>
+                      Todos ({tasks.length})
+                    </button>
+                    {estadosPresentes.map((e) => (
+                      <button key={e} onClick={() => setFiltroEstado(filtroEstado === e ? 'todos' : e)} className={cn('px-2.5 py-1 rounded-full text-xs border transition-colors', filtroEstado === e ? STATUS_CLS[e] + ' ring-1 ring-current' : 'bg-background text-muted-foreground hover:bg-muted')}>
+                      {STATUS_LABEL[e] || e} ({tasks.filter((t) => t.estado === e).length})
+                      </button>
+                    ))}
+                  </div>
+                  {visibles.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">Ninguna tarea con este estado.</p>}
                   {groups.map((g) => (
                     <div key={g.key} className="space-y-1.5">
                       <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground"><FolderKanban className="h-4 w-4" />{g.nombre}<Badge variant="secondary" className="text-[10px]">{g.items.length}</Badge></div>
@@ -335,10 +350,17 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
 
       <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Nueva tarea para el cliente</DialogTitle><DialogDescription>Aparece en el tablero del cliente y, en paralelo, en la agencia. La fecha del cliente queda fija; la interna la ajustás después.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Nueva tarea para el cliente</DialogTitle><DialogDescription>Aparece en el tablero del cliente y, en paralelo, en la agencia. La fecha del cliente queda fija; la interna la ajustas después.</DialogDescription></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5"><Label className="text-xs">Título *</Label><Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="ej. Diseño campaña Día del Padre" /></div>
             <div className="space-y-1.5"><Label className="text-xs flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />Fecha acordada con el cliente</Label><Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Estado inicial</Label>
+              <Select value={estadoNuevo} onValueChange={setEstadoNuevo}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>{Object.entries(STATUS_LABEL).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">Para migrar tareas viejas ya entregadas, usa "Entregado" y no contarán atraso.</p>
+            </div>
             <div className="space-y-1.5"><Label className="text-xs">Detalle (opcional)</Label>
               <RichEditorField placeholder="Brief, referencias, links… puedes pegar imágenes." minHeight="100px" resetKey={taskResetKey} onChange={setDetalle} uploadImage={api.uploadEditorImage} />
             </div>

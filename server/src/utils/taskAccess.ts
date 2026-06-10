@@ -8,8 +8,8 @@ import { getUserRole } from './roles.js';
  * cliente: solo si la tarea está en una marca asignada al cliente.
  */
 export async function canAccessTask(userId: string, taskId: string, _depth: number = 0): Promise<boolean> {
-  const task = await queryOne<{ brand_id: string; desk_id: string | null; responsable_user_id: string | null; parent_task_id: string | null }>(
-    'SELECT brand_id, desk_id, responsable_user_id, parent_task_id FROM tasks WHERE id = ?', [taskId]
+  const task = await queryOne<{ brand_id: string; desk_id: string | null; responsable_user_id: string | null; parent_task_id: string | null; client_board_id: string | null; created_by: string | null }>(
+    'SELECT brand_id, desk_id, responsable_user_id, parent_task_id, client_board_id, created_by FROM tasks WHERE id = ?', [taskId]
   );
   if (!task) return false;
 
@@ -26,6 +26,11 @@ export async function canAccessTask(userId: string, taskId: string, _depth: numb
   if (role === 'ejecutivo' || role === 'equipo') {
     // Asignado directamente
     if (task.responsable_user_id === userId) return true;
+    // Creador de la tarea
+    if (task.created_by === userId) return true;
+    // Ejecutivo: las tareas de tableros de cliente son de su dominio
+    // (el módulo /clientes es admin+ejecutivo; estas tareas suelen no tener mesa)
+    if (role === 'ejecutivo' && task.client_board_id) return true;
     // Miembro de la mesa de la tarea
     if (task.desk_id) {
       const member = await queryOne<{ n: number }>(

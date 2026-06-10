@@ -110,14 +110,16 @@ clientBoardsRouter.post('/client-boards/:id/tasks', requireAuth, async (req: Aut
     if (!titulo) return res.status(400).json({ error: 'Título requerido' });
     const fecha = typeof req.body?.fecha_cliente === 'string' && req.body.fecha_cliente ? req.body.fecha_cliente : null;
     const detalle = typeof req.body?.detalle === 'string' ? req.body.detalle : null;
+    const ESTADOS_OK = ['backlog', 'en_proceso', 'en_revision', 'revision_interna', 'revision_cliente', 'aprobado', 'entregado', 'bloqueado'];
+    const estado = ESTADOS_OK.includes(String(req.body?.estado)) ? String(req.body.estado) : 'backlog';
 
     const taskId = uuid();
     // Al crear: fecha_cliente = fecha_entrega (luego el ejecutivo cambia la interna sin tocar la del cliente)
     await query(
       `INSERT INTO tasks (id, check_done, brand_id, titulo_tarea, detalle, cantidad_entregables,
         prioridad, estado, fecha_entrega, fecha_cliente, cliente_visible, client_board_id, created_by, recurrence_type)
-       VALUES (?, 0, ?, ?, ?, 1, 'media', 'backlog', ?, ?, 1, ?, ?, 'none')`,
-      [taskId, board.brand_id, titulo, detalle, fecha, fecha, id, req.userId ?? null]
+       VALUES (?, 0, ?, ?, ?, 1, 'media', ?, ?, ?, 1, ?, ?, 'none')`,
+      [taskId, board.brand_id, titulo, detalle, estado, fecha, fecha, id, req.userId ?? null]
     );
     const row = await queryOne<any>('SELECT id, titulo_tarea, estado, fecha_cliente, fecha_entrega, created_at FROM tasks WHERE id = ?', [taskId]);
     res.status(201).json(row);

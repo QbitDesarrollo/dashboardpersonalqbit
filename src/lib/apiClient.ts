@@ -1989,7 +1989,7 @@ export async function getClientBoard(id: string) {
   if (!res.ok) throw new Error(await res.text());
   return res.json() as Promise<{ board: ClientBoard; tasks: ClientBoardTask[] }>;
 }
-export async function createClientTask(boardId: string, data: { titulo_tarea: string; fecha_cliente?: string; detalle?: string }) {
+export async function createClientTask(boardId: string, data: { titulo_tarea: string; fecha_cliente?: string; detalle?: string; estado?: string }) {
   const res = await request(`/api/data/client-boards/${boardId}/tasks`, { method: 'POST', body: JSON.stringify(data) });
   if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
   return res.json() as Promise<ClientBoardTask>;
