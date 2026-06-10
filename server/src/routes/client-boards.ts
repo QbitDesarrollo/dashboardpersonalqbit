@@ -33,7 +33,7 @@ clientBoardsRouter.get('/client-boards', requireAuth, async (req: AuthRequest, r
               b.nombre AS brand_nombre,
               (SELECT COUNT(*) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1) AS tareas,
               (SELECT COUNT(*) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1 AND t.estado IN ('entregado','aprobado')) AS listas,
-              (SELECT COUNT(*) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1 AND t.estado NOT IN ('entregado','aprobado') AND t.fecha_cliente IS NOT NULL AND t.fecha_cliente < CURDATE()) AS vencidas,
+              (SELECT COUNT(*) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1 AND t.estado NOT IN ('entregado','aprobado','revision_cliente') AND t.fecha_cliente IS NOT NULL AND t.fecha_cliente < CURDATE()) AS vencidas,
               (SELECT COUNT(DISTINCT t.project_id) FROM tasks t WHERE t.client_board_id = cb.id AND t.cliente_visible = 1 AND t.project_id IS NOT NULL) AS proyectos,
               (SELECT COUNT(*) FROM client_requests r WHERE r.board_id = cb.id AND r.estado = 'pendiente') AS requests_pendientes
        FROM client_boards cb

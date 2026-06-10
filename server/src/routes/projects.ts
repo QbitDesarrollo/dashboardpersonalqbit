@@ -32,7 +32,7 @@ function autoSalud(row: any): 'verde' | 'amarillo' | 'rojo' {
 const STATS_SQL = `
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS total_tareas,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado IN ('entregado','aprobado')) AS tareas_listas,
-  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado NOT IN ('entregado','aprobado') AND t.fecha_entrega IS NOT NULL AND t.fecha_entrega < CURDATE()) AS vencidas,
+  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado NOT IN ('entregado','aprobado','revision_cliente') AND t.fecha_entrega IS NOT NULL AND t.fecha_entrega < CURDATE()) AS vencidas,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado NOT IN ('entregado','aprobado') AND t.fecha_entrega IS NOT NULL AND t.fecha_entrega BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY)) AS por_vencer`;
 
 function shape(r: any) {

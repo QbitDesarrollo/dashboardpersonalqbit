@@ -135,7 +135,7 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
       `SELECT pr.id, pr.nombre, pr.estado, pr.salud, pr.fecha_fin, pr.color,
               COUNT(t.id) AS total,
               SUM(t.estado IN ('entregado','aprobado')) AS listas,
-              SUM(t.estado NOT IN ('entregado','aprobado') AND t.fecha_cliente IS NOT NULL AND t.fecha_cliente < CURDATE()) AS vencidas
+              SUM(t.estado NOT IN ('entregado','aprobado','revision_cliente') AND t.fecha_cliente IS NOT NULL AND t.fecha_cliente < CURDATE()) AS vencidas
        FROM projects pr
        INNER JOIN tasks t ON t.project_id = pr.id AND t.client_board_id = ? AND t.cliente_visible = 1
        WHERE pr.brand_id = ? AND pr.activo = 1
