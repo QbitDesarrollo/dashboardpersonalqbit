@@ -41,8 +41,10 @@ function fmtCorta(s: string | null): string {
 }
 // Días: atraso (vencido) o cuánto falta (disponible). Null si ya está cerrada.
 function diasInfo(fechaCliente: string | null, estadoRaw: string): { txt: string; cls: string } | null {
-  if (!fechaCliente) return null;
   if (['aprobado', 'entregado'].includes(estadoRaw)) return { txt: 'Listo', cls: 'text-emerald-600' };
+  // Si está esperando al cliente, el reloj se detiene: no es atraso de la agencia
+  if (estadoRaw === 'revision_cliente') return { txt: 'Esperando tu revisión', cls: 'text-purple-600 font-medium' };
+  if (!fechaCliente) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const dl = new Date(fechaCliente.slice(0, 10) + 'T00:00:00');
   const diff = Math.round((dl.getTime() - today.getTime()) / 86400000);

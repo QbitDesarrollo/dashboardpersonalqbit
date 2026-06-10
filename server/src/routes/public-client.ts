@@ -111,7 +111,7 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
       if (Array.isArray(t.enlaces)) links = t.enlaces;
       else if (typeof t.enlaces === 'string' && t.enlaces) { try { links = JSON.parse(t.enlaces); } catch { links = []; } }
       let diasAtraso = 0;
-      if (t.fecha_cliente && !['entregado', 'aprobado'].includes(t.estado)) {
+      if (t.fecha_cliente && !['entregado', 'aprobado', 'revision_cliente'].includes(t.estado)) {
         const fc = new Date(t.fecha_cliente + 'T00:00:00');
         const diff = Math.floor((hoy.getTime() - fc.getTime()) / 86400000);
         if (diff > 0) diasAtraso = diff;

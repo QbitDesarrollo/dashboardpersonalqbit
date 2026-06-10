@@ -15,7 +15,7 @@ import { RichTextViewer } from '@/components/RichTextEditor';
 import { ClientCommentBox } from '@/components/clientes/ClientCommentBox';
 import { ProjectSelect } from '@/components/tasks/ProjectSelect';
 import { RichEditorField } from '@/components/clientes/RichEditorField';
-import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare, FolderKanban } from 'lucide-react';
+import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare, FolderKanban, Trash2, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, getInitials } from '@/lib/utils';
 
@@ -31,8 +31,10 @@ const STATUS_CLS: Record<string, string> = { backlog: 'bg-slate-100 text-slate-6
 const SALUD_DOT: Record<string, string> = { verde: 'bg-emerald-500', amarillo: 'bg-amber-500', rojo: 'bg-rose-500' };
 
 function diasInfo(fechaCliente: string | null, estado: string): { txt: string; cls: string } | null {
-  if (!fechaCliente) return null;
   if (['aprobado', 'entregado'].includes(estado)) return { txt: 'Listo', cls: 'text-emerald-600' };
+  // En revisión del cliente: la pelota está del lado del cliente, no cuenta atraso
+  if (estado === 'revision_cliente') return { txt: 'En revisión del cliente', cls: 'text-purple-600' };
+  if (!fechaCliente) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const dl = new Date(fechaCliente.slice(0, 10) + 'T00:00:00');
   const diff = Math.round((dl.getTime() - today.getTime()) / 86400000);
@@ -197,6 +199,18 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
     try { await api.patchTask(openTask.id, { estado }); setOpenTask({ ...openTask, estado }); load(); toast.success('Estado actualizado'); }
     catch { toast.error('No se pudo cambiar el estado'); }
   };
+  const removeFromBoard = async () => {
+    if (!openTask) return;
+    if (!window.confirm('¿Quitar esta tarea del tablero del cliente? La tarea sigue existiendo en la agencia, solo deja de verla el cliente.')) return;
+    try { await api.patchTask(openTask.id, { cliente_visible: false }); setOpenTask(null); load(); toast.success('Tarea quitada del tablero (sigue en la agencia)'); }
+    catch { toast.error('No se pudo quitar'); }
+  };
+  const deleteTaskForever = async () => {
+    if (!openTask) return;
+    if (!window.confirm(`¿Eliminar DEFINITIVAMENTE "${openTask.titulo_tarea}"? Esto la borra también de la agencia y no se puede deshacer.`)) return;
+    try { await api.deleteTask(openTask.id); setOpenTask(null); load(); toast.success('Tarea eliminada'); }
+    catch (e: any) { toast.error(e?.message || 'No se pudo eliminar'); }
+  };
   const changeTaskProject = async (pid: string | null) => {
     if (!openTask) return;
     try { await api.patchTask(openTask.id, { project_id: pid }); setOpenTask({ ...openTask, project_id: pid }); load(); toast.success('Proyecto actualizado'); }
@@ -239,11 +253,13 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
                         <thead className="bg-muted/40 text-muted-foreground text-xs uppercase"><tr>
                           <th className="text-left font-medium px-4 py-2.5">Tarea</th><th className="text-left font-medium px-4 py-2.5">Estado</th>
                           <th className="text-left font-medium px-4 py-2.5">Responsable</th>
+                          <th className="text-left font-medium px-4 py-2.5">Creada</th>
                           <th className="text-left font-medium px-4 py-2.5">Fecha cliente</th><th className="text-left font-medium px-4 py-2.5">Fecha interna</th><th className="text-left font-medium px-4 py-2.5">Tiempo</th></tr></thead>
                         <tbody className="divide-y">{g.items.map((t) => { const d = diasInfo(t.fecha_cliente, t.estado); return (
                           <tr key={t.id} className="hover:bg-muted/40 cursor-pointer" onClick={() => openDetail(t)}><td className="px-4 py-2.5 font-medium">{t.titulo_tarea}</td>
                             <td className="px-4 py-2.5"><Badge variant="outline" className={cn('text-[10px]', STATUS_CLS[t.estado] || '')}>{STATUS_LABEL[t.estado] || t.estado}</Badge></td>
                             <td className="px-4 py-2.5">{t.responsable_nombre ? <span className="flex items-center gap-1.5"><Avatar className="h-5 w-5">{t.responsable_avatar && <AvatarImage src={t.responsable_avatar} />}<AvatarFallback className="text-[8px]">{getInitials(t.responsable_nombre)}</AvatarFallback></Avatar><span className="text-xs">{t.responsable_nombre}</span></span> : <span className="text-xs text-slate-300">—</span>}</td>
+                            <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.created_at)}</td>
                             <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_cliente)}</td>
                             <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_entrega)}<span className="text-[10px] text-slate-400 ml-1">(equipo)</span></td>
                             <td className="px-4 py-2.5"><span className={cn('text-xs', d?.cls || 'text-muted-foreground')}>{d?.txt || '—'}</span></td></tr>
@@ -276,7 +292,7 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
           <DialogHeader>
             <DialogTitle>{openTask?.titulo_tarea}</DialogTitle>
             <DialogDescription>
-              <span className="text-xs">Cliente: {fmt(openTask?.fecha_cliente ?? null)} · Interna: {fmt(openTask?.fecha_entrega ?? null)}</span>
+              <span className="text-xs">Creada: {fmt(openTask?.created_at ?? null)} · Cliente: {fmt(openTask?.fecha_cliente ?? null)} · Interna: {fmt(openTask?.fecha_entrega ?? null)}</span>
             </DialogDescription>
           </DialogHeader>
           {openTask && (
@@ -289,6 +305,14 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
               </div>
               <div className="space-y-1.5 pb-3"><Label className="text-xs">Proyecto</Label>
                 <ProjectSelect brandId={board.brand_id} value={openTask.project_id} onChange={changeTaskProject} />
+                <div className="ml-auto flex items-center gap-1">
+                  <Button variant="ghost" size="sm" className="text-muted-foreground h-8 px-2" onClick={removeFromBoard} title="El cliente deja de verla; sigue en la agencia">
+                    <EyeOff className="h-3.5 w-3.5 mr-1" />Quitar del tablero
+                  </Button>
+                  <Button variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700 h-8 px-2" onClick={deleteTaskForever} title="Borra la tarea definitivamente">
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />Eliminar
+                  </Button>
+                </div>
               </div>
             </div>
           )}
