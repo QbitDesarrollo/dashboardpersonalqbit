@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import * as api from '@/lib/apiClient';
 import type { ClientBoard, ClientBoardTask, ClientRequest } from '@/lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +16,7 @@ import { ClientCommentBox } from '@/components/clientes/ClientCommentBox';
 import { ProjectSelect } from '@/components/tasks/ProjectSelect';
 import { RichEditorField } from '@/components/clientes/RichEditorField';
 import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare, FolderKanban, Trash2, EyeOff, GripVertical, Pencil } from 'lucide-react';
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
@@ -46,6 +46,11 @@ function diasInfo(fechaCliente: string | null, estado: string): { txt: string; c
   return { txt: `Faltan ${diff} d`, cls: 'text-emerald-600' };
 }
 
+
+function DroppableGroupCard({ groupKey, children }: { groupKey: string; children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `group:${groupKey}` });
+  return <Card ref={setNodeRef} className={cn('transition-shadow', isOver && 'ring-2 ring-primary/50')}>{children}</Card>;
+}
 
 function SortableTaskRow({ t, d, onOpen }: { t: ClientBoardTask; d: { txt: string; cls: string } | null; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: t.id });
@@ -210,6 +215,9 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
   const [openTask, setOpenTask] = useState<ClientBoardTask | null>(null);
   const [team, setTeam] = useState<{ id: string; nombre: string; avatar_url?: string | null }[]>([]);
   useEffect(() => { api.getProfiles().then((p: any[]) => setTeam(p.filter((x) => x.activo !== 0 && x.rol !== 'cliente'))).catch(() => {}); }, []);
+  const [projs, setProjs] = useState<{ id: string; nombre: string }[]>([]);
+  const loadProjs = () => { api.getProjects({ brand_id: board.brand_id }).then((r: any) => { const arr = Array.isArray(r) ? r : (r?.projects || []); setProjs(arr.filter((p: any) => p.activo !== 0)); }).catch(() => {}); };
+  useEffect(() => { loadProjs(); }, [board.brand_id]);
   const [comments, setComments] = useState<{ id: string; autor_nombre: string; es_interno: boolean; comentario: string; created_at: string }[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const openDetail = async (t: ClientBoardTask) => {
@@ -246,8 +254,20 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
     const overId = ev.over ? String(ev.over.id) : null;
     if (!overId || activeId === overId) return;
     const a = tasks.find((t) => t.id === activeId);
+    if (!a) return;
+    if (overId.startsWith('group:')) {
+      const targetKey = overId.slice(6);
+      const targetProj = targetKey === '__sin__' ? null : targetKey;
+      if ((a.project_id || null) === targetProj) return;
+      try {
+        await api.patchTask(activeId, { project_id: targetProj, sort_order: 9999 });
+        toast.success(targetProj ? 'Tarea movida al proyecto' : 'Tarea movida a "Sin proyecto"');
+        load();
+      } catch { toast.error('No se pudo mover la tarea'); }
+      return;
+    }
     const o = tasks.find((t) => t.id === overId);
-    if (!a || !o) return;
+    if (!o) return;
     const aProj = a.project_id || null;
     const oProj = o.project_id || null;
     try {
@@ -293,6 +313,7 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
     try {
       const p = await api.createProject({ brand_id: board.brand_id, nombre: nombre.trim() });
       toast.success('Proyecto creado');
+      loadProjs();
       if (openTask) { await api.patchTask(openTask.id, { project_id: p.id }); setOpenTask({ ...openTask, project_id: p.id }); }
       load();
     } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo crear el proyecto'); }
@@ -330,7 +351,14 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
               const visibles = filtroEstado === 'todos' ? tasks : tasks.filter((t) => t.estado === filtroEstado);
               const byProj: Record<string, ClientBoardTask[]> = {};
               for (const t of visibles) { const k = t.project_id || '__sin__'; (byProj[k] ||= []).push(t); }
-              const groups = Object.entries(byProj).map(([k, items]) => ({ key: k, nombre: k === '__sin__' ? 'Sin proyecto' : (items[0].project_nombre || 'Proyecto'), items }));
+              // Todos los proyectos de la marca (aunque estén vacíos) + restos + sin proyecto
+              const conocidos = new Set(projs.map((p) => p.id));
+              let groups = [
+                ...projs.map((p) => ({ key: p.id, nombre: p.nombre, items: byProj[p.id] || [] })),
+                ...Object.entries(byProj).filter(([k]) => k !== '__sin__' && !conocidos.has(k)).map(([k, items]) => ({ key: k, nombre: items[0].project_nombre || 'Proyecto', items })),
+                ...(byProj['__sin__'] ? [{ key: '__sin__', nombre: 'Sin proyecto', items: byProj['__sin__'] }] : []),
+              ];
+              if (filtroEstado !== 'todos') groups = groups.filter((g) => g.items.length > 0);
               const estadosPresentes = Array.from(new Set(tasks.map((t) => t.estado)));
               return (
                 <div className="space-y-4">
@@ -356,7 +384,7 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
                           </button>
                         )}
                       </div>
-                      <Card><CardContent className="p-0"><table className="w-full text-sm">
+                      <DroppableGroupCard groupKey={g.key}><CardContent className="p-0"><table className="w-full text-sm">
                         <thead className="bg-muted/40 text-muted-foreground text-xs uppercase"><tr>
                           <th className="w-7"></th>
                           <th className="text-left font-medium px-4 py-2.5">Tarea</th><th className="text-left font-medium px-4 py-2.5">Estado</th>
@@ -367,7 +395,12 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
                           <SortableContext items={g.items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
                             {g.items.map((t) => <SortableTaskRow key={t.id} t={t} d={diasInfo(t.fecha_cliente, t.estado)} onOpen={() => openDetail(t)} />)}
                           </SortableContext>
-                        </tbody></table></CardContent></Card>
+                          {g.items.length === 0 && (
+                            <tr><td colSpan={8} className="px-4 py-5 text-center text-xs text-muted-foreground">
+                              Sin tareas todavía — arrastra una hasta aquí o asígnala con el selector "Proyecto".
+                            </td></tr>
+                          )}
+                        </tbody></table></CardContent></DroppableGroupCard>
                     </div>
                   ))}
                   </DndContext>
