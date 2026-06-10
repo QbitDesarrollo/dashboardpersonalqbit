@@ -379,9 +379,18 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
                       <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground group/hdr">
                         <FolderKanban className="h-4 w-4" />{g.nombre}<Badge variant="secondary" className="text-[10px]">{g.items.length}</Badge>
                         {g.key !== '__sin__' && (
-                          <button onClick={() => renameProject(g.key, g.nombre)} className="opacity-0 group-hover/hdr:opacity-100 text-muted-foreground/60 hover:text-foreground transition-opacity" title="Renombrar proyecto">
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
+                          <span className="flex items-center gap-1 opacity-0 group-hover/hdr:opacity-100 transition-opacity">
+                            <button onClick={() => renameProject(g.key, g.nombre)} className="text-muted-foreground/60 hover:text-foreground" title="Renombrar proyecto">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button onClick={async () => {
+                              if (!window.confirm(`¿Eliminar el proyecto "${g.nombre}"? Sus tareas NO se borran: pasan a "Sin proyecto".`)) return;
+                              try { await api.deleteProject(g.key); toast.success('Proyecto eliminado (tareas en "Sin proyecto")'); load(); loadProjs(); }
+                              catch { toast.error('No se pudo eliminar'); }
+                            }} className="text-muted-foreground/60 hover:text-rose-600" title="Eliminar proyecto (las tareas pasan a Sin proyecto)">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </span>
                         )}
                       </div>
                       <DroppableGroupCard groupKey={g.key}><CardContent className="p-0"><table className="w-full text-sm">

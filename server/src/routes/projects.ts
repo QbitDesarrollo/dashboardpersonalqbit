@@ -165,6 +165,8 @@ projectsRouter.delete('/projects/:id', requireAuth, async (req: AuthRequest, res
     if (!(await ensureExec(req, res))) return;
     const id = String(req.params.id);
     await query('UPDATE projects SET activo = 0 WHERE id = ?', [id]);
+    // Las tareas no se borran: vuelven a "Sin proyecto"
+    await query('UPDATE tasks SET project_id = NULL WHERE project_id = ?', [id]);
     res.json({ ok: true });
   } catch (e) { console.error('[PROJECTS] delete:', e); res.status(500).json({ error: 'Error' }); }
 });

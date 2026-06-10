@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Loader2, FolderKanban, Plus, ArrowLeft, CalendarDays, Users, Link2 } from 'lucide-react';
+import { Loader2, FolderKanban, Plus, ArrowLeft, CalendarDays, Users, Link2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, getInitials } from '@/lib/utils';
 import { Link } from 'react-router-dom';
@@ -97,7 +97,7 @@ export default function Proyectos() {
       </div>
 
       {loading ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-        : projects.length === 0 ? <Card><CardContent className="py-14 text-center text-sm text-muted-foreground">No hay proyectos. Creá el primero.</CardContent></Card>
+        : projects.length === 0 ? <Card><CardContent className="py-14 text-center text-sm text-muted-foreground">No hay proyectos. Crea el primero.</CardContent></Card>
         : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {projects.map((p) => (
@@ -108,7 +108,19 @@ export default function Proyectos() {
                       <div className="font-semibold flex items-center gap-2"><span className={cn('inline-block h-2.5 w-2.5 rounded-full', SALUD_DOT[p.salud])} title={SALUD_LABEL[p.salud]} />{p.nombre}</div>
                       <div className="text-xs text-muted-foreground">{p.brand_nombre}{p.lider_nombre && <> · {p.lider_nombre}</>}</div>
                     </div>
-                    <Badge variant="outline" className={cn('text-[10px] shrink-0', ESTADO_CLS[p.estado])}>{ESTADO_LABEL[p.estado]}</Badge>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Badge variant="outline" className={cn('text-[10px]', ESTADO_CLS[p.estado])}>{ESTADO_LABEL[p.estado]}</Badge>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(`¿Eliminar el proyecto "${p.nombre}"? Sus tareas NO se borran: pasan a "Sin proyecto".`)) return;
+                          try { await api.deleteProject(p.id); toast.success('Proyecto eliminado'); load(); }
+                          catch { toast.error('No se pudo eliminar'); }
+                        }}
+                        className="rounded p-1 text-muted-foreground/50 hover:text-rose-600 hover:bg-rose-50"
+                        title="Eliminar proyecto (las tareas pasan a Sin proyecto)"
+                      ><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
                   </div>
                   <ProgressBar pct={p.avance} salud={p.salud} />
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
