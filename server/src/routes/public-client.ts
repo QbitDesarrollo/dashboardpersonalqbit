@@ -98,7 +98,7 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
     if (!board || !board.activo) return res.status(404).json({ error: 'Tablero no disponible' });
 
     const tasks = await query<any[]>(
-      `SELECT id, titulo_tarea, estado, fecha_cliente, created_at, enlaces, project_id
+      `SELECT id, titulo_tarea, detalle, estado, fecha_cliente, created_at, enlaces, project_id
        FROM tasks
        WHERE client_board_id = ? AND cliente_visible = 1
        ORDER BY (fecha_cliente IS NULL), fecha_cliente ASC, created_at DESC`,
@@ -119,6 +119,7 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
       return {
         id: t.id,
         titulo: t.titulo_tarea,
+        detalle: t.detalle || null,
         estado: ESTADO_CLIENTE[t.estado] || t.estado,
         estado_raw: t.estado,
         fecha_cliente: t.fecha_cliente,

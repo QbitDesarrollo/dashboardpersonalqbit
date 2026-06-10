@@ -183,6 +183,8 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
 
   // Detalle de tarea + comentarios (Nicole comenta como ella misma — sin pedir nombre)
   const [openTask, setOpenTask] = useState<ClientBoardTask | null>(null);
+  const [team, setTeam] = useState<{ id: string; nombre: string; avatar_url?: string | null }[]>([]);
+  useEffect(() => { api.getProfiles().then((p: any[]) => setTeam(p.filter((x) => x.activo !== 0 && x.rol !== 'cliente'))).catch(() => {}); }, []);
   const [comments, setComments] = useState<{ id: string; autor_nombre: string; es_interno: boolean; comentario: string; created_at: string }[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const openDetail = async (t: ClientBoardTask) => {
@@ -212,6 +214,22 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
     if (!window.confirm(`¿Eliminar DEFINITIVAMENTE "${openTask.titulo_tarea}"? Esto la borra también de la agencia y no se puede deshacer.`)) return;
     try { await api.deleteTask(openTask.id); setOpenTask(null); load(); toast.success('Tarea eliminada'); }
     catch (e: any) { toast.error(e?.message || 'No se pudo eliminar'); }
+  };
+  const changeTaskResp = async (uid: string) => {
+    if (!openTask) return;
+    const val = uid === '__none__' ? null : uid;
+    try { await api.patchTask(openTask.id, { responsable_user_id: val }); setOpenTask({ ...openTask, responsable_user_id: val }); load(); toast.success('Responsable actualizado'); }
+    catch { toast.error('No se pudo asignar'); }
+  };
+  const quickCreateProject = async () => {
+    const nombre = window.prompt('Nombre del nuevo proyecto:');
+    if (!nombre || !nombre.trim()) return;
+    try {
+      const p = await api.createProject({ brand_id: board.brand_id, nombre: nombre.trim() });
+      toast.success('Proyecto creado');
+      if (openTask) { await api.patchTask(openTask.id, { project_id: p.id }); setOpenTask({ ...openTask, project_id: p.id }); }
+      load();
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo crear el proyecto'); }
   };
   const changeTaskProject = async (pid: string | null) => {
     if (!openTask) return;
@@ -303,7 +321,7 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
 
       {/* Detalle de tarea + comentarios (zona compartida con el cliente) */}
       <Dialog open={!!openTask} onOpenChange={(o) => { if (!o) setOpenTask(null); }}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{openTask?.titulo_tarea}</DialogTitle>
             <DialogDescription>
@@ -311,15 +329,40 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
             </DialogDescription>
           </DialogHeader>
           {openTask && (
-            <div className="grid grid-cols-2 gap-3 pb-1 border-b">
-              <div className="space-y-1.5 pb-3"><Label className="text-xs">Estado</Label>
-                <Select value={openTask.estado} onValueChange={changeTaskEstado}>
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                  <SelectContent>{Object.entries(STATUS_LABEL).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-                </Select>
+            <div className="space-y-3 pb-3 border-b">
+              {openTask.detalle && (
+                <div className="rounded-lg bg-muted/40 px-3 py-2 max-h-44 overflow-y-auto">
+                  <p className="text-[11px] font-medium text-muted-foreground mb-1">Detalle / brief</p>
+                  <div className="text-sm"><RichTextViewer content={openTask.detalle} /></div>
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5"><Label className="text-xs">Estado</Label>
+                  <Select value={openTask.estado} onValueChange={changeTaskEstado}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>{Object.entries(STATUS_LABEL).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5"><Label className="text-xs">Responsable</Label>
+                  <Select value={openTask.responsable_user_id || '__none__'} onValueChange={changeTaskResp}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="Sin asignar" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sin asignar</SelectItem>
+                      {team.map((u) => <SelectItem key={u.id} value={u.id}>{u.nombre}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5"><Label className="text-xs">Proyecto</Label>
+                  <div className="flex items-center gap-1">
+                    <div className="flex-1 min-w-0"><ProjectSelect brandId={board.brand_id} value={openTask.project_id} onChange={changeTaskProject} /></div>
+                    <Button variant="outline" size="sm" className="h-9 px-2 shrink-0" onClick={quickCreateProject} title="Crear proyecto nuevo">+</Button>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-1.5 pb-3"><Label className="text-xs">Proyecto</Label>
-                <ProjectSelect brandId={board.brand_id} value={openTask.project_id} onChange={changeTaskProject} />
+              <div className="flex items-center gap-1 flex-wrap">
+                <Button variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={() => window.open(`/tareas?task=${openTask.id}`, '_blank')} title="Abre la vista completa: subtareas, archivos, timer, todo">
+                  <ExternalLink className="h-3.5 w-3.5 mr-1" />Abrir en Tareas (subtareas y más)
+                </Button>
                 <div className="ml-auto flex items-center gap-1">
                   <Button variant="ghost" size="sm" className="text-muted-foreground h-8 px-2" onClick={removeFromBoard} title="El cliente deja de verla; sigue en la agencia">
                     <EyeOff className="h-3.5 w-3.5 mr-1" />Quitar del tablero
@@ -349,7 +392,7 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
       </Dialog>
 
       <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>Nueva tarea para el cliente</DialogTitle><DialogDescription>Aparece en el tablero del cliente y, en paralelo, en la agencia. La fecha del cliente queda fija; la interna la ajustas después.</DialogDescription></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5"><Label className="text-xs">Título *</Label><Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="ej. Diseño campaña Día del Padre" /></div>

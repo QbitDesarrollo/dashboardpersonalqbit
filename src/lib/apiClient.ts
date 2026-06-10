@@ -1952,6 +1952,8 @@ export interface ClientBoard {
 export interface ClientBoardTask {
   id: string;
   titulo_tarea: string;
+  detalle?: string | null;
+  responsable_user_id?: string | null;
   estado: string;
   fecha_cliente: string | null;
   fecha_entrega: string | null;
@@ -2009,7 +2011,7 @@ export async function resolveClientRequest(boardId: string, requestId: string, a
 
 // --- público (cliente sin login, no usa request()/token de sesión) ---
 export interface PublicClientTask {
-  id: string; titulo: string; estado: string; estado_raw: string;
+  id: string; titulo: string; detalle?: string | null; estado: string; estado_raw: string;
   fecha_cliente: string | null; creada: string; dias_atraso: number; links: string[]; project_id?: string | null;
 }
 export interface PublicProject {

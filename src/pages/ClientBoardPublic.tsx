@@ -283,7 +283,7 @@ export default function ClientBoardPublic() {
 
       {/* Detalle de tarea con comentarios ricos */}
       <Dialog open={!!openTask} onOpenChange={(o) => { if (!o) setOpenTask(null); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{openTask?.titulo}</DialogTitle>
             <DialogDescription className="flex items-center gap-2 flex-wrap text-xs">
@@ -297,6 +297,12 @@ export default function ClientBoardPublic() {
             <div className="flex gap-2 p-3 rounded-lg bg-purple-50 border border-purple-200">
               <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => actOnTask('aprobado')}><ThumbsUp className="h-4 w-4" />Aprobar</Button>
               <Button size="sm" variant="outline" onClick={() => actOnTask('en_proceso')}><RotateCcw className="h-4 w-4" />Pedir cambios</Button>
+            </div>
+          )}
+          {openTask?.detalle && (
+            <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 max-h-48 overflow-y-auto">
+              <p className="text-xs font-medium text-slate-500 mb-1">Detalle</p>
+              <div className="text-sm text-slate-700"><RichTextViewer content={openTask.detalle} /></div>
             </div>
           )}
           {openTask && openTask.links.length > 0 && (

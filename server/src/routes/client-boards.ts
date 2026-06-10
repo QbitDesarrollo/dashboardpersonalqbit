@@ -85,7 +85,7 @@ clientBoardsRouter.get('/client-boards/:id', requireAuth, async (req: AuthReques
     );
     if (!board) return res.status(404).json({ error: 'Tablero no encontrado' });
     const tasks = await query<any[]>(
-      `SELECT t.id, t.titulo_tarea, t.estado, t.fecha_cliente, t.fecha_entrega, t.created_at, t.enlaces,
+      `SELECT t.id, t.titulo_tarea, t.detalle, t.responsable_user_id, t.estado, t.fecha_cliente, t.fecha_entrega, t.created_at, t.enlaces,
               t.project_id, pr.nombre AS project_nombre,
               p.nombre AS responsable_nombre, p.avatar_url AS responsable_avatar
        FROM tasks t
