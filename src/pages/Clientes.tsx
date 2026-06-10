@@ -389,7 +389,7 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
                           <th className="w-7"></th>
                           <th className="text-left font-medium px-4 py-2.5">Tarea</th><th className="text-left font-medium px-4 py-2.5">Estado</th>
                           <th className="text-left font-medium px-4 py-2.5">Responsable</th>
-                          <th className="text-left font-medium px-4 py-2.5">Creada</th>
+                          <th className="text-left font-medium px-4 py-2.5">Fecha creada</th>
                           <th className="text-left font-medium px-4 py-2.5">Fecha cliente</th><th className="text-left font-medium px-4 py-2.5">Fecha interna</th><th className="text-left font-medium px-4 py-2.5">Tiempo</th></tr></thead>
                         <tbody className="divide-y">
                           <SortableContext items={g.items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
@@ -428,8 +428,9 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
       <Dialog open={!!openTask} onOpenChange={(o) => { if (!o) setOpenTask(null); }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">{openTask?.titulo_tarea}
-              <button onClick={renameTask} className="text-muted-foreground/60 hover:text-foreground" title="Renombrar tarea"><Pencil className="h-3.5 w-3.5" /></button>
+            <DialogTitle className="flex items-center gap-2">
+              <button onClick={renameTask} className="text-left hover:underline decoration-dashed underline-offset-4 cursor-text" title="Clic para renombrar la tarea">{openTask?.titulo_tarea}</button>
+              <button onClick={renameTask} className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted" title="Renombrar tarea"><Pencil className="h-4 w-4" /></button>
             </DialogTitle>
             <DialogDescription>
               <span className="text-xs">Creada: {fmt(openTask?.created_at ?? null)} · Cliente: {fmt(openTask?.fecha_cliente ?? null)} · Interna: {fmt(openTask?.fecha_entrega ?? null)}</span>

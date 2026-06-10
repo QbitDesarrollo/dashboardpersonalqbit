@@ -255,7 +255,7 @@ export default function ClientBoardPublic() {
                   {!isCol && (
                     <table className="w-full text-sm border-t">
                       <thead className="bg-slate-50 text-slate-400 text-[11px] uppercase">
-                        <tr><th className="text-left font-medium px-4 py-2">Proyecto</th><th className="text-left font-medium px-4 py-2 w-24">Creada</th><th className="text-left font-medium px-4 py-2 w-24">Entrega</th><th className="text-left font-medium px-4 py-2 w-32">Tiempo</th><th className="text-left font-medium px-4 py-2 w-24">Entregable</th><th className="px-4 py-2 w-10"></th></tr>
+                        <tr><th className="text-left font-medium px-4 py-2">Proyecto</th><th className="text-left font-medium px-4 py-2 w-28">Fecha creada</th><th className="text-left font-medium px-4 py-2 w-24">Entrega</th><th className="text-left font-medium px-4 py-2 w-32">Tiempo</th><th className="text-left font-medium px-4 py-2 w-24">Entregable</th><th className="px-4 py-2 w-10"></th></tr>
                       </thead>
                       <tbody className="divide-y">
                         {byCol[c.key].map((t) => {
