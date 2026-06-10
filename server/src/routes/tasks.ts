@@ -565,7 +565,7 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       fecha_entrega: 'fecha_entrega', fecha_cliente: 'fecha_cliente', cliente_visible: 'cliente_visible', enlaces: 'enlaces', estado_envio: 'estado_envio',
       tiempo_trabajado: 'tiempo_trabajado', timer_activo: 'timer_activo', timer_inicio: 'timer_inicio',
       sprint_id: 'sprint_id', story_points: 'story_points', feature_id: 'feature_id',
-      task_type_id: 'task_type_id', tipo_entregable_id: 'tipo_entregable_id', is_favorite: 'is_favorite',
+      task_type_id: 'task_type_id', tipo_entregable_id: 'tipo_entregable_id', is_favorite: 'is_favorite', sort_order: 'sort_order',
       estimated_hours: 'estimated_hours', recurrence_type: 'recurrence_type',
       recurrence_interval: 'recurrence_interval', recurrence_end_date: 'recurrence_end_date',
     };

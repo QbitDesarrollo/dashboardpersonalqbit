@@ -85,14 +85,14 @@ clientBoardsRouter.get('/client-boards/:id', requireAuth, async (req: AuthReques
     );
     if (!board) return res.status(404).json({ error: 'Tablero no encontrado' });
     const tasks = await query<any[]>(
-      `SELECT t.id, t.titulo_tarea, t.detalle, t.responsable_user_id, t.estado, t.fecha_cliente, t.fecha_entrega, t.created_at, t.enlaces,
+      `SELECT t.id, t.titulo_tarea, t.detalle, t.responsable_user_id, t.sort_order, t.estado, t.fecha_cliente, t.fecha_entrega, t.created_at, t.enlaces,
               t.project_id, pr.nombre AS project_nombre,
               p.nombre AS responsable_nombre, p.avatar_url AS responsable_avatar
        FROM tasks t
        LEFT JOIN profiles p ON p.id = t.responsable_user_id
        LEFT JOIN projects pr ON pr.id = t.project_id
        WHERE t.client_board_id = ? AND t.cliente_visible = 1
-       ORDER BY pr.nombre, t.created_at DESC`, [id]
+       ORDER BY pr.nombre, t.sort_order ASC, t.created_at DESC`, [id]
     );
     res.json({ board: { ...board, activo: !!board.activo }, tasks });
   } catch (e) { console.error('[CLIENT-BOARDS] detail:', e); res.status(500).json({ error: 'Error' }); }

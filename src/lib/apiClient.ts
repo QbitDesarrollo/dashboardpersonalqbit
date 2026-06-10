@@ -1954,6 +1954,7 @@ export interface ClientBoardTask {
   titulo_tarea: string;
   detalle?: string | null;
   responsable_user_id?: string | null;
+  sort_order?: number;
   estado: string;
   fecha_cliente: string | null;
   fecha_entrega: string | null;

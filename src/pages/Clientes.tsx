@@ -15,7 +15,10 @@ import { RichTextViewer } from '@/components/RichTextEditor';
 import { ClientCommentBox } from '@/components/clientes/ClientCommentBox';
 import { ProjectSelect } from '@/components/tasks/ProjectSelect';
 import { RichEditorField } from '@/components/clientes/RichEditorField';
-import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare, FolderKanban, Trash2, EyeOff } from 'lucide-react';
+import { Loader2, Users, Plus, Copy, Check, ExternalLink, ArrowLeft, Inbox, CalendarDays, MessageSquare, FolderKanban, Trash2, EyeOff, GripVertical, Pencil } from 'lucide-react';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
 import { cn, getInitials } from '@/lib/utils';
 
@@ -41,6 +44,28 @@ function diasInfo(fechaCliente: string | null, estado: string): { txt: string; c
   if (diff < 0) return { txt: `${Math.abs(diff)} d de atraso`, cls: 'text-rose-600 font-medium' };
   if (diff === 0) return { txt: 'Vence hoy', cls: 'text-amber-600 font-medium' };
   return { txt: `Faltan ${diff} d`, cls: 'text-emerald-600' };
+}
+
+
+function SortableTaskRow({ t, d, onOpen }: { t: ClientBoardTask; d: { txt: string; cls: string } | null; onOpen: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: t.id });
+  return (
+    <tr ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
+        className={cn('hover:bg-muted/40 cursor-pointer', isDragging && 'opacity-60 bg-muted relative z-10')} onClick={onOpen}>
+      <td className="pl-2 pr-0 py-2.5 w-7 align-middle" onClick={(e) => e.stopPropagation()}>
+        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground touch-none" title="Arrastra para ordenar o mover a otro proyecto">
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </td>
+      <td className="px-4 py-2.5 font-medium">{t.titulo_tarea}</td>
+      <td className="px-4 py-2.5"><Badge variant="outline" className={cn('text-[10px]', STATUS_CLS[t.estado] || '')}>{STATUS_LABEL[t.estado] || t.estado}</Badge></td>
+      <td className="px-4 py-2.5">{t.responsable_nombre ? <span className="flex items-center gap-1.5"><Avatar className="h-5 w-5">{t.responsable_avatar && <AvatarImage src={t.responsable_avatar} />}<AvatarFallback className="text-[8px]">{getInitials(t.responsable_nombre)}</AvatarFallback></Avatar><span className="text-xs">{t.responsable_nombre}</span></span> : <span className="text-xs text-slate-300">—</span>}</td>
+      <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.created_at)}</td>
+      <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_cliente)}</td>
+      <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_entrega)}<span className="text-[10px] text-slate-400 ml-1">(equipo)</span></td>
+      <td className="px-4 py-2.5"><span className={cn('text-xs', d?.cls || 'text-muted-foreground')}>{d?.txt || '—'}</span></td>
+    </tr>
+  );
 }
 
 export default function Clientes() {
@@ -215,6 +240,47 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
     try { await api.deleteTask(openTask.id); setOpenTask(null); load(); toast.success('Tarea eliminada'); }
     catch (e: any) { toast.error(e?.message || 'No se pudo eliminar'); }
   };
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const onDragEnd = async (ev: DragEndEvent) => {
+    const activeId = String(ev.active.id);
+    const overId = ev.over ? String(ev.over.id) : null;
+    if (!overId || activeId === overId) return;
+    const a = tasks.find((t) => t.id === activeId);
+    const o = tasks.find((t) => t.id === overId);
+    if (!a || !o) return;
+    const aProj = a.project_id || null;
+    const oProj = o.project_id || null;
+    try {
+      if (aProj === oProj) {
+        // Reordenar dentro del mismo proyecto
+        const group = tasks.filter((t) => (t.project_id || null) === aProj);
+        const ids = group.map((t) => t.id);
+        const newGroup = arrayMove(group, ids.indexOf(activeId), ids.indexOf(overId));
+        const queue = [...newGroup];
+        setTasks((prev) => prev.map((t) => ((t.project_id || null) === aProj ? queue.shift()! : t)));
+        await Promise.all(newGroup.map((t, i) => (t.sort_order === i ? Promise.resolve() : api.patchTask(t.id, { sort_order: i }))));
+        load();
+      } else {
+        // Mover a otro proyecto (cae en la posición de la fila destino)
+        await api.patchTask(activeId, { project_id: oProj, sort_order: (o.sort_order ?? 0) });
+        toast.success(oProj ? 'Tarea movida de proyecto' : 'Tarea movida a "Sin proyecto"');
+        load();
+      }
+    } catch { toast.error('No se pudo mover la tarea'); load(); }
+  };
+  const renameTask = async () => {
+    if (!openTask) return;
+    const nuevo = window.prompt('Nuevo nombre de la tarea:', openTask.titulo_tarea);
+    if (!nuevo || !nuevo.trim() || nuevo.trim() === openTask.titulo_tarea) return;
+    try { await api.patchTask(openTask.id, { titulo_tarea: nuevo.trim() }); setOpenTask({ ...openTask, titulo_tarea: nuevo.trim() }); load(); toast.success('Nombre actualizado'); }
+    catch { toast.error('No se pudo renombrar'); }
+  };
+  const renameProject = async (projectId: string, actual: string) => {
+    const nuevo = window.prompt('Nuevo nombre del proyecto:', actual);
+    if (!nuevo || !nuevo.trim() || nuevo.trim() === actual) return;
+    try { await api.patchProject(projectId, { nombre: nuevo.trim() }); load(); toast.success('Proyecto renombrado'); }
+    catch { toast.error('No se pudo renombrar el proyecto'); }
+  };
   const changeTaskResp = async (uid: string) => {
     if (!openTask) return;
     const val = uid === '__none__' ? null : uid;
@@ -279,26 +345,32 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
                     ))}
                   </div>
                   {visibles.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">Ninguna tarea con este estado.</p>}
+                  <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                   {groups.map((g) => (
                     <div key={g.key} className="space-y-1.5">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground"><FolderKanban className="h-4 w-4" />{g.nombre}<Badge variant="secondary" className="text-[10px]">{g.items.length}</Badge></div>
+                      <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground group/hdr">
+                        <FolderKanban className="h-4 w-4" />{g.nombre}<Badge variant="secondary" className="text-[10px]">{g.items.length}</Badge>
+                        {g.key !== '__sin__' && (
+                          <button onClick={() => renameProject(g.key, g.nombre)} className="opacity-0 group-hover/hdr:opacity-100 text-muted-foreground/60 hover:text-foreground transition-opacity" title="Renombrar proyecto">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                       <Card><CardContent className="p-0"><table className="w-full text-sm">
                         <thead className="bg-muted/40 text-muted-foreground text-xs uppercase"><tr>
+                          <th className="w-7"></th>
                           <th className="text-left font-medium px-4 py-2.5">Tarea</th><th className="text-left font-medium px-4 py-2.5">Estado</th>
                           <th className="text-left font-medium px-4 py-2.5">Responsable</th>
                           <th className="text-left font-medium px-4 py-2.5">Creada</th>
                           <th className="text-left font-medium px-4 py-2.5">Fecha cliente</th><th className="text-left font-medium px-4 py-2.5">Fecha interna</th><th className="text-left font-medium px-4 py-2.5">Tiempo</th></tr></thead>
-                        <tbody className="divide-y">{g.items.map((t) => { const d = diasInfo(t.fecha_cliente, t.estado); return (
-                          <tr key={t.id} className="hover:bg-muted/40 cursor-pointer" onClick={() => openDetail(t)}><td className="px-4 py-2.5 font-medium">{t.titulo_tarea}</td>
-                            <td className="px-4 py-2.5"><Badge variant="outline" className={cn('text-[10px]', STATUS_CLS[t.estado] || '')}>{STATUS_LABEL[t.estado] || t.estado}</Badge></td>
-                            <td className="px-4 py-2.5">{t.responsable_nombre ? <span className="flex items-center gap-1.5"><Avatar className="h-5 w-5">{t.responsable_avatar && <AvatarImage src={t.responsable_avatar} />}<AvatarFallback className="text-[8px]">{getInitials(t.responsable_nombre)}</AvatarFallback></Avatar><span className="text-xs">{t.responsable_nombre}</span></span> : <span className="text-xs text-slate-300">—</span>}</td>
-                            <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.created_at)}</td>
-                            <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_cliente)}</td>
-                            <td className="px-4 py-2.5 text-muted-foreground">{fmt(t.fecha_entrega)}<span className="text-[10px] text-slate-400 ml-1">(equipo)</span></td>
-                            <td className="px-4 py-2.5"><span className={cn('text-xs', d?.cls || 'text-muted-foreground')}>{d?.txt || '—'}</span></td></tr>
-                        ); })}</tbody></table></CardContent></Card>
+                        <tbody className="divide-y">
+                          <SortableContext items={g.items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                            {g.items.map((t) => <SortableTaskRow key={t.id} t={t} d={diasInfo(t.fecha_cliente, t.estado)} onOpen={() => openDetail(t)} />)}
+                          </SortableContext>
+                        </tbody></table></CardContent></Card>
                     </div>
                   ))}
+                  </DndContext>
                 </div>
               );
             })()
@@ -323,7 +395,9 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
       <Dialog open={!!openTask} onOpenChange={(o) => { if (!o) setOpenTask(null); }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>{openTask?.titulo_tarea}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">{openTask?.titulo_tarea}
+              <button onClick={renameTask} className="text-muted-foreground/60 hover:text-foreground" title="Renombrar tarea"><Pencil className="h-3.5 w-3.5" /></button>
+            </DialogTitle>
             <DialogDescription>
               <span className="text-xs">Creada: {fmt(openTask?.created_at ?? null)} · Cliente: {fmt(openTask?.fecha_cliente ?? null)} · Interna: {fmt(openTask?.fecha_entrega ?? null)}</span>
             </DialogDescription>
