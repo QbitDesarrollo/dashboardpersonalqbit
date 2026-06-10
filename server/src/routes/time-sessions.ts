@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { canAccessTask } from '../utils/taskAccess.js';
 import { z } from 'zod';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
@@ -30,6 +31,7 @@ timeSessionsRouter.post('/time-sessions/start', requireAuth, async (req: AuthReq
   try {
     const { task_id } = req.body;
     if (!task_id) return res.status(400).json({ error: 'task_id requerido' });
+    if (!(await canAccessTask(req.userId!, String(task_id)))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
 
     // Check no other active session
     const existing = await queryOne<any>(

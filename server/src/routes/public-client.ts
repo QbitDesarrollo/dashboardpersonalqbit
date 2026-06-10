@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { createNotification } from '../utils/notifications.js';
+import { sendEmail, clientActivityEmail } from '../services/email.js';
+import { ensureRealImage } from '../utils/imageSafety.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
 import rateLimit from 'express-rate-limit';
 import multerPC from 'multer';
@@ -20,7 +23,7 @@ const publicLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: tr
 async function boardByToken(token: string) {
   if (!token || token.length > 80) return null;
   return queryOne<any>(
-    `SELECT cb.id, cb.brand_id, cb.cliente_nombre, cb.titulo, cb.activo, b.nombre AS brand_nombre
+    `SELECT cb.id, cb.brand_id, cb.cliente_nombre, cb.titulo, cb.activo, cb.created_by, b.nombre AS brand_nombre
      FROM client_boards cb LEFT JOIN brands b ON b.id = cb.brand_id
      WHERE cb.token = ? LIMIT 1`, [token]
   );
@@ -37,6 +40,56 @@ const ESTADO_CLIENTE: Record<string, string> = {
   entregado: 'Entregado',
   bloqueado: 'En pausa',
 };
+
+
+// ── Notifica al equipo interno cuando el cliente hace algo en su tablero ──
+async function notifyClientActivity(board: any, opts: {
+  taskId?: string | null; tareaTitulo?: string; accion: string;
+  mensaje: string; detalle?: string;
+}): Promise<void> {
+  try {
+    const ids = new Set<string>();
+    if (board?.created_by) ids.add(String(board.created_by));
+    if (opts.taskId) {
+      const resp = await query<any[]>(
+        `SELECT responsable_user_id AS uid FROM tasks WHERE id = ?
+         UNION SELECT user_id AS uid FROM task_responsables WHERE task_id = ?`,
+        [opts.taskId, opts.taskId]);
+      for (const r of resp) if (r.uid) ids.add(String(r.uid));
+    }
+    if (ids.size === 0) {
+      const admins = await query<any[]>(`SELECT id FROM profiles WHERE activo = 1 AND rol IN ('admin','ejecutivo')`);
+      for (const a of admins) ids.add(String(a.id));
+    }
+    if (ids.size === 0) return;
+
+    // Notificación in-app a cada destinatario
+    for (const uid of ids) createNotification(uid, opts.mensaje, opts.taskId ?? null).catch(() => {});
+
+    // Email (best-effort; sendEmail decide si hay proveedor configurado)
+    const FRONTEND = (process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec').replace(/\/$/, '');
+    const url = opts.taskId ? `${FRONTEND}/clientes` : `${FRONTEND}/clientes`;
+    const placeholders = Array.from(ids).map(() => '?').join(',');
+    const people = await query<any[]>(
+      `SELECT p.nombre, u.email FROM profiles p JOIN users u ON u.id = p.id
+       WHERE p.id IN (${placeholders}) AND u.email IS NOT NULL AND u.email <> ''`,
+      Array.from(ids));
+    for (const person of people) {
+      const tpl = await clientActivityEmail({
+        recipientName: person.nombre || 'equipo',
+        clienteNombre: board?.cliente_nombre || 'El cliente',
+        accion: opts.accion,
+        tablero: board?.titulo || board?.brand_nombre || 'Tablero',
+        tareaTitulo: opts.tareaTitulo,
+        detalle: opts.detalle,
+        url,
+      });
+      sendEmail({ ...tpl, to: person.email }).catch(() => {});
+    }
+  } catch (e) {
+    console.error('[PUBLIC-CLIENT] notifyClientActivity:', e);
+  }
+}
 
 // ── Ver el tablero (tareas visibles, campos mínimos) ──
 publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) => {
@@ -144,6 +197,9 @@ publicClientRouter.post('/public/client/:token/tasks/:taskId/comments', publicLi
     const id = uuid();
     await query('INSERT INTO client_board_comments (id, board_id, task_id, autor_nombre, es_interno, comentario) VALUES (?, ?, ?, ?, 0, ?)',
       [id, board.id, taskId, nombre || 'Cliente', comentario]);
+    const tTitulo = (await queryOne<any>('SELECT titulo_tarea FROM tasks WHERE id = ?', [taskId]))?.titulo_tarea;
+    notifyClientActivity(board, { taskId, tareaTitulo: tTitulo, accion: 'comentó',
+      mensaje: `💬 ${nombre || 'Cliente'} comentó en "${tTitulo || 'una tarea'}"`, detalle: comentario }).catch(() => {});
     res.status(201).json({ id, autor_nombre: nombre || 'Cliente', comentario, es_interno: false, created_at: new Date().toISOString() });
   } catch (e) { console.error('[PUBLIC-CLIENT] add comment:', e); res.status(500).json({ error: 'Error' }); }
 });
@@ -160,6 +216,8 @@ publicClientRouter.post('/public/client/:token/requests', publicLimiter, async (
     const id = uuid();
     await query('INSERT INTO client_requests (id, board_id, titulo, detalle, autor_nombre) VALUES (?, ?, ?, ?, ?)',
       [id, board.id, titulo, detalle, nombre || 'Cliente']);
+    notifyClientActivity(board, { accion: 'pidió un requerimiento',
+      mensaje: `📥 ${nombre || 'Cliente'} pidió: "${titulo}"`, tareaTitulo: titulo, detalle: detalle || undefined }).catch(() => {});
     res.status(201).json({ id, ok: true });
   } catch (e) { console.error('[PUBLIC-CLIENT] request:', e); res.status(500).json({ error: 'Error' }); }
 });
@@ -181,13 +239,17 @@ publicClientRouter.patch('/public/client/:token/tasks/:taskId/status', publicLim
       return res.status(409).json({ error: 'Esta tarea no está esperando tu revisión' });
     }
     if (nuevo !== 'aprobado' && nuevo !== 'en_proceso') {
-      return res.status(400).json({ error: 'Solo podés Aprobar o Pedir cambios' });
+      return res.status(400).json({ error: 'Solo puedes Aprobar o Pedir cambios' });
     }
     await query('UPDATE tasks SET estado = ? WHERE id = ?', [nuevo, taskId]);
     // Deja constancia en el hilo como comentario del cliente
     const accionTxt = nuevo === 'aprobado' ? '✅ Aprobó la tarea.' : '🔄 Pidió cambios (volvió a En proceso).';
     await query('INSERT INTO client_board_comments (id, board_id, task_id, autor_nombre, es_interno, comentario) VALUES (?, ?, ?, ?, 0, ?)',
       [uuid(), board.id, taskId, nombre || 'Cliente', accionTxt]);
+    const accion = nuevo === 'aprobado' ? 'aprobó' : 'pidió cambios';
+    const emoji = nuevo === 'aprobado' ? '✅' : '🔄';
+    notifyClientActivity(board, { taskId, tareaTitulo: t.titulo_tarea, accion,
+      mensaje: `${emoji} ${nombre || 'Cliente'} ${accion} "${t.titulo_tarea}"` }).catch(() => {});
     res.json({ ok: true, estado: nuevo });
   } catch (e) { console.error('[PUBLIC-CLIENT] status:', e); res.status(500).json({ error: 'Error' }); }
 });
@@ -208,7 +270,9 @@ publicClientRouter.post('/public/client/:token/upload-image', publicLimiter, cli
     const board = await boardByToken(String(req.params.token));
     if (!board || !board.activo) return res.status(404).json({ error: 'No disponible' });
     if (!req.file) return res.status(400).json({ error: 'No se envió imagen' });
+    const safeName = ensureRealImage(req.file.path);
+    if (!safeName) return res.status(400).json({ error: 'El archivo no es una imagen válida' });
     const base = (process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec').replace(/\/$/, '');
-    res.status(201).json({ url: `${base}/uploads/client/${req.file.filename}` });
+    res.status(201).json({ url: `${base}/uploads/client/${safeName}` });
   } catch (e) { console.error('[PUBLIC-CLIENT] upload:', e); res.status(500).json({ error: 'Error' }); }
 });

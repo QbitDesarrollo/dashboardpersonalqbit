@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { signPath } from '../utils/signedUrl.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
@@ -40,7 +41,12 @@ teamMonitorRouter.get('/team-monitor/live', requireAuth, async (req: AuthRequest
            FROM screenshots WHERE time_entry_id = ? ORDER BY captured_at DESC LIMIT 1`,
           [user.session_id]
         );
-        user.last_screenshot = lastSS[0] || null;
+        const ss = lastSS[0] || null;
+        if (ss) {
+          if (ss.file_path) ss.file_path = signPath(ss.file_path);
+          if (ss.thumbnail_path) ss.thumbnail_path = signPath(ss.thumbnail_path);
+        }
+        user.last_screenshot = ss;
 
         // Calculate current duration
         if (user.session_start) {
@@ -113,6 +119,10 @@ teamMonitorRouter.get('/team-monitor/screenshots', requireAuth, async (req: Auth
       [user_id, targetDate]
     );
 
+    for (const r of rows as any[]) {
+      if (r.file_path) r.file_path = signPath(r.file_path);
+      if (r.thumbnail_path) r.thumbnail_path = signPath(r.thumbnail_path);
+    }
     res.json({ screenshots: rows });
   } catch (e) {
     console.error('[TEAM-MONITOR] Error screenshots:', e);

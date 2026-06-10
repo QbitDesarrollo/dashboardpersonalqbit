@@ -494,3 +494,36 @@ export async function taskHandoffEmail(data: {
     text,
   };
 }
+
+export async function clientActivityEmail(data: {
+  recipientName: string;
+  clienteNombre: string;
+  accion: string;          // "comentó", "pidió un requerimiento", "aprobó", "pidió cambios"
+  tablero: string;
+  tareaTitulo?: string;
+  detalle?: string;        // texto del comentario / requerimiento
+  url: string;
+}): Promise<EmailOptions> {
+  const accent: AccentColor =
+    data.accion === 'pidió cambios' ? 'amber' :
+    data.accion === 'aprobó' ? 'blue' : 'blue';
+  const intro = data.tareaTitulo
+    ? `<strong>${escapeHtml(data.clienteNombre)}</strong> ${escapeHtml(data.accion)} en la tarea <strong>${escapeHtml(data.tareaTitulo)}</strong>.`
+    : `<strong>${escapeHtml(data.clienteNombre)}</strong> ${escapeHtml(data.accion)} desde su tablero.`;
+  const details = [
+    { label: 'Cliente', value: escapeHtml(data.clienteNombre) },
+    { label: 'Tablero', value: escapeHtml(data.tablero) },
+  ];
+  if (data.tareaTitulo) details.push({ label: 'Tarea', value: escapeHtml(data.tareaTitulo) });
+  const { html, text } = await renderEmail({
+    accent,
+    preheader: `Actividad del cliente: ${data.accion}`,
+    headline: data.tareaTitulo || data.tablero,
+    greeting: `Hola ${data.recipientName},`,
+    intro,
+    details,
+    quote: data.detalle || undefined,
+    cta: { text: 'Ver en Tiusdei', url: data.url },
+  });
+  return { to: '', subject: `[Cliente] ${data.clienteNombre} ${data.accion}`, html, text };
+}

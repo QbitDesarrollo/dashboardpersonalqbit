@@ -159,8 +159,12 @@ export function setupSocket(httpServer: HttpServer): void {
       }
     });
 
-    socket.on('comment:join', (taskId: string) => {
+    socket.on('comment:join', async (taskId: string) => {
       if (!taskId || typeof taskId !== 'string') return;
+      // Mismo control de acceso que el REST de comentarios
+      try {
+        if (!(await canAccessTask(userId, taskId))) return;
+      } catch { return; }
       const room = `task:${taskId}`;
       socket.join(room);
     });

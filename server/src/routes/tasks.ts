@@ -921,6 +921,7 @@ tasksRouter.post('/tasks/:id/handoff', requireAuth, async (req: AuthRequest, res
 tasksRouter.get('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    if (!(await canAccessTask(req.userId!, String(id)))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
     const rows = await query<any[]>(
       `SELECT t.*, b.nombre as brand_nombre, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url
        FROM tasks t
@@ -966,6 +967,7 @@ tasksRouter.post('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, re
     const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const parentId = req.params.id;
+    if (!(await canAccessTask(req.userId!, String(parentId)))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
     const parent = await queryOne<any>('SELECT brand_id, desk_id, fecha_entrega FROM tasks WHERE id = ?', [parentId]);
     if (!parent) return res.status(404).json({ error: 'Tarea padre no encontrada' });
 
@@ -997,6 +999,7 @@ tasksRouter.delete('/tasks/:id/subtasks/:subId', requireAuth, async (req: AuthRe
     const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id, subId } = req.params;
+    if (!(await canAccessTask(req.userId!, String(id)))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
     // Verificar que la subtarea pertenezca al padre
     const sub = await queryOne<any>('SELECT id, parent_task_id, titulo_tarea FROM tasks WHERE id = ? AND parent_task_id = ?', [subId, id]);
     if (!sub) return res.status(404).json({ error: 'Subtarea no encontrada' });
@@ -1015,6 +1018,7 @@ tasksRouter.patch('/tasks/:id/subtasks/reorder', requireAuth, async (req: AuthRe
     const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { id: parentId } = req.params;
+    if (!(await canAccessTask(req.userId!, String(parentId)))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
     const ids = Array.isArray(req.body?.ordered_ids) ? req.body.ordered_ids.filter((x: unknown) => typeof x === 'string') : [];
     if (ids.length === 0) return res.status(400).json({ error: 'ordered_ids requerido' });
     // Update cada id con su posición
@@ -1032,6 +1036,7 @@ tasksRouter.patch('/tasks/:id/subtasks/reorder', requireAuth, async (req: AuthRe
 tasksRouter.get('/tasks/:id/dependencies', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
+    if (!(await canAccessTask(req.userId!, String(id)))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
     const rows = await query<any[]>(
       `SELECT td.*, t.titulo_tarea, t.estado
        FROM task_dependencies td
@@ -1059,6 +1064,9 @@ tasksRouter.post('/tasks/:id/dependencies', requireAuth, async (req: AuthRequest
     const { depends_on_task_id, dependency_type } = req.body;
     if (!depends_on_task_id) return res.status(400).json({ error: 'depends_on_task_id requerido' });
     if (taskId === depends_on_task_id) return res.status(400).json({ error: 'No se puede depender de sí misma' });
+    if (!(await canAccessTask(req.userId!, String(taskId))) || !(await canAccessTask(req.userId!, String(depends_on_task_id)))) {
+      return res.status(403).json({ error: 'Sin acceso a esta tarea' });
+    }
 
     const id = uuid();
     await query(
@@ -1077,6 +1085,9 @@ tasksRouter.delete('/tasks/:id/dependencies/:depId', requireAuth, async (req: Au
   try {
     const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo']);
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const dep = await queryOne<any>('SELECT task_id FROM task_dependencies WHERE id = ?', [req.params.depId]);
+    if (!dep) return res.status(404).json({ error: 'Dependencia no encontrada' });
+    if (!(await canAccessTask(req.userId!, String(dep.task_id)))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
     await query('DELETE FROM task_dependencies WHERE id = ?', [req.params.depId]);
     res.json({ success: true });
   } catch (e) {
@@ -1212,6 +1223,15 @@ tasksRouter.post('/tasks/bulk-update', requireAuth, async (req: AuthRequest, res
     if (task_ids.length > 50) return res.status(400).json({ error: 'Máximo 50 tareas por operación' });
     if (!updates || typeof updates !== 'object') return res.status(400).json({ error: 'updates requerido' });
 
+    // Verificar acceso a cada tarea (mismo criterio que GET /tasks/:id)
+    if (role !== 'admin') {
+      for (const tid of task_ids) {
+        if (!(await canAccessTask(req.userId!, String(tid)))) {
+          return res.status(403).json({ error: 'Sin acceso a una o más tareas seleccionadas' });
+        }
+      }
+    }
+
     // Equipo can only bulk-update operational fields (estado, check_done)
     const operationalFields = new Set(['estado', 'check_done']);
     if (role === 'equipo') {
@@ -1265,6 +1285,15 @@ tasksRouter.post('/tasks/bulk-delete', requireAuth, async (req: AuthRequest, res
     const { task_ids } = req.body;
     if (!Array.isArray(task_ids) || task_ids.length === 0) return res.status(400).json({ error: 'task_ids requerido' });
     if (task_ids.length > 50) return res.status(400).json({ error: 'Máximo 50 tareas por operación' });
+
+    // Verificar acceso a cada tarea (mismo criterio que GET /tasks/:id)
+    if (role !== 'admin') {
+      for (const tid of task_ids) {
+        if (!(await canAccessTask(req.userId!, String(tid)))) {
+          return res.status(403).json({ error: 'Sin acceso a una o más tareas seleccionadas' });
+        }
+      }
+    }
 
     // Protect tasks created by admin/ejecutivo: only admin or the creator can delete
     if (role !== 'admin') {

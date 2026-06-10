@@ -9,12 +9,12 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import * as api from '@/lib/apiClient';
-import { CheckSquare, FileBox } from 'lucide-react';
+import { CheckSquare, FileBox, FolderKanban, Users, Bug } from 'lucide-react';
 
 export function GlobalSearch() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<{ tasks: { id: string; titulo_tarea: string; estado: string; brand_nombre?: string }[]; deliverables: { id: string; task_id: string; titulo_tarea: string; brand_nombre?: string; estado: string }[] } | null>(null);
+  const [results, setResults] = useState<Awaited<ReturnType<typeof api.globalSearch>> | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -59,6 +59,11 @@ export function GlobalSearch() {
     navigate(`/tareas?task=${taskId}`);
   };
 
+  const go = (path: string) => {
+    setOpen(false);
+    navigate(path);
+  };
+
   return (
     <>
       <button
@@ -73,7 +78,7 @@ export function GlobalSearch() {
       </button>
       <CommandDialog open={open} onOpenChange={setOpen}>
         <CommandInput
-          placeholder="Buscar tareas y entregables..."
+          placeholder="Buscar tareas, proyectos, clientes, incidencias..."
           value={query}
           onValueChange={setQuery}
         />
@@ -113,6 +118,38 @@ export function GlobalSearch() {
                       {d.brand_nombre && (
                         <span className="ml-2 text-xs text-muted-foreground truncate">{d.brand_nombre}</span>
                       )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {!!results.projects?.length && (
+                <CommandGroup heading="Proyectos">
+                  {results.projects.map((p) => (
+                    <CommandItem key={`p-${p.id}`} value={`proj-${p.id}`} onSelect={() => go('/proyectos')}>
+                      <FolderKanban className="mr-2 h-4 w-4" />
+                      <span className="truncate">{p.nombre}</span>
+                      {p.brand_nombre && <span className="ml-2 text-xs text-muted-foreground truncate">{p.brand_nombre}</span>}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {!!results.clients?.length && (
+                <CommandGroup heading="Clientes">
+                  {results.clients.map((c) => (
+                    <CommandItem key={`c-${c.id}`} value={`cli-${c.id}`} onSelect={() => go('/clientes')}>
+                      <Users className="mr-2 h-4 w-4" />
+                      <span className="truncate">{c.nombre}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {!!results.incidencias?.length && (
+                <CommandGroup heading="Incidencias">
+                  {results.incidencias.map((i) => (
+                    <CommandItem key={`i-${i.id}`} value={`inc-${i.id}`} onSelect={() => go(`/incidencias?id=${i.id}`)}>
+                      <Bug className="mr-2 h-4 w-4" />
+                      <span className="truncate">{i.titulo}</span>
+                      <span className="ml-2 text-xs text-muted-foreground truncate">{i.estado}</span>
                     </CommandItem>
                   ))}
                 </CommandGroup>

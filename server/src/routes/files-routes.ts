@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ensureRealImage } from "../utils/imageSafety.js";
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -217,9 +218,11 @@ filesRouter.post("/editor/upload-image", requireAuth, editorUpload.single("image
     if (!req.file) {
       return res.status(400).json({ error: "No se envió imagen" });
     }
+    const safeName = ensureRealImage(req.file.path);
+    if (!safeName) return res.status(400).json({ error: "El archivo no es una imagen válida" });
     // URL absoluta — los comentarios pueden mandarse por email
     const base = (process.env.FRONTEND_URL || "https://tiusdei.qbit.ec").replace(/\/$/, "");
-    const url = `${base}/uploads/editor/${req.file.filename}`;
+    const url = `${base}/uploads/editor/${safeName}`;
     res.status(201).json({ url });
   } catch (e) {
     console.error("[FILES] Error editor upload:", e);

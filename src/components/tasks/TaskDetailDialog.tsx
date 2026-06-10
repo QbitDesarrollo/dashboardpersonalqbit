@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Eye, Calendar, Loader2, Clock, Repeat, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { CustomFieldsSection } from './CustomFieldsSection';
 import { cn, getInitials } from '@/lib/utils';
 import { TaskTimer } from '@/components/tasks/TaskTimer';
 import { TaskFiles } from '@/components/tasks/TaskFiles';
@@ -503,6 +504,9 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                   taskId={task.id}
                   canEdit={canEdit()}
                 />
+
+                {/* Campos personalizados (solo aparece si hay definiciones) */}
+                <CustomFieldsSection taskId={task.id} brandId={task.brand_id} canEdit={canEdit()} />
 
                 {/* Comentarios (realtime) */}
                 <CommentsPanel taskId={task.id} deskId={task.desk_id || undefined} />

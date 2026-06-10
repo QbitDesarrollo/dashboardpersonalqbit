@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { verifySignedPath } from './utils/signedUrl.js';
 import path from 'path';
 import http from 'http';
 import express from 'express';
@@ -104,11 +105,30 @@ app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // Static uploads
 const uploadsDir = path.join(process.cwd(), 'uploads');
+// Screenshots del Team Monitor: datos sensibles de empleados — solo con URL firmada
+// (las firma team-monitor.ts para admins/ejecutivos, TTL 6h)
+app.use('/uploads/screenshots', (req, res, next) => {
+  const fullPath = `/uploads/screenshots${req.path}`;
+  const { exp, sig } = req.query as Record<string, string>;
+  if (!verifySignedPath(fullPath, exp, sig)) {
+    return res.status(403).json({ error: 'URL no válida o expirada' });
+  }
+  next();
+});
 app.use('/uploads', express.static(uploadsDir, {
   maxAge: '7d',
   etag: true,
   lastModified: true,
   setHeaders: (res, filePath) => {
+    // Nada servido desde /uploads debe poder ejecutar scripts en el origen de la app.
+    // (sandbox no afecta a <img>; se exceptúa .pdf para no romper el visor del navegador)
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (!/\.pdf$/i.test(filePath)) {
+      res.setHeader('Content-Security-Policy', 'sandbox');
+    }
+    if (/\.(svg|html?|xml|xhtml|js)$/i.test(filePath)) {
+      res.setHeader('Content-Disposition', 'attachment');
+    }
     // Favicon: short cache so admin changes take effect quickly
     if (filePath.includes('favicon')) {
       res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');

@@ -10,7 +10,7 @@ searchRouter.get('/search', requireAuth, async (req: AuthRequest, res) => {
   try {
     const q = (req.query.q as string)?.trim();
     if (!q || q.length < 2) {
-      return res.json({ tasks: [], deliverables: [] });
+      return res.json({ tasks: [], deliverables: [], projects: [], clients: [], incidencias: [] });
     }
 
     const role = await getUserRole(req.userId!);
@@ -26,7 +26,7 @@ searchRouter.get('/search', requireAuth, async (req: AuthRequest, res) => {
       );
       brandParams = brandIds.map((r) => r.brand_id);
       if (brandParams.length === 0) {
-        return res.json({ tasks: [], deliverables: [] });
+        return res.json({ tasks: [], deliverables: [], projects: [], clients: [], incidencias: [] });
       }
       const placeholders = brandParams.map(() => '?').join(',');
       brandFilter = ` AND t.brand_id IN (${placeholders})`;
@@ -53,9 +53,28 @@ searchRouter.get('/search', requireAuth, async (req: AuthRequest, res) => {
       LIMIT 10
     `;
 
-    const [tasks, deliverables] = await Promise.all([
+    // Proyectos, clientes (marcas) e incidencias: solo para roles internos
+    const isInterno = role !== 'cliente';
+    const projectsSql = `
+      SELECT pr.id, pr.nombre, pr.estado, b.nombre as brand_nombre
+      FROM projects pr LEFT JOIN brands b ON b.id = pr.brand_id
+      WHERE pr.nombre LIKE ?
+      ORDER BY pr.updated_at DESC LIMIT 10`;
+    const clientsSql = `
+      SELECT id, nombre FROM brands
+      WHERE nombre LIKE ? AND activo = 1
+      ORDER BY nombre ASC LIMIT 10`;
+    const incidenciasSql = `
+      SELECT id, titulo, estado, prioridad FROM incidencias
+      WHERE (titulo LIKE ? OR descripcion LIKE ?)
+      ORDER BY fecha_creacion DESC LIMIT 10`;
+
+    const [tasks, deliverables, projects, clients, incidencias] = await Promise.all([
       query<any[]>(tasksSql, taskParams),
       query<any[]>(delivSql, delivParams),
+      isInterno ? query<any[]>(projectsSql, [term]) : Promise.resolve([]),
+      isInterno ? query<any[]>(clientsSql, [term]) : Promise.resolve([]),
+      isInterno ? query<any[]>(incidenciasSql, [term, term]) : Promise.resolve([]),
     ]);
 
     res.json({
@@ -72,6 +91,9 @@ searchRouter.get('/search', requireAuth, async (req: AuthRequest, res) => {
         brand_nombre: r.brand_nombre,
         estado: r.estado,
       })),
+      projects: (projects || []).map((r) => ({ id: r.id, nombre: r.nombre, estado: r.estado, brand_nombre: r.brand_nombre })),
+      clients: (clients || []).map((r) => ({ id: r.id, nombre: r.nombre })),
+      incidencias: (incidencias || []).map((r) => ({ id: r.id, titulo: r.titulo, estado: r.estado, prioridad: r.prioridad })),
     });
   } catch (e) {
     console.error(e);

@@ -31,3 +31,4 @@ server/uploads
 *.sln
 *.sw?
 .agent.env
+server/.env.bak.*

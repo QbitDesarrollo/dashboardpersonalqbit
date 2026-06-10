@@ -714,6 +714,9 @@ export async function applyTemplate(templateId: string, data: { brand_id: string
 export async function globalSearch(q: string): Promise<{
   tasks: { id: string; titulo_tarea: string; estado: string; brand_nombre?: string }[];
   deliverables: { id: string; task_id: string; titulo_tarea: string; brand_nombre?: string; estado: string }[];
+  projects?: { id: string; nombre: string; estado: string; brand_nombre?: string }[];
+  clients?: { id: string; nombre: string }[];
+  incidencias?: { id: string; titulo: string; estado: string; prioridad?: string }[];
 }> {
   const res = await request(`/api/data/search?q=${encodeURIComponent(q)}`);
   if (!res.ok) throw new Error(await res.text());
