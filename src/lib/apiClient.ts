@@ -2054,8 +2054,14 @@ export async function getClientTaskComments(boardId: string, taskId: string) {
   if (!res.ok) throw new Error(await res.text());
   return res.json() as Promise<{ id: string; autor_nombre: string; es_interno: boolean; comentario: string; created_at: string }[]>;
 }
-export async function postClientTaskComment(boardId: string, taskId: string, comentario: string) {
-  const res = await request(`/api/data/client-boards/${boardId}/tasks/${taskId}/comments`, { method: "POST", body: JSON.stringify({ comentario }) });
+export async function postClientTaskComment(boardId: string, taskId: string, comentario: string, soloInterno?: boolean) {
+  const res = await request(`/api/data/client-boards/${boardId}/tasks/${taskId}/comments`, { method: "POST", body: JSON.stringify({ comentario, solo_interno: !!soloInterno }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function toggleClientCommentVisibility(boardId: string, commentId: string, soloInterno: boolean) {
+  const res = await request(`/api/data/client-boards/${boardId}/comments/${commentId}`, { method: "PATCH", body: JSON.stringify({ solo_interno: soloInterno }) });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

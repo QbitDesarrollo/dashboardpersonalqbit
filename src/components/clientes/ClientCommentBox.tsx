@@ -36,15 +36,18 @@ export function ClientCommentBox({
   uploadImage,
   placeholder = 'Escribe un comentario…',
   theme,
+  allowInternal = false,
 }: {
-  onSubmit: (html: string) => Promise<void>;
+  onSubmit: (html: string, soloInterno?: boolean) => Promise<void>;
   uploadImage: (file: File) => Promise<{ url: string }>;
   placeholder?: string;
   theme?: 'light' | 'dark';
+  allowInternal?: boolean;
 }) {
   const nextTheme = useTheme();
   const isDark = (theme ?? nextTheme.resolvedTheme) === 'dark';
   const [showEmoji, setShowEmoji] = useState(false);
+  const [soloInterno, setSoloInterno] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [, forceRender] = useState(0);
@@ -98,7 +101,7 @@ export function ClientCommentBox({
     const html = editor.getHTML();
     if (editor.isEmpty) return;
     setSending(true);
-    try { await onSubmit(html); editor.commands.clearContent(); }
+    try { await onSubmit(html, soloInterno); editor.commands.clearContent(); setSoloInterno(false); }
     catch { toast.error('No se pudo enviar'); }
     finally { setSending(false); }
   };
@@ -134,7 +137,13 @@ export function ClientCommentBox({
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
         </button>
         <span className="text-[11px] text-muted-foreground ml-1 hidden sm:inline">Ctrl+Enter enviar</span>
-        <Button size="sm" className="ml-auto h-8" onClick={send} disabled={sending || editor.isEmpty}>
+        {allowInternal && (
+          <label className={`ml-auto flex items-center gap-1.5 text-[11px] cursor-pointer select-none rounded px-1.5 py-1 ${soloInterno ? 'text-amber-700 bg-amber-50' : 'text-muted-foreground hover:bg-muted'}`} title="Si la marcas, este comentario NO lo verá el cliente">
+            <input type="checkbox" checked={soloInterno} onChange={(e) => setSoloInterno(e.target.checked)} className="accent-amber-600" />
+            {soloInterno ? '🔒 Nota interna' : 'Nota interna'}
+          </label>
+        )}
+        <Button size="sm" className={allowInternal ? 'h-8' : 'ml-auto h-8'} onClick={send} disabled={sending || editor.isEmpty}>
           {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Enviar
         </Button>
 

@@ -190,7 +190,7 @@ publicClientRouter.get('/public/client/:token/tasks/:taskId/comments', publicLim
     const t = await queryOne<any>('SELECT id FROM tasks WHERE id = ? AND client_board_id = ? AND cliente_visible = 1', [taskId, board.id]);
     if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
     const rows = await query<any[]>(
-      'SELECT id, autor_nombre, es_interno, comentario, created_at FROM client_board_comments WHERE board_id = ? AND task_id = ? ORDER BY created_at',
+      'SELECT id, autor_nombre, es_interno, comentario, created_at FROM client_board_comments WHERE board_id = ? AND task_id = ? AND solo_interno = 0 ORDER BY created_at',
       [board.id, taskId]
     );
     res.json(rows.map((r) => ({ ...r, es_interno: !!r.es_interno })));

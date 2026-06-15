@@ -182,10 +182,10 @@ clientBoardsRouter.get('/client-boards/:id/tasks/:taskId/comments', requireAuth,
     const t = await queryOne<any>('SELECT id FROM tasks WHERE id = ? AND client_board_id = ?', [taskId, id]);
     if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
     const rows = await query<any[]>(
-      'SELECT id, autor_nombre, es_interno, comentario, created_at FROM client_board_comments WHERE board_id = ? AND task_id = ? ORDER BY created_at',
+      'SELECT id, autor_nombre, es_interno, solo_interno, comentario, created_at FROM client_board_comments WHERE board_id = ? AND task_id = ? ORDER BY created_at',
       [id, taskId]
     );
-    res.json(rows.map((r) => ({ ...r, es_interno: !!r.es_interno })));
+    res.json(rows.map((r) => ({ ...r, es_interno: !!r.es_interno, solo_interno: !!r.solo_interno })));
   } catch (e) { console.error('[CLIENT-BOARDS] get comments:', e); res.status(500).json({ error: 'Error' }); }
 });
 
@@ -202,8 +202,20 @@ clientBoardsRouter.post('/client-boards/:id/tasks/:taskId/comments', requireAuth
     const me = await queryOne<{ nombre: string }>('SELECT nombre FROM profiles WHERE id = ?', [req.userId]);
     const autor = me?.nombre || 'Agencia';
     const cid = uuid();
-    await query('INSERT INTO client_board_comments (id, board_id, task_id, autor_nombre, es_interno, comentario) VALUES (?, ?, ?, ?, 1, ?)',
-      [cid, id, taskId, autor, comentario]);
-    res.status(201).json({ id: cid, autor_nombre: autor, es_interno: true, comentario, created_at: new Date().toISOString() });
+    const soloInterno = req.body?.solo_interno ? 1 : 0;
+    await query('INSERT INTO client_board_comments (id, board_id, task_id, autor_nombre, es_interno, solo_interno, comentario) VALUES (?, ?, ?, ?, 1, ?, ?)',
+      [cid, id, taskId, autor, soloInterno, comentario]);
+    res.status(201).json({ id: cid, autor_nombre: autor, es_interno: true, solo_interno: !!soloInterno, comentario, created_at: new Date().toISOString() });
   } catch (e) { console.error('[CLIENT-BOARDS] post comment:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Marcar un comentario como interno (solo equipo) o visible al cliente ──
+clientBoardsRouter.patch('/client-boards/:id/comments/:commentId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await ensureExec(req, res))) return;
+    const soloInterno = req.body?.solo_interno ? 1 : 0;
+    await query('UPDATE client_board_comments SET solo_interno = ? WHERE id = ? AND board_id = ?',
+      [soloInterno, String(req.params.commentId), String(req.params.id)]);
+    res.json({ ok: true, solo_interno: !!soloInterno });
+  } catch (e) { console.error('[CLIENT-BOARDS] toggle comment:', e); res.status(500).json({ error: 'Error' }); }
 });

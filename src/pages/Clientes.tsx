@@ -218,17 +218,24 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
   const [projs, setProjs] = useState<{ id: string; nombre: string }[]>([]);
   const loadProjs = () => { api.getProjects({ brand_id: board.brand_id }).then((r: any) => { const arr = Array.isArray(r) ? r : (r?.projects || []); setProjs(arr.filter((p: any) => p.activo !== 0)); }).catch(() => {}); };
   useEffect(() => { loadProjs(); }, [board.brand_id]);
-  const [comments, setComments] = useState<{ id: string; autor_nombre: string; es_interno: boolean; comentario: string; created_at: string }[]>([]);
+  const [comments, setComments] = useState<{ id: string; autor_nombre: string; es_interno: boolean; solo_interno?: boolean; comentario: string; created_at: string }[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const openDetail = async (t: ClientBoardTask) => {
     setOpenTask(t); setComments([]); setLoadingComments(true);
     try { setComments(await api.getClientTaskComments(board.id, t.id)); } catch { /* */ }
     finally { setLoadingComments(false); }
   };
-  const sendComment = async (html: string) => {
+  const sendComment = async (html: string, soloInterno?: boolean) => {
     if (!openTask) return;
-    const c = await api.postClientTaskComment(board.id, openTask.id, html);
+    const c = await api.postClientTaskComment(board.id, openTask.id, html, soloInterno);
     setComments((prev) => [...prev, c]);
+  };
+  const toggleCommentInterno = async (c: { id: string; solo_interno?: boolean }) => {
+    try {
+      await api.toggleClientCommentVisibility(board.id, c.id, !c.solo_interno);
+      setComments((prev) => prev.map((x) => (x.id === c.id ? { ...x, solo_interno: !c.solo_interno } : x)));
+      toast.success(!c.solo_interno ? 'Marcada como interna (el cliente ya no la ve)' : 'Ahora es visible para el cliente');
+    } catch { toast.error('No se pudo cambiar'); }
   };
 
   const changeTaskEstado = async (estado: string) => {
@@ -497,13 +504,21 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
               {loadingComments ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mx-auto my-4" />
                 : comments.length === 0 ? <p className="text-xs text-muted-foreground py-3 text-center">Sin comentarios todavía.</p>
                 : comments.map((c) => (
-                  <div key={c.id} className={cn('rounded-lg px-3 py-2', c.es_interno ? 'bg-primary/10' : 'bg-muted')}>
-                    <div className="text-[11px] text-muted-foreground mb-0.5">{c.es_interno ? '🏢 ' : '👤 '}{c.autor_nombre}</div>
+                  <div key={c.id} className={cn('rounded-lg px-3 py-2', c.solo_interno ? 'bg-amber-50 border border-amber-200' : c.es_interno ? 'bg-primary/10' : 'bg-muted')}>
+                    <div className="text-[11px] text-muted-foreground mb-0.5 flex items-center gap-1.5">
+                      <span>{c.es_interno ? '🏢 ' : '👤 '}{c.autor_nombre}</span>
+                      {c.solo_interno && <span className="text-amber-700 font-medium">🔒 Solo equipo</span>}
+                      {c.es_interno && (
+                        <button onClick={() => toggleCommentInterno(c)} className="ml-auto text-[10px] underline text-muted-foreground hover:text-foreground">
+                          {c.solo_interno ? 'Hacer visible al cliente' : 'Marcar como interna'}
+                        </button>
+                      )}
+                    </div>
                     <div className="text-sm"><RichTextViewer content={c.comentario} /></div>
                   </div>
                 ))}
             </div>
-            {openTask && <ClientCommentBox placeholder="Escribe al cliente… (sale con tu usuario)" onSubmit={sendComment} uploadImage={api.uploadEditorImage} />}
+            {openTask && <ClientCommentBox placeholder="Escribe al cliente… (sale con tu usuario)" onSubmit={sendComment} uploadImage={api.uploadEditorImage} allowInternal />}
           </div>
         </DialogContent>
       </Dialog>
