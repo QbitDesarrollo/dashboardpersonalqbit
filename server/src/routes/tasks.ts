@@ -556,6 +556,12 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       }
     }
 
+    // Tareas de tablero cliente: si se setea fecha interna y el cliente aún no tiene
+    // fecha visible, sincronizar fecha_cliente para que su tablero no quede sin "Entrega".
+    if (body.fecha_entrega !== undefined && body.fecha_cliente === undefined && oldRow?.client_board_id && !oldRow?.fecha_cliente) {
+      body.fecha_cliente = body.fecha_entrega;
+    }
+
     const fields: string[] = [];
     const values: any[] = [];
     const map: Record<string, string> = {

@@ -118,6 +118,8 @@ interface Task {
   estado: 'backlog' | 'en_proceso' | 'en_revision' | 'revision_interna' | 'revision_cliente' | 'aprobado' | 'entregado' | 'bloqueado';
   fecha_inicio: string | null;
   fecha_entrega: string;
+  fecha_cliente?: string | null;
+  client_board_id?: string | null;
   enlaces: string[] | null;
   estado_envio: 'pendiente' | 'enviado';
   qa_checklist: any;
@@ -214,7 +216,13 @@ export default function Tasks() {
   const [siteSettings, setSiteSettings] = useState<Record<string, string | null>>({});
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-  const [groupBy, setGroupBy] = useState<'estado' | 'mes'>('estado');
+  const [groupBy, setGroupBy] = useState<'estado' | 'mes' | 'departamento' | 'responsable'>('estado');
+  // Quick-add estilo Monday: crear tarea inline al pie de cada grupo
+  const [quickAddGroup, setQuickAddGroup] = useState<string | null>(null);
+  const [qaTitle, setQaTitle] = useState('');
+  const [qaBrand, setQaBrand] = useState<string>(() => localStorage.getItem('tasks_qa_brand') || '');
+  const [qaFecha, setQaFecha] = useState('');
+  const [qaSaving, setQaSaving] = useState(false);
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const [subtasksCache, setSubtasksCache] = useState<Record<string, { id: string; titulo_tarea: string; check_done: boolean }[]>>({});
   const [newSubtaskTitle, setNewSubtaskTitle] = useState<Record<string, string>>({});
@@ -290,6 +298,7 @@ export default function Tasks() {
   const [formData, setFormData] = useState({
     titulo_tarea: '',
     detalle: '',
+    fecha_cliente: '',
     brand_id: '',
     project_id: '',
     desk_id: '',
@@ -649,6 +658,7 @@ export default function Tasks() {
       estado: formData.estado,
       fecha_inicio: formData.fecha_inicio || null,
       fecha_entrega: formData.fecha_entrega,
+      ...(selectedTask?.client_board_id ? { fecha_cliente: formData.fecha_cliente || null } : {}),
       cantidad_entregables: validEntregables.length > 0 ? validEntregables.reduce((sum, e) => sum + e.cantidad, 0) : formData.cantidad_entregables,
       enlaces: formData.enlaces ? formData.enlaces.split('\n').filter(Boolean) : null,
       task_type_id: formData.task_type_id || null,
@@ -689,6 +699,7 @@ export default function Tasks() {
       estado: 'backlog',
       fecha_inicio: '',
       fecha_entrega: '',
+      fecha_cliente: '',
       cantidad_entregables: 1,
       enlaces: '',
       task_type_id: '',
@@ -734,6 +745,7 @@ export default function Tasks() {
       estado: task.estado,
       fecha_inicio: task.fecha_inicio ? task.fecha_inicio.substring(0, 10) : '',
       fecha_entrega: task.fecha_entrega ? task.fecha_entrega.substring(0, 10) : '',
+      fecha_cliente: task.fecha_cliente ? String(task.fecha_cliente).substring(0, 10) : '',
       cantidad_entregables: task.cantidad_entregables,
       enlaces: task.enlaces?.join('\n') || '',
       task_type_id: task.task_type_id || '',
@@ -836,6 +848,32 @@ export default function Tasks() {
 
   const statusOrder: Task['estado'][] = ['en_proceso', 'revision_interna', 'revision_cliente', 'en_revision', 'backlog', 'bloqueado', 'aprobado', 'entregado'];
 
+  const quickAddTask = async (groupKey: string, tasksInGroup: Task[]) => {
+    if (!qaTitle.trim() || !qaBrand) { toast.error('Pon título y marca'); return; }
+    const fecha = qaFecha || (() => { const d = new Date(); d.setDate(d.getDate() + 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+    const payload: Record<string, unknown> = { titulo_tarea: qaTitle.trim(), brand_id: qaBrand, fecha_entrega: fecha };
+    if (groupBy === 'departamento' && groupKey !== 'Por clasificar') {
+      payload.departamento = groupKey;
+      const depId = tasksInGroup.find((t) => t.department_id)?.department_id;
+      if (depId) payload.department_id = depId;
+    }
+    if (groupBy === 'estado' && ['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado'].includes(groupKey)) payload.estado = groupKey;
+    if (groupBy === 'responsable' && groupKey !== 'Sin asignar') {
+      const u = users.find((x) => x.nombre === groupKey);
+      if (u) payload.responsable_ids = [u.id];
+    }
+    setQaSaving(true);
+    try {
+      const r: any = await api.createTask(payload);
+      if (r?.error) throw new Error(r.error);
+      localStorage.setItem('tasks_qa_brand', qaBrand);
+      toast.success('Tarea creada');
+      setQaTitle(''); setQaFecha('');
+      fetchData();
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo crear'); }
+    finally { setQaSaving(false); }
+  };
+
   const getStatusHeaderColor = (estado: string) => {
     const colors: Record<string, string> = {
       backlog: 'bg-[hsl(222,35%,35%)]',
@@ -894,14 +932,45 @@ export default function Tasks() {
         return acc;
       }, {});
     }
+    if (groupBy === 'responsable') {
+      const byResp: Record<string, Task[]> = {};
+      filteredTasks.forEach((t) => {
+        const names: string[] = [];
+        if (t.responsables && t.responsables.length > 0) t.responsables.forEach((r) => names.push(r.nombre || 'Sin nombre'));
+        else if (t.responsable_user_id) names.push(users.find((u) => u.id === t.responsable_user_id)?.nombre || 'Sin asignar');
+        if (names.length === 0) names.push('Sin asignar');
+        names.forEach((n) => { if (!byResp[n]) byResp[n] = []; byResp[n].push(t); });
+      });
+      const sorted = Object.keys(byResp).sort((a, b) =>
+        a === 'Sin asignar' ? 1 : b === 'Sin asignar' ? -1 : a.localeCompare(b, 'es'));
+      return sorted.reduce<Record<string, Task[]>>((acc, key) => {
+        acc[key] = byResp[key];
+        return acc;
+      }, {});
+    }
+    if (groupBy === 'departamento') {
+      const byDept: Record<string, Task[]> = {};
+      filteredTasks.forEach((t) => {
+        const key = t.department_nombre || t.departamento || 'Por clasificar';
+        if (!byDept[key]) byDept[key] = [];
+        byDept[key].push(t);
+      });
+      const sorted = Object.keys(byDept).sort((a, b) =>
+        a === 'Por clasificar' ? 1 : b === 'Por clasificar' ? -1 : a.localeCompare(b, 'es'));
+      return sorted.reduce<Record<string, Task[]>>((acc, key) => {
+        acc[key] = byDept[key];
+        return acc;
+      }, {});
+    }
     return statusOrder.reduce<Record<string, Task[]>>((acc, status) => {
       const tasksInGroup = filteredTasks.filter(t => t.estado === status);
       if (tasksInGroup.length > 0) acc[status] = tasksInGroup;
       return acc;
     }, {});
-  }, [filteredTasks, groupBy]);
+  }, [filteredTasks, groupBy, users]);
 
   const getGroupLabel = (key: string) => {
+    if (groupBy === 'departamento' || groupBy === 'responsable') return key;
     if (groupBy === 'mes') {
       const [y, m] = key.split('-').map(Number);
       const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -1396,6 +1465,18 @@ export default function Tasks() {
                     />
                   </div>
 
+                  {selectedTask?.client_board_id && (
+                    <div className="space-y-2">
+                      <Label htmlFor="fecha_cliente">Fecha Cliente <span className="text-xs text-muted-foreground font-normal">(la que ve en su tablero)</span></Label>
+                      <Input
+                        id="fecha_cliente"
+                        type="date"
+                        value={formData.fecha_cliente}
+                        onChange={(e) => setFormData({ ...formData, fecha_cliente: e.target.value })}
+                      />
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label htmlFor="estimated_hours">Horas Estimadas</Label>
                     <Input
@@ -1725,13 +1806,15 @@ export default function Tasks() {
             </div>
             <div className="space-y-1.5 w-full sm:w-auto">
               <Label className="text-xs text-muted-foreground block">Agrupar por</Label>
-              <Select value={groupBy} onValueChange={(v: 'estado' | 'mes') => setGroupBy(v)}>
+              <Select value={groupBy} onValueChange={(v: 'estado' | 'mes' | 'departamento' | 'responsable') => setGroupBy(v)}>
                 <SelectTrigger className="w-full sm:w-[140px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="estado">Estado</SelectItem>
                   <SelectItem value="mes">Mes de entrega</SelectItem>
+                  <SelectItem value="departamento">Departamento</SelectItem>
+                  <SelectItem value="responsable">Responsable</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1868,12 +1951,20 @@ export default function Tasks() {
                             onClick={() => toggleGroup(groupKey)}
                             className={cn(
                               "flex items-center gap-2 w-full px-3 py-2 rounded-t-md text-white text-sm font-semibold",
-                              groupBy === 'mes' ? getMonthHeaderColor(groupKey) : getStatusHeaderColor(groupKey)
+                              groupBy === 'mes' ? getMonthHeaderColor(groupKey) : groupBy === 'departamento' ? (groupKey === 'Por clasificar' ? 'bg-slate-400' : getDepartmentColor(groupKey)) : groupBy === 'responsable' ? (groupKey === 'Sin asignar' ? 'bg-slate-400' : getMonthHeaderColor(groupKey)) : getStatusHeaderColor(groupKey)
                             )}
                           >
                             {collapsedGroups[groupKey] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             {getGroupLabel(groupKey)}
                             <span className="ml-1 opacity-90 font-normal">({tasksInGroup.length})</span>
+                            <span className="ml-auto hidden sm:flex items-center gap-2 pr-1">
+                              <span className="text-[11px] font-normal opacity-90">{tasksInGroup.filter((t) => ['aprobado', 'entregado'].includes(t.estado)).length}/{tasksInGroup.length} listas</span>
+                              {groupBy !== 'estado' && (
+                                <span className="flex h-1.5 w-28 rounded-full overflow-hidden bg-white/25">
+                                  {statusOrder.map((st) => { const n = tasksInGroup.filter((t) => t.estado === st).length; return n > 0 ? <span key={st} className={cn('h-full', getStatusHeaderColor(st))} style={{ width: `${(n / tasksInGroup.length) * 100}%` }} /> : null; })}
+                                </span>
+                              )}
+                            </span>
                           </button>
                         </TableCell>
                       </TableRow>
@@ -2218,6 +2309,28 @@ export default function Tasks() {
                         </React.Fragment>
                         );
                       })}
+                      {!collapsedGroups[groupKey] && (isAdmin || isEjecutivo || isEquipo) && (
+                        <TableRow className="border-border bg-muted/20">
+                          <TableCell colSpan={30} className="py-1.5">
+                            {quickAddGroup === groupKey ? (
+                              <div className="flex flex-wrap items-center gap-2 pl-8">
+                                <Input autoFocus value={qaTitle} onChange={(e) => setQaTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') quickAddTask(groupKey, tasksInGroup); if (e.key === 'Escape') setQuickAddGroup(null); }} placeholder="Título de la tarea…" className="h-8 w-64 text-sm" />
+                                <Select value={qaBrand} onValueChange={setQaBrand}>
+                                  <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Marca *" /></SelectTrigger>
+                                  <SelectContent>{brands.map((b) => <SelectItem key={b.id} value={b.id}>{b.nombre}</SelectItem>)}</SelectContent>
+                                </Select>
+                                <Input type="date" value={qaFecha} onChange={(e) => setQaFecha(e.target.value)} className="h-8 w-36 text-xs" title="Fecha de entrega (vacía = en 7 días)" />
+                                <Button size="sm" className="h-8" disabled={qaSaving || !qaTitle.trim() || !qaBrand} onClick={() => quickAddTask(groupKey, tasksInGroup)}>{qaSaving ? '…' : 'Agregar'}</Button>
+                                <Button size="sm" variant="ghost" className="h-8" onClick={() => setQuickAddGroup(null)}>Cancelar</Button>
+                              </div>
+                            ) : (
+                              <button onClick={() => { setQuickAddGroup(groupKey); setQaTitle(''); }} className="flex items-center gap-2 pl-8 text-sm text-muted-foreground hover:text-primary transition-colors">
+                                <Plus className="h-3.5 w-3.5" />Agregar aquí
+                              </button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </React.Fragment>
                   ))
                 )}

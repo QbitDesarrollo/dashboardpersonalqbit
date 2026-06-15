@@ -1483,6 +1483,9 @@ export interface CumplimientoResponsable {
   promedio_reschedules: number;
   reschedules_total?: number;
   reschedules_internos?: number;
+  entregables_total?: number;
+  vencidas_tasks?: { task_id: string; titulo: string; marca: string | null; fecha_objetivo: string | null; estado: string }[];
+  tarde_tasks?: { task_id: string; titulo: string; marca: string | null; fecha_objetivo: string | null; entregada: string | null }[];
   porcentaje_cumplimiento: number | null;
 }
 
@@ -2014,15 +2017,16 @@ export async function resolveClientRequest(boardId: string, requestId: string, a
 export interface PublicClientTask {
   id: string; titulo: string; detalle?: string | null; estado: string; estado_raw: string;
   fecha_cliente: string | null; creada: string; dias_atraso: number; links: string[]; project_id?: string | null;
+  departamento?: string | null; department_id?: string | null; responsable?: string | null;
 }
 export interface PublicProject {
   id: string; nombre: string; estado: string; salud: string; avance: number;
-  fecha_fin: string | null; total_tareas: number; tareas_listas: number; color: string | null;
+  fecha_fin: string | null; total_tareas: number; tareas_listas: number; en_marcha: number; color: string | null;
 }
 export async function getPublicClientBoard(token: string) {
   const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}`);
   if (!res.ok) throw new Error('Tablero no disponible');
-  return res.json() as Promise<{ titulo: string; marca: string; cliente_nombre: string | null; projects: PublicProject[]; tasks: PublicClientTask[] }>;
+  return res.json() as Promise<{ titulo: string; marca: string; cliente_nombre: string | null; cliente_editor: boolean; departments: { id: string; nombre: string }[]; projects: PublicProject[]; tasks: PublicClientTask[] }>;
 }
 export async function getPublicTaskComments(token: string, taskId: string) {
   const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}/tasks/${taskId}/comments`);
@@ -2057,7 +2061,14 @@ export async function postClientTaskComment(boardId: string, taskId: string, com
 }
 
 // Cliente público: cambiar status (aprobar/pedir cambios) + subir imagen
-export async function setPublicTaskStatus(token: string, taskId: string, estado: "aprobado" | "en_proceso", autor_nombre: string) {
+export async function postPublicTask(token: string, data: { titulo: string; detalle?: string; department_id?: string; autor_nombre: string }) {
+  const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}/tasks`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "No se pudo crear");
+  return res.json() as Promise<{ id: string; ok: boolean }>;
+}
+export async function setPublicTaskStatus(token: string, taskId: string, estado: "aprobado" | "en_proceso" | "backlog" | "revision_cliente", autor_nombre: string) {
   const res = await fetch(`${API_BASE}/api/public/client/${encodeURIComponent(token)}/tasks/${taskId}/status`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ estado, autor_nombre }),
   });

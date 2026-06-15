@@ -14,6 +14,8 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ExternalLink } from 'lucide-react';
 import { Loader2, TrendingUp, TrendingDown, Calendar, Filter, FileSpreadsheet, ChevronUp, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, getInitials } from '@/lib/utils';
@@ -47,6 +49,7 @@ export default function Cumplimiento() {
   const [desks, setDesks] = useState<Desk[]>([]);
   const [data, setData] = useState<CumplimientoResponsable[]>([]);
   const [meta, setMeta] = useState<{ total_responsables: number; total_tareas: number } | null>(null);
+  const [drill, setDrill] = useState<{ nombre: string; tipo: 'tarde' | 'vencidas'; tasks: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('porcentaje_cumplimiento');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -101,13 +104,14 @@ export default function Cumplimiento() {
   };
 
   const exportCSV = () => {
-    const headers = ['Nombre', 'Email', 'Total tareas', 'A tiempo', 'Tarde', 'Vencidas', 'En proceso', '% Cumplimiento', 'Promedio reschedules'];
+    const headers = ['Nombre', 'Email', 'Total tareas', 'Entregables', 'A tiempo', 'Tarde', 'Vencidas', 'En proceso', '% Cumplimiento', 'Promedio reschedules'];
     const lines = [
       headers.join(','),
       ...sorted.map(r => [
         `"${r.nombre}"`,
         r.email || '',
         r.tareas_total,
+        r.entregables_total ?? 0,
         r.entregadas_a_tiempo,
         r.entregadas_tarde,
         r.vencidas_no_entregadas,
@@ -142,8 +146,9 @@ export default function Cumplimiento() {
         tarde: acc.tarde + r.entregadas_tarde,
         vencidas: acc.vencidas + r.vencidas_no_entregadas,
         en_proceso: acc.en_proceso + r.en_proceso,
+        entregables: acc.entregables + (r.entregables_total ?? 0),
       }),
-      { a_tiempo: 0, tarde: 0, vencidas: 0, en_proceso: 0 }
+      { a_tiempo: 0, tarde: 0, vencidas: 0, en_proceso: 0, entregables: 0 }
     );
   }, [sorted]);
   const totalCompletadas = totals.a_tiempo + totals.tarde;
@@ -202,9 +207,10 @@ export default function Cumplimiento() {
 
       {/* Stats globales */}
       {meta && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           <StatCard label="Responsables" value={meta.total_responsables} />
           <StatCard label="Tareas en periodo" value={meta.total_tareas} />
+          <StatCard label="Entregables (total)" value={totals.entregables} />
           <StatCard label="A tiempo" value={totals.a_tiempo} variant="success" />
           <StatCard label="Tarde / Vencidas" value={totals.tarde + totals.vencidas} variant="danger" />
           <StatCard
@@ -234,6 +240,7 @@ export default function Cumplimiento() {
                   <TableRow>
                     <SortableHead label="Persona" k="nombre" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
                     <SortableHead label="Tareas" k="tareas_total" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
+                    <TableHead className="text-right">Entregables</TableHead>
                     <SortableHead label="A tiempo" k="entregadas_a_tiempo" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
                     <SortableHead label="Tarde" k="entregadas_tarde" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
                     <SortableHead label="Vencidas" k="vencidas_no_entregadas" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} className="text-right" />
@@ -257,9 +264,18 @@ export default function Cumplimiento() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right text-sm font-medium">{r.tareas_total}</TableCell>
+                      <TableCell className="text-right text-sm font-semibold">{r.entregables_total ?? 0}</TableCell>
                       <TableCell className="text-right text-sm text-green-700">{r.entregadas_a_tiempo}</TableCell>
-                      <TableCell className="text-right text-sm text-amber-700">{r.entregadas_tarde}</TableCell>
-                      <TableCell className="text-right text-sm text-red-700">{r.vencidas_no_entregadas}</TableCell>
+                      <TableCell className="text-right text-sm">
+                        {r.entregadas_tarde > 0
+                          ? <button onClick={() => setDrill({ nombre: r.nombre, tipo: 'tarde', tasks: r.tarde_tasks || [] })} className="text-amber-700 font-medium hover:underline decoration-dashed underline-offset-2" title="Ver las tareas entregadas tarde">{r.entregadas_tarde}</button>
+                          : <span className="text-amber-700">0</span>}
+                      </TableCell>
+                      <TableCell className="text-right text-sm">
+                        {r.vencidas_no_entregadas > 0
+                          ? <button onClick={() => setDrill({ nombre: r.nombre, tipo: 'vencidas', tasks: r.vencidas_tasks || [] })} className="text-red-700 font-medium hover:underline decoration-dashed underline-offset-2" title="Ver las tareas vencidas sin entregar">{r.vencidas_no_entregadas}</button>
+                          : <span className="text-red-700">0</span>}
+                      </TableCell>
                       <TableCell className="text-right text-sm">
                         {(r.reschedules_total ?? 0) > 0 ? (
                           <div className="inline-flex flex-col items-end gap-0.5">
@@ -324,6 +340,32 @@ export default function Cumplimiento() {
       <p className="text-[11px] text-muted-foreground italic px-1">
         🔁 <strong>Reagendamientos</strong>: cuántas <strong>veces se movió la fecha de entrega</strong>. El número grande es el total; abajo, el promedio por tarea (<span className="text-green-700">verde</span> bien, <span className="text-amber-700">ámbar</span> regular, <span className="text-red-700">rojo</span> alto). Solo los <strong>internos</strong> &mdash; cuando el equipo movió la fecha sin causa de cliente, alcance o fuerza mayor &mdash; <strong>bajan el % de cumplimiento</strong>.
       </p>
+      <Dialog open={!!drill} onOpenChange={(o) => { if (!o) setDrill(null); }}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              {drill?.tipo === 'vencidas' ? 'Tareas vencidas' : 'Tareas entregadas tarde'} — {drill?.nombre}
+            </DialogTitle>
+          </DialogHeader>
+          {drill && drill.tasks.length === 0 && <p className="text-sm text-muted-foreground py-4 text-center">Sin tareas en este grupo.</p>}
+          <div className="space-y-1.5">
+            {drill?.tasks.map((t: any) => (
+              <a key={t.task_id} href={`/tareas?task=${t.task_id}`} target="_blank" rel="noreferrer"
+                 className="flex items-start justify-between gap-2 rounded-lg border px-3 py-2 hover:bg-muted/50 transition-colors">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate flex items-center gap-1.5">{t.titulo}<ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" /></div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {t.marca && <span>{t.marca} · </span>}
+                    {drill.tipo === 'vencidas'
+                      ? <>vencía {t.fecha_objetivo || '—'} · <span className="capitalize">{t.estado}</span></>
+                      : <>se prometió {t.fecha_objetivo || '—'} · entregada {t.entregada || '—'}</>}
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

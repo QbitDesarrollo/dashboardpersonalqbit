@@ -162,15 +162,16 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
 
     const tasksRowsFinal = await query<any[]>(
       `SELECT * FROM (
-        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, t.responsable_user_id AS user_id
-        FROM tasks t
+        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, t.cantidad_entregables AS entregables, b.nombre AS marca, t.responsable_user_id AS user_id
+        FROM tasks t LEFT JOIN brands b ON b.id = t.brand_id
         WHERE t.responsable_user_id IS NOT NULL
           AND DATE(t.created_at) BETWEEN ? AND ?
           AND (t.parent_task_id IS NULL OR t.parent_task_id = '')
         UNION
-        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, tr.user_id AS user_id
+        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, t.cantidad_entregables AS entregables, b.nombre AS marca, tr.user_id AS user_id
         FROM task_responsables tr
         INNER JOIN tasks t ON t.id = tr.task_id
+        LEFT JOIN brands b ON b.id = t.brand_id
         WHERE DATE(t.created_at) BETWEEN ? AND ?
           AND (t.parent_task_id IS NULL OR t.parent_task_id = '')
       ) ut
@@ -242,6 +243,9 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
       en_proceso: number;
       reschedules_total: number;
       reschedules_internos: number;
+      entregables_total: number;
+      vencidas_tasks: any[];
+      tarde_tasks: any[];
       task_ids: string[];
     };
     const byUser: Record<string, UserMetric> = {};
@@ -260,6 +264,9 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
           en_proceso: 0,
           reschedules_total: 0,
           reschedules_internos: 0,
+          entregables_total: 0,
+          vencidas_tasks: [],
+          tarde_tasks: [],
           task_ids: [],
         };
       }
@@ -267,7 +274,9 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
       m.tareas_total += 1;
       m.reschedules_total += reschedulesByTask[t.task_id] || 0;
       m.reschedules_internos += reschedulesInternosByTask[t.task_id] || 0;
+      m.entregables_total += Number(t.entregables) || 0;
       m.task_ids.push(t.task_id);
+      const fechaTxt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
       // Fecha objetivo JUSTA: la vara movida solo por reschedules no-internos.
       // Si no hubo reschedules registrados, la vara es la fecha_entrega actual de la tarea.
@@ -278,7 +287,10 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
         if (fechaObjetivo) {
           const fObj = new Date(fechaObjetivo); fObj.setHours(23, 59, 59, 999);
           if (deliveredAt <= fObj) m.entregadas_a_tiempo += 1;
-          else m.entregadas_tarde += 1;
+          else {
+            m.entregadas_tarde += 1;
+            m.tarde_tasks.push({ task_id: t.task_id, titulo: t.titulo_tarea, marca: t.marca || null, fecha_objetivo: fechaTxt(fechaObjetivo), entregada: fechaTxt(deliveredAt) });
+          }
         } else {
           // Sin fecha objetivo conocida → no penalizar
           m.entregadas_a_tiempo += 1;
@@ -288,6 +300,7 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
         const fObjVencer = fechaObjetivo || (t.fecha_entrega ? new Date(t.fecha_entrega) : null);
         if (fObjVencer && fObjVencer < today && !['entregado', 'aprobado'].includes(t.estado)) {
           m.vencidas_no_entregadas += 1;
+          m.vencidas_tasks.push({ task_id: t.task_id, titulo: t.titulo_tarea, marca: t.marca || null, fecha_objetivo: fechaTxt(fObjVencer), estado: t.estado });
         } else {
           m.en_proceso += 1;
         }
@@ -325,6 +338,9 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
         promedio_reschedules: Number(promedioReschedules.toFixed(2)),
         reschedules_internos: m.reschedules_internos,
         reschedules_total: m.reschedules_total,
+        entregables_total: m.entregables_total,
+        vencidas_tasks: m.vencidas_tasks,
+        tarde_tasks: m.tarde_tasks,
         porcentaje_cumplimiento: porcentaje !== null ? Number(porcentaje.toFixed(1)) : null,
       };
     });

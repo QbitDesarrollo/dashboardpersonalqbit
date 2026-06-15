@@ -23,7 +23,7 @@ const publicLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: tr
 async function boardByToken(token: string) {
   if (!token || token.length > 80) return null;
   return queryOne<any>(
-    `SELECT cb.id, cb.brand_id, cb.cliente_nombre, cb.titulo, cb.activo, cb.created_by, b.nombre AS brand_nombre
+    `SELECT cb.id, cb.brand_id, cb.cliente_nombre, cb.titulo, cb.activo, cb.created_by, cb.cliente_editor, b.nombre AS brand_nombre
      FROM client_boards cb LEFT JOIN brands b ON b.id = cb.brand_id
      WHERE cb.token = ? LIMIT 1`, [token]
   );
@@ -98,7 +98,9 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
     if (!board || !board.activo) return res.status(404).json({ error: 'Tablero no disponible' });
 
     const tasks = await query<any[]>(
-      `SELECT id, titulo_tarea, detalle, estado, fecha_cliente, created_at, enlaces, project_id
+      `SELECT id, titulo_tarea, detalle, estado, fecha_cliente, created_at, enlaces, project_id, departamento, department_id,
+              (SELECT GROUP_CONCAT(p.nombre SEPARATOR ', ') FROM task_responsables tr JOIN profiles p ON p.id = tr.user_id WHERE tr.task_id = tasks.id) AS resp_multi,
+              (SELECT p2.nombre FROM profiles p2 WHERE p2.id = tasks.responsable_user_id) AS resp_uno
        FROM tasks
        WHERE client_board_id = ? AND cliente_visible = 1
        ORDER BY (fecha_cliente IS NULL), fecha_cliente ASC, created_at DESC`,
@@ -127,6 +129,9 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
         dias_atraso: diasAtraso,
         links,
         project_id: t.project_id || null,
+        departamento: t.departamento || null,
+        department_id: t.department_id || null,
+        responsable: board.cliente_editor ? (t.resp_multi || t.resp_uno || null) : null,
       };
     });
 
@@ -135,6 +140,7 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
       `SELECT pr.id, pr.nombre, pr.estado, pr.salud, pr.fecha_fin, pr.color,
               COUNT(t.id) AS total,
               SUM(t.estado IN ('entregado','aprobado')) AS listas,
+              SUM(t.estado IN ('en_proceso','en_revision','revision_interna','bloqueado','revision_cliente')) AS en_marcha,
               SUM(t.estado NOT IN ('entregado','aprobado','revision_cliente') AND t.fecha_cliente IS NOT NULL AND t.fecha_cliente < CURDATE()) AS vencidas
        FROM projects pr
        INNER JOIN tasks t ON t.project_id = pr.id AND t.client_board_id = ? AND t.cliente_visible = 1
@@ -154,13 +160,20 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
         else if (r.fecha_fin && new Date(String(r.fecha_fin).slice(0, 10) + 'T00:00:00') < hoy2 && r.estado === 'en_curso') salud = 'rojo';
         else salud = 'verde';
       }
-      return { id: r.id, nombre: r.nombre, estado: r.estado, salud, avance, fecha_fin: r.fecha_fin, total_tareas: total, tareas_listas: listas, color: r.color };
+      return { id: r.id, nombre: r.nombre, estado: r.estado, salud, avance, fecha_fin: r.fecha_fin, total_tareas: total, tareas_listas: listas, en_marcha: Number(r.en_marcha) || 0, color: r.color };
     });
+
+    // Departamentos activos (para la vista editable del cliente)
+    const departments = board.cliente_editor
+      ? await query<any[]>(`SELECT id, nombre FROM departments WHERE activo = 1 ORDER BY nombre`).catch(() => [])
+      : [];
 
     res.json({
       titulo: board.titulo,
       marca: board.brand_nombre,
       cliente_nombre: board.cliente_nombre,
+      cliente_editor: !!board.cliente_editor,
+      departments,
       projects,
       tasks: out,
     });
@@ -235,16 +248,25 @@ publicClientRouter.patch('/public/client/:token/tasks/:taskId/status', publicLim
 
     const nuevo = String(req.body?.estado || '');
     const nombre = typeof req.body?.autor_nombre === 'string' ? req.body.autor_nombre.trim().slice(0, 120) : 'Cliente';
-    // El cliente solo puede actuar sobre tareas que están EN SU REVISIÓN
-    if (t.estado !== 'revision_cliente') {
-      return res.status(409).json({ error: 'Esta tarea no está esperando tu revisión' });
-    }
-    if (nuevo !== 'aprobado' && nuevo !== 'en_proceso') {
-      return res.status(400).json({ error: 'Solo puedes Aprobar o Pedir cambios' });
+    if (board.cliente_editor) {
+      // Tablero colaborativo: el cliente mueve tareas libremente (estilo Monday)
+      const PERMITIDOS = ['backlog', 'en_proceso', 'revision_cliente', 'aprobado'];
+      if (!PERMITIDOS.includes(nuevo)) return res.status(400).json({ error: 'Estado no permitido' });
+      if (t.estado === 'entregado') return res.status(409).json({ error: 'Una tarea entregada no se puede mover' });
+    } else {
+      // El cliente solo puede actuar sobre tareas que están EN SU REVISIÓN
+      if (t.estado !== 'revision_cliente') {
+        return res.status(409).json({ error: 'Esta tarea no está esperando tu revisión' });
+      }
+      if (nuevo !== 'aprobado' && nuevo !== 'en_proceso') {
+        return res.status(400).json({ error: 'Solo puedes Aprobar o Pedir cambios' });
+      }
     }
     await query('UPDATE tasks SET estado = ? WHERE id = ?', [nuevo, taskId]);
     // Deja constancia en el hilo como comentario del cliente
-    const accionTxt = nuevo === 'aprobado' ? '✅ Aprobó la tarea.' : '🔄 Pidió cambios (volvió a En proceso).';
+    const accionTxt = t.estado === 'revision_cliente' && nuevo === 'aprobado' ? '✅ Aprobó la tarea.'
+      : t.estado === 'revision_cliente' && nuevo === 'en_proceso' ? '🔄 Pidió cambios (volvió a En proceso).'
+      : `📌 Movió la tarea a "${ESTADO_CLIENTE[nuevo] || nuevo}".`;
     await query('INSERT INTO client_board_comments (id, board_id, task_id, autor_nombre, es_interno, comentario) VALUES (?, ?, ?, ?, 0, ?)',
       [uuid(), board.id, taskId, nombre || 'Cliente', accionTxt]);
     const accion = nuevo === 'aprobado' ? 'aprobó' : 'pidió cambios';
@@ -253,6 +275,37 @@ publicClientRouter.patch('/public/client/:token/tasks/:taskId/status', publicLim
       mensaje: `${emoji} ${nombre || 'Cliente'} ${accion} "${t.titulo_tarea}"` }).catch(() => {});
     res.json({ ok: true, estado: nuevo });
   } catch (e) { console.error('[PUBLIC-CLIENT] status:', e); res.status(500).json({ error: 'Error' }); }
+});
+
+// ── Crear tarea directa (solo tableros colaborativos con cliente_editor) ──
+publicClientRouter.post('/public/client/:token/tasks', publicLimiter, async (req, res) => {
+  try {
+    const board = await boardByToken(String(req.params.token));
+    if (!board || !board.activo) return res.status(404).json({ error: 'No disponible' });
+    if (!board.cliente_editor) return res.status(403).json({ error: 'Este tablero no permite crear tareas' });
+    const titulo = typeof req.body?.titulo === 'string' ? req.body.titulo.trim().slice(0, 480) : '';
+    if (!titulo) return res.status(400).json({ error: 'Título requerido' });
+    const detalle = typeof req.body?.detalle === 'string' ? req.body.detalle.trim().slice(0, 4000) : null;
+    const nombre = typeof req.body?.autor_nombre === 'string' ? req.body.autor_nombre.trim().slice(0, 120) : 'Cliente';
+    const deptId = typeof req.body?.department_id === 'string' && req.body.department_id ? req.body.department_id : null;
+    let deptNombre: string | null = null;
+    if (deptId) {
+      const d = await queryOne<any>('SELECT id, nombre FROM departments WHERE id = ? AND activo = 1', [deptId]);
+      if (!d) return res.status(400).json({ error: 'Departamento no válido' });
+      deptNombre = d.nombre;
+    }
+    const id = uuid();
+    await query(
+      `INSERT INTO tasks (id, brand_id, titulo_tarea, detalle, department_id, departamento, cliente_visible, client_board_id, estado)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, 'backlog')`,
+      [id, board.brand_id, titulo, detalle, deptId, deptNombre, board.id]
+    );
+    await query('INSERT INTO client_board_comments (id, board_id, task_id, autor_nombre, es_interno, comentario) VALUES (?, ?, ?, ?, 0, ?)',
+      [uuid(), board.id, id, nombre || 'Cliente', `🆕 Creó esta tarea desde su tablero${deptNombre ? ` (depto. ${deptNombre})` : ''}.`]);
+    notifyClientActivity(board, { taskId: id, tareaTitulo: titulo, accion: 'creó una tarea',
+      mensaje: `🆕 ${nombre || 'Cliente'} creó la tarea "${titulo}"${deptNombre ? ` en ${deptNombre}` : ''}`, detalle: detalle || undefined }).catch(() => {});
+    res.status(201).json({ id, ok: true });
+  } catch (e) { console.error('[PUBLIC-CLIENT] create task:', e); res.status(500).json({ error: 'Error' }); }
 });
 
 // ── Subida de imagen para comentarios del cliente (sin login, token-gated) ──

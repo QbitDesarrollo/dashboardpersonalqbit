@@ -53,8 +53,8 @@ function diasInfo(fechaCliente: string | null, estadoRaw: string): { txt: string
   return { txt: `Faltan ${diff} d`, cls: 'text-emerald-600' };
 }
 
-function KanbanCard({ t, onOpen }: { t: PublicClientTask; onOpen: () => void }) {
-  const draggable = t.estado_raw === 'revision_cliente';
+function KanbanCard({ t, onOpen, editor = false }: { t: PublicClientTask; onOpen: () => void; editor?: boolean }) {
+  const draggable = editor ? t.estado_raw !== 'entregado' : t.estado_raw === 'revision_cliente';
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: t.id, disabled: !draggable });
   return (
     <div ref={setNodeRef} className={cn('bg-white rounded-lg border p-3 space-y-2 shadow-sm', isDragging && 'opacity-40')}>
@@ -68,12 +68,13 @@ function KanbanCard({ t, onOpen }: { t: PublicClientTask; onOpen: () => void }) 
       </div>
       <div className="text-[10px] text-slate-400 pl-0.5">Creada {fmtCorta(t.creada)}</div>
       {t.links.length > 0 && <a href={t.links[0]} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-xs text-primary hover:underline"><ExternalLink className="h-3 w-3" />Entregable</a>}
-      {draggable && <div className="text-[10px] text-purple-500 pl-0.5">↔ Arrastra para aprobar o pedir cambios</div>}
+      {t.estado_raw === 'revision_cliente' && <div className="text-[10px] text-purple-500 pl-0.5">↔ Arrastra para aprobar o pedir cambios</div>}
+      {t.departamento && <div className="text-[10px] text-slate-400 pl-0.5">{t.departamento}</div>}
     </div>
   );
 }
 
-function Column({ col, tasks, onOpen }: { col: typeof COLS[number]; tasks: PublicClientTask[]; onOpen: (t: PublicClientTask) => void }) {
+function Column({ col, tasks, onOpen, editor = false }: { col: typeof COLS[number]; tasks: PublicClientTask[]; onOpen: (t: PublicClientTask) => void; editor?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col-${col.key}` });
   return (
     <div className="flex-shrink-0 w-[270px]">
@@ -82,9 +83,35 @@ function Column({ col, tasks, onOpen }: { col: typeof COLS[number]; tasks: Publi
         <Badge variant="secondary" className="text-[10px]">{tasks.length}</Badge>
       </div>
       <div ref={setNodeRef} className={cn('min-h-[300px] p-2 space-y-2 rounded-b-lg bg-slate-100/60 transition-colors', isOver && 'bg-purple-100 ring-2 ring-purple-300')}>
-        {tasks.map((t) => <KanbanCard key={t.id} t={t} onOpen={() => onOpen(t)} />)}
+        {tasks.map((t) => <KanbanCard key={t.id} t={t} onOpen={() => onOpen(t)} editor={editor} />)}
         {tasks.length === 0 && <p className="text-xs text-slate-400 text-center py-6">—</p>}
       </div>
+    </div>
+  );
+}
+
+function DoneZone({ tasks, onOpen, collapsed, onToggle }: { tasks: PublicClientTask[]; onOpen: (t: PublicClientTask) => void; collapsed: boolean; onToggle: () => void }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'col-hechas' });
+  return (
+    <div ref={setNodeRef} className={cn('mt-4 bg-white rounded-xl border overflow-hidden transition-colors', isOver && 'ring-2 ring-emerald-300 bg-emerald-50')}>
+      <button onClick={onToggle} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50">
+        {collapsed ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+        <span className="font-semibold text-slate-700">Tareas hechas</span>
+        <Badge variant="secondary" className="text-[10px] ml-1">{tasks.length}</Badge>
+        <span className="text-[11px] text-slate-400 ml-auto">Arrastra aquí para aprobar</span>
+      </button>
+      {!collapsed && (
+        <div className="border-t p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          {tasks.map((t) => (
+            <button key={t.id} onClick={() => onOpen(t)} className="text-left rounded-lg border bg-slate-50 px-3 py-2 hover:bg-slate-100">
+              <div className="text-sm font-medium text-slate-700 line-through decoration-slate-300">{t.titulo}</div>
+              <div className="text-[10px] text-emerald-600 mt-0.5">{t.estado}</div>
+            </button>
+          ))}
+          {tasks.length === 0 && <p className="text-xs text-slate-400 col-span-full text-center py-3">Aún no hay tareas terminadas.</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -94,14 +121,20 @@ const ESTADO_PROY: Record<string, string> = { en_curso: 'En curso', pausado: 'Pa
 
 export default function ClientBoardPublic() {
   const { token = '' } = useParams();
-  const [data, setData] = useState<{ titulo: string; marca: string; cliente_nombre: string | null; projects: PublicProject[]; tasks: PublicClientTask[] } | null>(null);
+  const [data, setData] = useState<{ titulo: string; marca: string; cliente_nombre: string | null; cliente_editor: boolean; departments: { id: string; nombre: string }[]; projects: PublicProject[]; tasks: PublicClientTask[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [nombre, setNombre] = useState<string>('');
   const [askName, setAskName] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [view, setView] = useState<'proyectos' | 'kanban' | 'lista'>('proyectos');
+  const [view, setView] = useState<'proyectos' | 'kanban' | 'lista' | 'departamentos'>('proyectos');
+  const [doneCollapsed, setDoneCollapsed] = useState(true);
+  const [listFilter, setListFilter] = useState('todos');
+  const [newTask, setNewTask] = useState<{ open: boolean; dept: string | null }>({ open: false, dept: null });
+  const [ntTitulo, setNtTitulo] = useState('');
+  const [ntDetalle, setNtDetalle] = useState('');
+  const [ntSending, setNtSending] = useState(false);
   const [selProject, setSelProject] = useState<PublicProject | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const NAME_KEY = `client_name_${token}`;
@@ -120,6 +153,13 @@ export default function ClientBoardPublic() {
     load();
   }, [load, NAME_KEY]);
 
+  // Página pública: siempre en modo claro (el dark mode del visitante volvía invisible el texto)
+  useEffect(() => {
+    const hadDark = document.documentElement.classList.contains('dark');
+    document.documentElement.classList.remove('dark');
+    return () => { if (hadDark) document.documentElement.classList.add('dark'); };
+  }, []);
+
   const saveName = () => { const n = nameInput.trim(); if (!n) return; localStorage.setItem(NAME_KEY, n); setNombre(n); setAskName(false); };
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -129,10 +169,24 @@ export default function ClientBoardPublic() {
     const over = e.over; if (!over) return;
     const target = String(over.id).replace('col-', '');
     const task = data?.tasks.find((t) => t.id === taskId);
-    if (!task || task.estado_raw !== 'revision_cliente') return;
-    let nuevo: 'aprobado' | 'en_proceso' | null = null;
-    if (target === 'aprobado') nuevo = 'aprobado'; else if (target === 'en_proceso') nuevo = 'en_proceso'; else return;
-    try { await api.setPublicTaskStatus(token, taskId, nuevo, nombre || 'Cliente'); toast.success(nuevo === 'aprobado' ? '¡Aprobado! El equipo fue notificado.' : 'Pediste cambios. El equipo lo verá.'); load(); }
+    if (!task) return;
+    const editor = !!data?.cliente_editor;
+    let nuevo: 'aprobado' | 'en_proceso' | 'backlog' | 'revision_cliente' | null = null;
+    if (editor) {
+      // Tablero colaborativo: mover libre entre columnas (estilo Monday)
+      if (task.estado_raw === 'entregado') return;
+      const MAP: Record<string, typeof nuevo> = { pendiente: 'backlog', en_proceso: 'en_proceso', revision: 'revision_cliente', aprobado: 'aprobado', entregado: 'aprobado', hechas: 'aprobado' };
+      nuevo = MAP[target] || null;
+      if (!nuevo || nuevo === task.estado_raw) return;
+    } else {
+      if (task.estado_raw !== 'revision_cliente') return;
+      if (target === 'aprobado' || target === 'hechas') nuevo = 'aprobado'; else if (target === 'en_proceso') nuevo = 'en_proceso'; else return;
+    }
+    try {
+      await api.setPublicTaskStatus(token, taskId, nuevo, nombre || 'Cliente');
+      toast.success(nuevo === 'aprobado' ? '¡Aprobado! El equipo fue notificado.' : nuevo === 'en_proceso' && task.estado_raw === 'revision_cliente' ? 'Pediste cambios. El equipo lo verá.' : 'Tarea movida.');
+      load();
+    }
     catch (er) { toast.error(er instanceof Error ? er.message : 'No se pudo'); }
   };
 
@@ -167,6 +221,17 @@ export default function ClientBoardPublic() {
     } catch { toast.error('No se pudo enviar'); } finally { setSendingReq(false); }
   };
 
+  const createTask = async () => {
+    if (!ntTitulo.trim()) return;
+    setNtSending(true);
+    try {
+      await api.postPublicTask(token, { titulo: ntTitulo.trim(), detalle: ntDetalle.trim() || undefined, department_id: newTask.dept || undefined, autor_nombre: nombre || 'Cliente' });
+      toast.success('Tarea creada. El equipo la verá en su tablero.');
+      setNewTask({ open: false, dept: null }); setNtTitulo(''); setNtDetalle('');
+      load();
+    } catch (er) { toast.error(er instanceof Error ? er.message : 'No se pudo crear'); } finally { setNtSending(false); }
+  };
+
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="h-8 w-8 animate-spin text-slate-400" /></div>;
   if (error || !data) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-center px-6">
@@ -183,6 +248,16 @@ export default function ClientBoardPublic() {
   const activeTask = data.tasks.find((t) => t.id === activeId);
   const openProject = (p: PublicProject) => { setSelProject(p); setView('kanban'); };
 
+  // Resumen para el header del cliente
+  const totalEnt = data.projects.reduce((a, p) => a + p.total_tareas, 0);
+  const listasEnt = data.projects.reduce((a, p) => a + p.tareas_listas, 0);
+  const enMarchaTot = data.projects.reduce((a, p) => a + (p.en_marcha || 0), 0);
+  const pendRevision = data.tasks.filter((t) => t.estado_raw === 'revision_cliente').length;
+  const hoyMs = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+  const proxHito = data.projects
+    .filter((p) => p.fecha_fin && new Date(p.fecha_fin.slice(0, 10) + 'T00:00:00').getTime() >= hoyMs)
+    .sort((a, b) => String(a.fecha_fin).localeCompare(String(b.fecha_fin)))[0];
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <header className="bg-white border-b sticky top-0 z-10">
@@ -196,6 +271,7 @@ export default function ClientBoardPublic() {
             <div className="flex rounded-lg border overflow-hidden">
               {data.projects.length > 0 && <button onClick={() => { setView('proyectos'); setSelProject(null); }} className={cn('px-3 py-1.5 text-xs font-medium flex items-center gap-1.5', view === 'proyectos' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')}><FolderKanban className="h-3.5 w-3.5" />Proyectos</button>}
               <button onClick={() => setView('kanban')} className={cn('px-3 py-1.5 text-xs font-medium flex items-center gap-1.5', view === 'kanban' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')}><LayoutGrid className="h-3.5 w-3.5" />Tablero</button>
+              {data.cliente_editor && <button onClick={() => setView('departamentos')} className={cn('px-3 py-1.5 text-xs font-medium flex items-center gap-1.5', view === 'departamentos' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')}><GripVertical className="h-3.5 w-3.5" />Departamentos</button>}
               <button onClick={() => setView('lista')} className={cn('px-3 py-1.5 text-xs font-medium flex items-center gap-1.5', view === 'lista' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100')}><ListIcon className="h-3.5 w-3.5" />Lista</button>
             </div>
             <Button size="sm" onClick={() => setReqOpen(true)} className="shrink-0"><Plus className="h-4 w-4" />Pedir algo</Button>
@@ -215,69 +291,205 @@ export default function ClientBoardPublic() {
         {data.tasks.length === 0 ? (
           <div className="text-center py-20 text-slate-400"><CheckCircle2 className="h-12 w-12 mx-auto mb-3 opacity-40" />Todavía no hay proyectos cargados.</div>
         ) : view === 'proyectos' ? (
+          <>
+          {pendRevision > 0 && (
+            <button onClick={() => { setSelProject(null); setView('kanban'); }}
+              className="w-full mb-4 flex items-center gap-3 rounded-xl border border-purple-200 bg-purple-50 px-4 py-3 text-left hover:bg-purple-100 transition-colors">
+              <span className="h-9 w-9 rounded-full bg-purple-100 flex items-center justify-center shrink-0"><ThumbsUp className="h-4.5 w-4.5 text-purple-600" /></span>
+              <span className="flex-1 text-sm text-purple-900"><strong>{pendRevision} entregable{pendRevision > 1 ? 's' : ''}</strong> espera{pendRevision > 1 ? 'n' : ''} tu aprobación.</span>
+              <span className="text-sm font-semibold text-purple-700 shrink-0">Revisar ahora →</span>
+            </button>
+          )}
+          {data.projects.length > 0 && (
+            <div className="mb-4 bg-white rounded-xl border px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-sm">
+              <span className="text-slate-600"><strong className="text-slate-800">{listasEnt}</strong> de <strong className="text-slate-800">{totalEnt}</strong> entregables listos</span>
+              {enMarchaTot > 0 && <span className="text-slate-600"><strong className="text-slate-800">{enMarchaTot}</strong> en proceso</span>}
+              {proxHito && <span className="text-slate-600 flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-slate-400" />Próximo hito: <strong className="text-slate-800">{proxHito.nombre}</strong> · {fmtCorta(proxHito.fecha_fin)}</span>}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {data.projects.map((p) => (
               <button key={p.id} onClick={() => openProject(p)} className="text-left bg-white rounded-xl border p-4 space-y-3 hover:border-purple-300 hover:shadow-md transition-all">
                 <div className="flex items-start justify-between gap-2">
                   <div className="font-semibold text-slate-800 flex items-center gap-2"><span className={cn('inline-block h-2.5 w-2.5 rounded-full', SALUD_DOT[p.salud])} />{p.nombre}</div>
-                  <Badge variant="outline" className="text-[10px] shrink-0">{ESTADO_PROY[p.estado] || p.estado}</Badge>
+                  <Badge variant="outline" className="text-[10px] shrink-0 bg-white text-slate-600 border-slate-200">{ESTADO_PROY[p.estado] || p.estado}</Badge>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p.avance}%`, backgroundColor: p.salud === 'rojo' ? '#ef4444' : p.salud === 'amarillo' ? '#f59e0b' : '#10b981' }} /></div>
+                  <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden flex">
+                    <div className="h-full" style={{ width: `${p.avance}%`, backgroundColor: p.salud === 'rojo' ? '#ef4444' : p.salud === 'amarillo' ? '#f59e0b' : '#10b981' }} />
+                    {(p.en_marcha || 0) > 0 && p.total_tareas > 0 && <div className="h-full" style={{ width: `${Math.min(100 - p.avance, Math.round((p.en_marcha / p.total_tareas) * 100))}%`, backgroundColor: p.salud === 'rojo' ? '#ef4444' : p.salud === 'amarillo' ? '#f59e0b' : '#10b981', opacity: 0.25 }} />}
+                  </div>
                   <span className="text-xs font-medium text-slate-500 w-9 text-right">{p.avance}%</span>
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>{p.tareas_listas}/{p.total_tareas} entregables</span>
+                  <span>{p.tareas_listas}/{p.total_tareas} entregables{(p.en_marcha || 0) > 0 ? ` · ${p.en_marcha} en proceso` : ''}</span>
                   {p.fecha_fin && <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{fmtCorta(p.fecha_fin)}</span>}
                 </div>
-                <div className="text-[11px] text-purple-500 font-medium">Ver detalle →</div>
+                <div className="text-[11px] text-primary font-medium">Ver detalle →</div>
               </button>
             ))}
           </div>
+          </>
         ) : view === 'kanban' ? (
           <DndContext sensors={sensors} onDragStart={(e: DragStartEvent) => setActiveId(e.active.id as string)} onDragEnd={handleDragEnd}>
-            <div className="flex gap-3 pb-4" style={{ touchAction: 'pan-x' }}>{COLS.map((c) => <Column key={c.key} col={c} tasks={byCol[c.key]} onOpen={openDetail} />)}</div>
+            <div className="flex gap-3 pb-1" style={{ touchAction: 'pan-x' }}>
+              {(data.cliente_editor ? COLS.filter((co) => !['aprobado', 'entregado'].includes(co.key)) : COLS).map((co) => <Column key={co.key} col={co} tasks={byCol[co.key]} onOpen={openDetail} editor={data.cliente_editor} />)}
+            </div>
+            {data.cliente_editor && <DoneZone tasks={[...byCol['aprobado'], ...byCol['entregado']]} onOpen={openDetail} collapsed={doneCollapsed} onToggle={() => setDoneCollapsed((v) => !v)} />}
             <DragOverlay>{activeTask ? <div className="bg-white rounded-lg border p-3 shadow-lg w-[250px]"><span className="font-medium text-sm">{activeTask.titulo}</span></div> : null}</DragOverlay>
           </DndContext>
+        ) : view === 'departamentos' ? (
+          /* ── Vista DEPARTAMENTOS (tablero colaborativo) ── */
+          (() => {
+            const grupos: Record<string, PublicClientTask[]> = {};
+            for (const t of visibleTasks) { const k = t.departamento || 'Por clasificar'; (grupos[k] ||= []).push(t); }
+            const colorOf = (raw: string) => COLS.find((co) => co.raws.includes(raw))?.color || '#64748b';
+            const DEPT_COLORS = ['#7c3aed', '#2563eb', '#0891b2', '#059669', '#d97706', '#dc2626', '#db2777', '#4f46e5', '#0d9488', '#65a30d'];
+            // Columnas: todos los departamentos (con o sin tareas) + "Por clasificar" si aplica
+            const cols: { nombre: string; id: string | null; color: string }[] = data.departments.map((d, i) => ({ nombre: d.nombre, id: d.id, color: DEPT_COLORS[i % DEPT_COLORS.length] }));
+            if (grupos['Por clasificar']) cols.unshift({ nombre: 'Por clasificar', id: null, color: '#94a3b8' });
+            return (
+              <div className="flex gap-3 pb-4 overflow-x-auto" style={{ touchAction: 'pan-x' }}>
+                {cols.map((dep) => {
+                  const tareas = grupos[dep.nombre] || [];
+                  return (
+                    <div key={dep.nombre} className="flex-shrink-0 w-[260px]">
+                      <div className="flex items-center justify-between px-2 py-2 border-b-2" style={{ borderColor: dep.color }}>
+                        <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dep.color }} />{dep.nombre}</span>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="secondary" className="text-[10px]">{tareas.length}</Badge>
+                          {dep.id && <button onClick={() => setNewTask({ open: true, dept: dep.id })} title={`Nueva tarea en ${dep.nombre}`} className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-200"><Plus className="h-3.5 w-3.5" /></button>}
+                        </div>
+                      </div>
+                      <div className="min-h-[260px] p-2 space-y-2 rounded-b-lg bg-slate-100/60">
+                        {tareas.map((t) => (
+                          <button key={t.id} onClick={() => openDetail(t)} className="w-full text-left bg-white rounded-lg border p-3 space-y-1.5 shadow-sm hover:border-slate-300">
+                            <div className="font-medium text-sm text-slate-800">{t.titulo}</div>
+                            <div className="flex items-center justify-between">
+                              <span className="inline-flex items-center gap-1.5 text-[10px] font-medium" style={{ color: colorOf(t.estado_raw) }}><span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: colorOf(t.estado_raw) }} />{t.estado}</span>
+                              {t.fecha_cliente && <span className="text-[10px] text-slate-400">{fmtCorta(t.fecha_cliente)}</span>}
+                            </div>
+                          </button>
+                        ))}
+                        {dep.id ? (
+                          <button onClick={() => setNewTask({ open: true, dept: dep.id })} className={cn('w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 text-xs text-slate-400 hover:text-slate-600 hover:border-slate-400 hover:bg-white transition-colors', tareas.length === 0 ? 'py-8' : 'py-2.5')}>
+                            <Plus className="h-3.5 w-3.5" />{tareas.length === 0 ? 'Crea la primera tarea' : 'Nueva tarea'}
+                          </button>
+                        ) : (
+                          tareas.length === 0 && <p className="text-xs text-slate-400 text-center py-6">—</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()
         ) : (
-          /* ── Vista LISTA agrupada por estado ── */
-          <div className="space-y-4 max-w-3xl">
-            {COLS.filter((c) => byCol[c.key].length > 0).map((c) => {
-              const isCol = collapsed[c.key];
-              return (
-                <div key={c.key} className="bg-white rounded-xl border overflow-hidden">
-                  <button onClick={() => setCollapsed((p) => ({ ...p, [c.key]: !p[c.key] }))} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50">
-                    {isCol ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: c.color }} />
-                    <span className="font-semibold text-slate-700">{c.label}</span>
-                    <Badge variant="secondary" className="text-[10px] ml-1">{byCol[c.key].length}</Badge>
-                  </button>
-                  {!isCol && (
-                    <table className="w-full text-sm border-t">
-                      <thead className="bg-slate-50 text-slate-400 text-[11px] uppercase">
-                        <tr><th className="text-left font-medium px-4 py-2">Proyecto</th><th className="text-left font-medium px-4 py-2 w-28">Fecha creada</th><th className="text-left font-medium px-4 py-2 w-24">Entrega</th><th className="text-left font-medium px-4 py-2 w-32">Tiempo</th><th className="text-left font-medium px-4 py-2 w-24">Entregable</th><th className="px-4 py-2 w-10"></th></tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {byCol[c.key].map((t) => {
-                          const d = diasInfo(t.fecha_cliente, t.estado_raw);
-                          return (
-                          <tr key={t.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => openDetail(t)}>
-                            <td className="px-4 py-2.5 font-medium text-slate-800">{t.titulo}</td>
-                            <td className="px-4 py-2.5 text-slate-500">{fmtCorta(t.creada)}</td>
-                            <td className="px-4 py-2.5 text-slate-600">{fmtCorta(t.fecha_cliente)}</td>
-                            <td className="px-4 py-2.5"><span className={cn('text-xs', d?.cls || 'text-slate-400')}>{d?.txt || '—'}</span></td>
-                            <td className="px-4 py-2.5">{t.links.length > 0 ? <a href={t.links[0]} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-primary hover:underline text-xs"><ExternalLink className="h-3.5 w-3.5" />Ver</a> : <span className="text-slate-300 text-xs">—</span>}</td>
-                            <td className="px-4 py-2.5 text-right"><MessageSquare className="h-3.5 w-3.5 text-slate-400 inline" /></td>
-                          </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
+          /* ── Vista LISTA agrupada por proyecto (como la interna) ── */
+          (() => {
+            const colorOf = (raw: string) => COLS.find((co) => co.raws.includes(raw))?.color || '#64748b';
+            const filtered = listFilter === 'todos' ? visibleTasks : visibleTasks.filter((t) => colOf(t.estado_raw) === listFilter);
+            const byProj: Record<string, PublicClientTask[]> = {};
+            for (const t of filtered) { const k = t.project_id || 'sin'; (byProj[k] ||= []).push(t); }
+            const DONE = ['aprobado', 'entregado'];
+            const rank = (t: PublicClientTask) => (DONE.includes(t.estado_raw) ? 2 : 0) + (t.fecha_cliente ? 0 : 1);
+            for (const k of Object.keys(byProj)) byProj[k].sort((a, b) => rank(a) - rank(b) || String(a.fecha_cliente || '9999').localeCompare(String(b.fecha_cliente || '9999')));
+            const projGroups = [
+              ...data.projects.filter((pr) => byProj[pr.id]).map((pr) => ({ id: pr.id, nombre: pr.nombre, tasks: byProj[pr.id] })),
+              ...(byProj['sin'] ? [{ id: 'sin', nombre: 'Sin proyecto', tasks: byProj['sin'] }] : []),
+            ];
+            const chips = [{ key: 'todos', label: 'Todos', n: visibleTasks.length }, ...COLS.map((co) => ({ key: co.key, label: co.label, n: byCol[co.key].length })).filter((ch) => ch.n > 0)];
+            const showResp = !!data.cliente_editor;
+            return (
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  {chips.map((ch) => {
+                    const dotColor = ch.key === 'todos' ? '#64748b' : (COLS.find((co) => co.key === ch.key)?.color || '#64748b');
+                    return (
+                      <button key={ch.key} onClick={() => setListFilter(ch.key)} className={cn('inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition-colors', listFilter === ch.key ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 hover:bg-slate-100')}>
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: dotColor }} />
+                        {ch.label} ({ch.n})
+                      </button>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+                {projGroups.map((g) => {
+                  const isCol = collapsed[g.id];
+                  return (
+                    <div key={g.id} className="bg-white rounded-xl border overflow-hidden">
+                      <button onClick={() => setCollapsed((pp) => ({ ...pp, [g.id]: !pp[g.id] }))} className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50">
+                        {isCol ? <ChevronRight className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                        <FolderKanban className="h-4 w-4 text-slate-400" />
+                        <span className="font-semibold text-slate-700">{g.nombre}</span>
+                        <Badge variant="secondary" className="text-[10px] ml-1">{g.tasks.length}</Badge>
+                        {(() => {
+                          const pr = data.projects.find((px) => px.id === g.id);
+                          if (!pr) return null;
+                          const barColor = pr.salud === 'rojo' ? '#ef4444' : pr.salud === 'amarillo' ? '#f59e0b' : '#10b981';
+                          return (
+                            <span className="ml-auto hidden sm:flex items-center gap-2">
+                              <span className="text-[11px] text-slate-500">{pr.tareas_listas}/{pr.total_tareas} listas</span>
+                              <span className="flex h-1.5 w-24 rounded-full overflow-hidden bg-slate-100">
+                                <span className="h-full" style={{ width: `${pr.avance}%`, backgroundColor: barColor }} />
+                                {(pr.en_marcha || 0) > 0 && pr.total_tareas > 0 && <span className="h-full" style={{ width: `${Math.min(100 - pr.avance, Math.round((pr.en_marcha / pr.total_tareas) * 100))}%`, backgroundColor: barColor, opacity: 0.25 }} />}
+                              </span>
+                              <span className="text-[11px] font-medium text-slate-600 w-8 text-right">{pr.avance}%</span>
+                            </span>
+                          );
+                        })()}
+                      </button>
+                      {!isCol && (
+                        <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-t min-w-[760px]">
+                          <thead className="bg-slate-50 text-slate-400 text-[11px] uppercase">
+                            <tr>
+                              <th className="text-left font-medium px-4 py-2">Tarea</th>
+                              <th className="text-left font-medium px-4 py-2 w-32">Estado</th>
+                              {showResp && <th className="text-left font-medium px-4 py-2 w-36">Responsable</th>}
+                              <th className="text-left font-medium px-4 py-2 w-28">Fecha creada</th>
+                              <th className="text-left font-medium px-4 py-2 w-24">Entrega</th>
+                              <th className="text-left font-medium px-4 py-2 w-32">Tiempo</th>
+                              <th className="text-left font-medium px-4 py-2 w-20">Entregable</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {g.tasks.map((t) => {
+                              const d = diasInfo(t.fecha_cliente, t.estado_raw);
+                              return (
+                                <tr key={t.id} className={cn('hover:bg-slate-50 cursor-pointer', DONE.includes(t.estado_raw) && 'opacity-60')} onClick={() => openDetail(t)}>
+                                  <td className={cn('px-4 py-2.5 font-medium text-slate-800', DONE.includes(t.estado_raw) && 'line-through decoration-slate-300')}>{t.titulo}</td>
+                                  <td className="px-4 py-2.5"><span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold text-white whitespace-nowrap" style={{ backgroundColor: colorOf(t.estado_raw) }}>{t.estado}</span></td>
+                                  {showResp && (
+                                    <td className="px-4 py-2.5">
+                                      {t.responsable ? (
+                                        <span className="flex items-center gap-1.5">
+                                          <span className="h-6 w-6 rounded-full bg-slate-200 text-slate-600 text-[9px] font-bold flex items-center justify-center shrink-0">
+                                            {t.responsable.split(',')[0].trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+                                          </span>
+                                          <span className="text-xs text-slate-600 truncate max-w-[110px]" title={t.responsable}>{t.responsable}</span>
+                                        </span>
+                                      ) : <span className="text-slate-300 text-xs">—</span>}
+                                    </td>
+                                  )}
+                                  <td className="px-4 py-2.5 text-slate-500">{fmtCorta(t.creada)}</td>
+                                  <td className="px-4 py-2.5 text-slate-600">{fmtCorta(t.fecha_cliente)}</td>
+                                  <td className="px-4 py-2.5"><span className={cn('text-xs', d?.cls || 'text-slate-400')}>{d?.txt || '—'}</span></td>
+                                  <td className="px-4 py-2.5">{t.links.length > 0 ? <a href={t.links[0]} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-primary hover:underline text-xs"><ExternalLink className="h-3.5 w-3.5" />Ver</a> : <span className="text-slate-300 text-xs">—</span>}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {projGroups.length === 0 && <p className="text-sm text-slate-400 text-center py-10">No hay tareas con este filtro.</p>}
+              </div>
+            );
+          })()
         )}
       </main>
 
@@ -326,6 +538,27 @@ export default function ClientBoardPublic() {
       </Dialog>
 
       {/* Pedir requerimiento — profesional, con editor rico */}
+      <Dialog open={newTask.open} onOpenChange={(o) => setNewTask((p) => ({ ...p, open: o }))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nueva tarea{newTask.dept ? ` · ${data.departments.find((d) => d.id === newTask.dept)?.nombre || ''}` : ''}</DialogTitle>
+            <DialogDescription>Se creará en el tablero del equipo como pendiente.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input placeholder="Título de la tarea" value={ntTitulo} onChange={(e) => setNtTitulo(e.target.value)} maxLength={480} />
+            <textarea className="w-full rounded-md border bg-white px-3 py-2 text-sm min-h-[90px]" placeholder="Detalle (opcional)" value={ntDetalle} onChange={(e) => setNtDetalle(e.target.value)} maxLength={4000} />
+            <select className="w-full rounded-md border bg-white px-3 py-2 text-sm" value={newTask.dept || ''} onChange={(e) => setNewTask((p) => ({ ...p, dept: e.target.value || null }))}>
+              <option value="">Sin departamento</option>
+              {data.departments.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+            </select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewTask({ open: false, dept: null })}>Cancelar</Button>
+            <Button onClick={createTask} disabled={ntSending || !ntTitulo.trim()}>{ntSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Crear tarea</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={reqOpen} onOpenChange={setReqOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
