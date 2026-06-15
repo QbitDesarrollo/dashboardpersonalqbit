@@ -175,7 +175,8 @@ export default function ClientBoardPublic() {
     if (editor) {
       // Tablero colaborativo: mover libre entre columnas (estilo Monday)
       if (task.estado_raw === 'entregado') return;
-      const MAP: Record<string, typeof nuevo> = { pendiente: 'backlog', en_proceso: 'en_proceso', revision: 'revision_cliente', aprobado: 'aprobado', entregado: 'aprobado', hechas: 'aprobado' };
+      // revision (Para tu revisión) NO es destino para el cliente: esa columna la llena la agencia
+      const MAP: Record<string, typeof nuevo> = { pendiente: 'backlog', en_proceso: 'en_proceso', aprobado: 'aprobado', entregado: 'aprobado', hechas: 'aprobado' };
       nuevo = MAP[target] || null;
       if (!nuevo || nuevo === task.estado_raw) return;
     } else {

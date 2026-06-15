@@ -250,7 +250,8 @@ publicClientRouter.patch('/public/client/:token/tasks/:taskId/status', publicLim
     const nombre = typeof req.body?.autor_nombre === 'string' ? req.body.autor_nombre.trim().slice(0, 120) : 'Cliente';
     if (board.cliente_editor) {
       // Tablero colaborativo: el cliente mueve tareas libremente (estilo Monday)
-      const PERMITIDOS = ['backlog', 'en_proceso', 'revision_cliente', 'aprobado'];
+      // revision_cliente NO lo puede setear el cliente (esa columna la asigna la agencia)
+      const PERMITIDOS = ['backlog', 'en_proceso', 'aprobado'];
       if (!PERMITIDOS.includes(nuevo)) return res.status(400).json({ error: 'Estado no permitido' });
       if (t.estado === 'entregado') return res.status(409).json({ error: 'Una tarea entregada no se puede mover' });
     } else {

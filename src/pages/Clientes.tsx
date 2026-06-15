@@ -268,7 +268,8 @@ function BoardDetail({ board, onBack, onCopy, copied }: { board: ClientBoard; on
       const targetProj = targetKey === '__sin__' ? null : targetKey;
       if ((a.project_id || null) === targetProj) return;
       try {
-        await api.patchTask(activeId, { project_id: targetProj, sort_order: 9999 });
+        const maxSort = tasks.filter((t) => (t.project_id || null) === targetProj).reduce((m, t) => Math.max(m, t.sort_order ?? 0), -1);
+        await api.patchTask(activeId, { project_id: targetProj, sort_order: maxSort + 1 });
         toast.success(targetProj ? 'Tarea movida al proyecto' : 'Tarea movida a "Sin proyecto"');
         load();
       } catch { toast.error('No se pudo mover la tarea'); }
