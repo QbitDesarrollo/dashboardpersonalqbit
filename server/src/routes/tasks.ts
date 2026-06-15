@@ -517,17 +517,23 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
     );
     const isAssigned = isResponsable || !!isInResponsables;
 
+    // Acceso a la tarea por mesa/asignacion (mismo criterio que para verla)
+    const hasAccess = await canAccessTask(req.userId!, id);
+
     let allowed = false;
     if (role === 'admin') {
       allowed = true;
     } else if (role === 'ejecutivo') {
-      allowed = !isProtected || oldRow?.created_by === req.userId;
+      // Un ejecutivo edita cualquier tarea de su mesa (o asignada/creada por el),
+      // no solo las que creo el mismo. Antes una tarea "protegida" bloqueaba a los demas ejecutivos.
+      allowed = hasAccess;
     } else if (role === 'equipo') {
-      if (isProtected) {
-        // On protected tasks, equipo can only change operational fields if assigned
-        allowed = isAssigned && (onlyOperational || onlyFavorite);
-      } else {
-        allowed = onlyFavorite || isAssigned;
+      if (isAssigned) {
+        // Asignado: edita todo (en protegidas, solo campos operativos: el jefe define, el equipo ejecuta)
+        allowed = isProtected ? (onlyOperational || onlyFavorite) : true;
+      } else if (hasAccess) {
+        // Companero de mesa no asignado: puede hacer acciones operativas (timer, estado, hecho, favorito)
+        allowed = onlyOperational || onlyFavorite;
       }
     }
     if (!allowed) {
