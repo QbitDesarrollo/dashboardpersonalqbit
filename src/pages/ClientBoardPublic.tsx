@@ -577,7 +577,7 @@ export default function ClientBoardPublic() {
 
       {/* Nombre 1ª visita */}
       <Dialog open={askName} onOpenChange={() => { /* */ }}>
-        <DialogContent className="max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-sm [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>¡Bienvenido!</DialogTitle><DialogDescription>Para empezar, dinos tu nombre. Lo usaremos para firmar tus comentarios.</DialogDescription></DialogHeader>
           <Input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Tu nombre (ej. Antonio)" onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }} autoFocus />
           <DialogFooter><Button onClick={saveName} disabled={!nameInput.trim()} className="w-full">Entrar</Button></DialogFooter>

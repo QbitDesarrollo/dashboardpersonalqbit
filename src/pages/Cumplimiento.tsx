@@ -358,7 +358,7 @@ export default function Cumplimiento() {
                     {t.marca && <span>{t.marca} · </span>}
                     {drill.tipo === 'vencidas'
                       ? <>vencía {t.fecha_objetivo || '—'} · <span className="capitalize">{t.estado}</span></>
-                      : <>se prometió {t.fecha_objetivo || '—'} · entregada {t.entregada || '—'}</>}
+                      : <>fecha objetivo {t.fecha_objetivo || '—'} · entregada {t.entregada || '—'}</>}
                   </div>
                 </div>
               </a>

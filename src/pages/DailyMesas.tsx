@@ -138,7 +138,7 @@ const parseLocalDate = (dateStr: string | null | undefined): Date => {
 };
 
 const isOverdue = (fechaEntrega: string, estado: string) => {
-  if (estado === 'entregado' || estado === 'aprobado') return false;
+  if (['entregado', 'aprobado', 'revision_cliente'].includes(estado)) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const entrega = parseLocalDate(fechaEntrega);

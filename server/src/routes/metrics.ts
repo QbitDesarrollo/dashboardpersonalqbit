@@ -137,25 +137,7 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
       params.push(deskFilter);
     }
 
-    const tasksRows = await query<any[]>(
-      `SELECT * FROM (
-        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, t.responsable_user_id AS user_id
-        FROM tasks t
-        WHERE t.responsable_user_id IS NOT NULL
-          AND DATE(t.created_at) BETWEEN ? AND ?
-          AND (t.parent_task_id IS NULL OR t.parent_task_id = '')
-        UNION
-        SELECT t.id AS task_id, t.titulo_tarea, t.fecha_entrega, t.estado, t.desk_id AS task_desk_id, tr.user_id AS user_id
-        FROM task_responsables tr
-        INNER JOIN tasks t ON t.id = tr.task_id
-        WHERE DATE(t.created_at) BETWEEN ? AND ?
-          AND (t.parent_task_id IS NULL OR t.parent_task_id = '')
-      ) ut
-      WHERE 1=1${userScope}${deskScope}`,
-      [from, to, ...params.slice(0, params.length)] // re-pasar from,to por la segunda mitad del UNION
-    );
-    // Nota: el SQL de arriba pasa los mismos params para ambas mitades del UNION.
-    // Re-armar correctamente:
+    // (params from/to se arman explícitamente abajo para ambas mitades del UNION)
     const finalParams = [from, to, from, to];
     if (targetUserIds) finalParams.push(...targetUserIds);
     if (deskFilter) finalParams.push(deskFilter);

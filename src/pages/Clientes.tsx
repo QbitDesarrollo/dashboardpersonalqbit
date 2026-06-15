@@ -53,12 +53,13 @@ function DroppableGroupCard({ groupKey, children }: { groupKey: string; children
 }
 
 function SortableTaskRow({ t, d, onOpen }: { t: ClientBoardTask; d: { txt: string; cls: string } | null; onOpen: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: t.id });
+  const terminal = ['entregado', 'aprobado'].includes(t.estado);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: t.id, disabled: terminal });
   return (
     <tr ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
         className={cn('hover:bg-muted/40 cursor-pointer', isDragging && 'opacity-60 bg-muted relative z-10')} onClick={onOpen}>
       <td className="pl-2 pr-0 py-2.5 w-7 align-middle" onClick={(e) => e.stopPropagation()}>
-        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground touch-none" title="Arrastra para ordenar o mover a otro proyecto">
+        <button {...attributes} {...listeners} className={cn('touch-none', terminal ? 'cursor-not-allowed text-muted-foreground/20' : 'cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground')} title={terminal ? 'Tarea entregada — no se arrastra' : 'Arrastra para ordenar o mover a otro proyecto'}>
           <GripVertical className="h-4 w-4" />
         </button>
       </td>

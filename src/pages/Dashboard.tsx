@@ -153,7 +153,7 @@ const calcStats = (taskList: Task[]): TaskStats => {
       const [yy, mm, dd] = (task.fecha_entrega || '').split('T')[0].split('-').map(Number);
       const fechaEntrega = new Date(yy, mm - 1, dd);
       const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      if (diasRestantes < 0 && task.estado !== 'entregado') {
+      if (diasRestantes < 0 && !['entregado', 'aprobado', 'revision_cliente'].includes(task.estado)) {
         s.atrasadas++;
       }
     }
