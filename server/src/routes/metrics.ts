@@ -298,7 +298,7 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
       } else {
         // No entregada — vencida solo si la fecha objetivo justa ya pasó
         const fObjVencer = fechaObjetivo || (t.fecha_entrega ? new Date(t.fecha_entrega) : null);
-        if (fObjVencer && fObjVencer < today && !['entregado', 'aprobado'].includes(t.estado)) {
+        if (fObjVencer && fObjVencer < today && !['entregado', 'aprobado', 'revision_cliente'].includes(t.estado)) {
           m.vencidas_no_entregadas += 1;
           m.vencidas_tasks.push({ task_id: t.task_id, titulo: t.titulo_tarea, marca: t.marca || null, fecha_objetivo: fechaTxt(fObjVencer), estado: t.estado });
         } else {
@@ -347,11 +347,17 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
 
     result.sort((a, b) => b.tareas_total - a.tareas_total);
 
+    // Totales SIN doble-conteo: una tarea con N responsables se cuenta una sola vez.
+    const entregablesByTask: Record<string, number> = {};
+    for (const t of tasksRowsFinal) entregablesByTask[t.task_id] = Number(t.entregables) || 0;
+    const totalEntregablesDistinto = Object.values(entregablesByTask).reduce((a, b) => a + b, 0);
+
     res.json({
       from,
       to,
       total_responsables: result.length,
-      total_tareas: result.reduce((sum, r) => sum + r.tareas_total, 0),
+      total_tareas: taskIds.length,            // tareas distintas (no suma por persona)
+      total_entregables: totalEntregablesDistinto, // entregables distintos (no suma por persona)
       responsables: result,
     });
   } catch (e) {

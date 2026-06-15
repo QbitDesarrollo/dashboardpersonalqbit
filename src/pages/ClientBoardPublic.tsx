@@ -539,7 +539,7 @@ export default function ClientBoardPublic() {
 
       {/* Pedir requerimiento — profesional, con editor rico */}
       <Dialog open={newTask.open} onOpenChange={(o) => setNewTask((p) => ({ ...p, open: o }))}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Nueva tarea{newTask.dept ? ` · ${data.departments.find((d) => d.id === newTask.dept)?.nombre || ''}` : ''}</DialogTitle>
             <DialogDescription>Se creará en el tablero del equipo como pendiente.</DialogDescription>
@@ -560,7 +560,7 @@ export default function ClientBoardPublic() {
       </Dialog>
 
       <Dialog open={reqOpen} onOpenChange={setReqOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><span className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center"><Plus className="h-4 w-4 text-primary" /></span>Pedir algo al equipo</DialogTitle>
             <DialogDescription>Cuéntanos qué necesitas con el mayor detalle posible. Puedes adjuntar imágenes de referencia. El equipo lo revisa y lo agrega a tus proyectos.</DialogDescription>

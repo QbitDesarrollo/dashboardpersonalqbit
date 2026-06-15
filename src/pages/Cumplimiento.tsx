@@ -48,7 +48,7 @@ export default function Cumplimiento() {
   const [deskFilter, setDeskFilter] = useState<string>('all');
   const [desks, setDesks] = useState<Desk[]>([]);
   const [data, setData] = useState<CumplimientoResponsable[]>([]);
-  const [meta, setMeta] = useState<{ total_responsables: number; total_tareas: number } | null>(null);
+  const [meta, setMeta] = useState<{ total_responsables: number; total_tareas: number; total_entregables?: number } | null>(null);
   const [drill, setDrill] = useState<{ nombre: string; tipo: 'tarde' | 'vencidas'; tasks: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('porcentaje_cumplimiento');
@@ -72,7 +72,7 @@ export default function Cumplimiento() {
         desk_id: deskFilter !== 'all' ? deskFilter : undefined,
       });
       setData(r.responsables);
-      setMeta({ total_responsables: r.total_responsables, total_tareas: r.total_tareas });
+      setMeta({ total_responsables: r.total_responsables, total_tareas: r.total_tareas, total_entregables: (r as any).total_entregables });
     } catch (e: any) {
       toast.error(e.message || 'Error al cargar métricas');
     }
@@ -210,7 +210,7 @@ export default function Cumplimiento() {
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           <StatCard label="Responsables" value={meta.total_responsables} />
           <StatCard label="Tareas en periodo" value={meta.total_tareas} />
-          <StatCard label="Entregables (total)" value={totals.entregables} />
+          <StatCard label="Entregables (total)" value={meta.total_entregables ?? totals.entregables} />
           <StatCard label="A tiempo" value={totals.a_tiempo} variant="success" />
           <StatCard label="Tarde / Vencidas" value={totals.tarde + totals.vencidas} variant="danger" />
           <StatCard
