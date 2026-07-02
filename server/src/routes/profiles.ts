@@ -18,7 +18,11 @@ profilesRouter.get('/profiles', requireAuth, async (req: AuthRequest, res) => {
         [deskId]
       );
     } else {
-      rows = await query<any[]>('SELECT * FROM profiles WHERE activo = 1 ORDER BY nombre');
+      // include_inactive=1 solo para admin (para la pantalla de gestion de usuarios)
+      const includeInactive = req.query.include_inactive === '1' && (await hasRole(req.userId!, ['admin']));
+      rows = includeInactive
+        ? await query<any[]>('SELECT * FROM profiles ORDER BY activo DESC, nombre')
+        : await query<any[]>('SELECT * FROM profiles WHERE activo = 1 ORDER BY nombre');
     }
     res.json(rows.map((r) => ({ ...r, activo: !!r.activo })));
   } catch (e) {

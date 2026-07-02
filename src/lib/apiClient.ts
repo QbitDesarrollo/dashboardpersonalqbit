@@ -91,9 +91,12 @@ export async function changePassword(current_password: string | undefined, new_p
 }
 
 // Data API
-export async function getProfiles(deskId?: string) {
-  const url = deskId ? `/api/data/profiles?desk_id=${encodeURIComponent(deskId)}` : '/api/data/profiles';
-  const res = await request(url);
+export async function getProfiles(deskId?: string, includeInactive?: boolean) {
+  const params = new URLSearchParams();
+  if (deskId) params.set('desk_id', deskId);
+  if (includeInactive) params.set('include_inactive', '1');
+  const qs = params.toString();
+  const res = await request(`/api/data/profiles${qs ? '?' + qs : ''}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

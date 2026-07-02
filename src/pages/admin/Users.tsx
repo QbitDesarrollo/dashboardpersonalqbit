@@ -31,7 +31,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { Plus, Edit, Loader2, Users } from 'lucide-react';
+import { Plus, Edit, Loader2, Users, UserCheck } from 'lucide-react';
 
 interface User {
   id: string;
@@ -62,7 +62,7 @@ export default function AdminUsers() {
 
   const fetchUsers = async () => {
     try {
-      const data = await api.getProfiles();
+      const data = await api.getProfiles(undefined, true);
       if (Array.isArray(data)) setUsers(data as User[]);
       else throw new Error(data?.error || 'Error');
     } catch (error) {
@@ -105,6 +105,16 @@ export default function AdminUsers() {
       activo: true,
     });
     setSelectedUser(null);
+  };
+
+  const reactivate = async (user: User) => {
+    try {
+      await api.patchProfile(user.id, { nombre: user.nombre, rol: user.rol, activo: true });
+      toast.success(`${user.nombre} reactivado`);
+      fetchUsers();
+    } catch (e: any) {
+      toast.error('No se pudo reactivar', { description: e?.message });
+    }
   };
 
   const openEditDialog = (user: User) => {
@@ -213,13 +223,16 @@ export default function AdminUsers() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditDialog(user)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {!user.activo && (
+                            <Button variant="ghost" size="icon" title="Reactivar usuario" onClick={() => reactivate(user)}>
+                              <UserCheck className="h-4 w-4 text-emerald-600" />
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="icon" title="Editar" onClick={() => openEditDialog(user)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
