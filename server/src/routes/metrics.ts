@@ -267,8 +267,11 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
       // Si no hubo reschedules registrados, la vara es la fecha_entrega actual de la tarea.
       const fechaObjetivo = fechaObjetivoByTask[t.task_id] || (t.fecha_entrega ? new Date(t.fecha_entrega) : null);
       const deliveredAt = deliveredAtByTask[t.task_id];
+      // Solo cuenta como entregada si su estado ACTUAL sigue en revision/entregado.
+      // Si toco revision y REBOTO a activo (backlog/en_proceso/bloqueado), no esta entregada.
+      const currentlyDone = ['entregado', 'aprobado', 'revision_cliente', 'revision_interna', 'en_revision'].includes(t.estado);
 
-      if (deliveredAt) {
+      if (deliveredAt && currentlyDone) {
         if (fechaObjetivo) {
           const fObj = new Date(fechaObjetivo); fObj.setHours(23, 59, 59, 999);
           if (deliveredAt <= fObj) m.entregadas_a_tiempo += 1;
