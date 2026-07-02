@@ -485,7 +485,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                   <div className="pb-4 border-b border-border">
                     <h4 className="text-sm font-medium text-muted-foreground mb-2">Cambiar Estado</h4>
                     <div className="flex flex-wrap gap-2">
-                      {['backlog', 'en_proceso', 'revision_interna', 'revision_cliente', 'aprobado', 'entregado', 'bloqueado'].map((status) => (
+                      {['backlog', 'en_proceso', 'revision_interna', 'revision_cliente', 'entregado', 'bloqueado'].map((status) => (
                         <Button
                           key={status}
                           variant={task.estado === status ? "default" : "outline"}

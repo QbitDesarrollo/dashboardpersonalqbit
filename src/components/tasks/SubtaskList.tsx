@@ -85,7 +85,7 @@ interface ProfileLite {
   avatar_url?: string | null;
 }
 
-const ESTADOS = ['backlog', 'en_proceso', 'revision_interna', 'revision_cliente', 'aprobado', 'entregado', 'bloqueado'] as const;
+const ESTADOS = ['backlog', 'en_proceso', 'revision_interna', 'revision_cliente', 'entregado', 'bloqueado'] as const;
 const PRIORIDADES = ['alta', 'media', 'baja'] as const;
 
 const estadoColors: Record<string, string> = {

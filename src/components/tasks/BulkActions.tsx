@@ -18,7 +18,6 @@ const estados = [
   { value: 'backlog', label: 'Pendiente' },
   { value: 'en_proceso', label: 'En Proceso' },
   { value: 'en_revision', label: 'En Revisión' },
-  { value: 'aprobado', label: 'Aprobado' },
   { value: 'entregado', label: 'Entregado' },
   { value: 'bloqueado', label: 'Bloqueado' },
 ];

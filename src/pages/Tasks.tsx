@@ -846,7 +846,7 @@ export default function Tasks() {
     return labels[estado] || estado;
   };
 
-  const statusOrder: Task['estado'][] = ['en_proceso', 'revision_interna', 'revision_cliente', 'en_revision', 'backlog', 'bloqueado', 'aprobado', 'entregado'];
+  const statusOrder: Task['estado'][] = ['en_proceso', 'revision_interna', 'revision_cliente', 'en_revision', 'backlog', 'bloqueado', 'entregado'];
 
   const quickAddTask = async (groupKey: string, tasksInGroup: Task[]) => {
     if (!qaTitle.trim() || !qaBrand) { toast.error('Pon título y marca'); return; }
@@ -857,7 +857,7 @@ export default function Tasks() {
       const depId = tasksInGroup.find((t) => t.department_id)?.department_id;
       if (depId) payload.department_id = depId;
     }
-    if (groupBy === 'estado' && ['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado'].includes(groupKey)) payload.estado = groupKey;
+    if (groupBy === 'estado' && ['backlog', 'en_proceso', 'en_revision', 'entregado', 'bloqueado'].includes(groupKey)) payload.estado = groupKey;
     if (groupBy === 'responsable' && groupKey !== 'Sin asignar') {
       const u = users.find((x) => x.nombre === groupKey);
       if (u) payload.responsable_ids = [u.id];
@@ -963,7 +963,7 @@ export default function Tasks() {
       }, {});
     }
     return statusOrder.reduce<Record<string, Task[]>>((acc, status) => {
-      const tasksInGroup = filteredTasks.filter(t => t.estado === status);
+      const tasksInGroup = filteredTasks.filter(t => status === 'entregado' ? (t.estado === 'entregado' || t.estado === 'aprobado') : t.estado === status);
       if (tasksInGroup.length > 0) acc[status] = tasksInGroup;
       return acc;
     }, {});
@@ -1437,7 +1437,6 @@ export default function Tasks() {
                         <SelectItem value="en_proceso">En Proceso</SelectItem>
                         <SelectItem value="revision_interna">Revisión interna</SelectItem>
                         <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
-                        <SelectItem value="aprobado">Aprobado</SelectItem>
                         <SelectItem value="entregado">Entregado</SelectItem>
                         <SelectItem value="bloqueado">Bloqueado</SelectItem>
                       </SelectContent>
@@ -1707,7 +1706,6 @@ export default function Tasks() {
                   <SelectItem value="en_proceso">En Proceso</SelectItem>
                   <SelectItem value="revision_interna">Revisión interna</SelectItem>
                         <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
-                  <SelectItem value="aprobado">Aprobado</SelectItem>
                   <SelectItem value="entregado">Entregado</SelectItem>
                   <SelectItem value="bloqueado">Bloqueado</SelectItem>
                 </SelectContent>
@@ -2165,7 +2163,6 @@ export default function Tasks() {
                                       <SelectItem value="en_proceso">En Proceso</SelectItem>
                                       <SelectItem value="revision_interna">Revisión interna</SelectItem>
                         <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
-                                      <SelectItem value="aprobado">Aprobado</SelectItem>
                                       <SelectItem value="entregado">Entregado</SelectItem>
                                       <SelectItem value="bloqueado">Bloqueado</SelectItem>
                                     </SelectContent>
@@ -2596,7 +2593,7 @@ export default function Tasks() {
                     <div className="pb-4 border-b border-border">
                       <h4 className="text-sm font-medium text-muted-foreground mb-2">Cambiar Estado</h4>
                       <div className="flex flex-wrap gap-2">
-                        {['backlog', 'en_proceso', 'revision_interna', 'revision_cliente', 'aprobado', 'entregado', 'bloqueado'].map((status) => (
+                        {['backlog', 'en_proceso', 'revision_interna', 'revision_cliente', 'entregado', 'bloqueado'].map((status) => (
                           <Button
                             key={status}
                             variant={selectedTask.estado === status ? "default" : "outline"}

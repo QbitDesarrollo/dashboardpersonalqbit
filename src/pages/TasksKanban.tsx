@@ -44,7 +44,6 @@ const STATUS_ORDER: TaskStatus[] = [
   'en_proceso',
   'revision_interna',
   'revision_cliente',
-  'aprobado',
   'entregado',
   'bloqueado',
 ];
@@ -275,7 +274,8 @@ export default function TasksKanban() {
       bloqueado: [],
     };
     list.forEach((t) => {
-      if (map[t.estado]) map[t.estado].push(t);
+      const col = t.estado === 'aprobado' ? 'entregado' : t.estado;
+      if (map[col]) map[col].push(t);
     });
     return map;
   }, [tasks, pinnedBrandId, pinnedDeskId]);
