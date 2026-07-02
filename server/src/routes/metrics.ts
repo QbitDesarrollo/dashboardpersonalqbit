@@ -200,11 +200,14 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
     let deliveryLogs: any[] = [];
     if (taskIds.length > 0) {
       const ph = taskIds.map(() => '?').join(',');
+      // Cumplimiento JUSTO: la "entrega" del equipo es cuando MANDA la tarea a revision o la entrega,
+      // NO cuando el cliente/revisor la aprueba despues. Se toma el PRIMER handoff (el equipo ya termino).
+      // Antes solo contaba entregado/aprobado -> la aprobacion tardia del cliente marcaba al equipo como tarde.
       deliveryLogs = await query<any[]>(
         `SELECT entity_id AS task_id, MIN(created_at) AS delivered_at
          FROM activity_log
          WHERE entity_type = 'task' AND field_name = 'estado'
-           AND new_value IN ('entregado', 'aprobado')
+           AND new_value IN ('entregado', 'aprobado', 'revision_cliente', 'revision_interna', 'en_revision')
            AND entity_id IN (${ph})
          GROUP BY entity_id`,
         taskIds
