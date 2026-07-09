@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as api from '@/lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,7 @@ function getWeekStart(): string {
 }
 
 export default function TeamMonitor() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState('live');
   const [loading, setLoading] = useState(true);
 
@@ -198,7 +200,11 @@ export default function TeamMonitor() {
                       </div>
 
                       {user.titulo_tarea && (
-                        <div className="text-xs text-muted-foreground truncate mt-0.5">{user.titulo_tarea}</div>
+                        user.task_id ? (
+                          <button onClick={() => navigate(`/tareas?task=${user.task_id}`)} className="text-xs text-primary hover:underline truncate mt-0.5 block max-w-full text-left" title="Ir a la tarea">{user.titulo_tarea}</button>
+                        ) : (
+                          <div className="text-xs text-muted-foreground truncate mt-0.5">{user.titulo_tarea}</div>
+                        )
                       )}
 
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
