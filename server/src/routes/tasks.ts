@@ -541,6 +541,12 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       return res.status(403).json({ error: 'Sin permisos' });
     }
 
+    // Auto-play: al iniciar el timer, si la tarea sigue en "backlog" (pendiente),
+    // pasa sola a "en_proceso" (antes le daban play y no actualizaban el estado).
+    if ((body.timer_activo === true || body.timer_activo === 1) && oldRow?.estado === 'backlog' && body.estado === undefined) {
+      body.estado = 'en_proceso';
+    }
+
     // ── Reschedule: si cambia fecha_entrega, exigir motivo ──────────────────
     const MOTIVOS_RESCHEDULE = ['INTERNO', 'CLIENTE', 'ALCANCE', 'FUERZA_MAYOR', 'SIN_CLASIFICAR'];
     let rescheduleInfo: { oldFecha: string | null; newFecha: string | null; motivo: string; comentario: string | null } | null = null;

@@ -96,7 +96,7 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
           });
         } catch (e) {
           console.error('[TIMER] No se pudo pausar el timer anterior:', e);
-          toast.error('No se pudo pausar el timer anterior. Revisá manualmente.');
+          toast.error('No se pudo pausar el timer anterior. Revisa manualmente.');
           return;
         }
       }
