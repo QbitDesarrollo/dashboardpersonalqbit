@@ -146,6 +146,17 @@ export default function AdminDesks() {
   const selectAllUsers = () => setUsersToAdd(new Set(filteredUsersToAdd().map((u) => u.id)));
   const clearUsers = () => setUsersToAdd(new Set());
 
+  const toggleSoporte = async (m: any) => {
+    if (!selectedDesk) return;
+    try {
+      await api.setDeskMemberSoporte(selectedDesk.id, m.id, !m.es_soporte);
+      setDeskMembers((prev) => prev.map((x) => (x.id === m.id ? { ...x, es_soporte: !m.es_soporte } : x)));
+      toast.success(!m.es_soporte ? `${m.nombre} marcado como soporte (no cuenta para el % de la mesa)` : `${m.nombre} vuelve al equipo base`);
+    } catch (err: any) {
+      toast.error(err.message || 'Error');
+    }
+  };
+
   const handleRemoveMember = async (userId: string) => {
     if (!selectedDesk) return;
     try {
@@ -471,10 +482,18 @@ export default function AdminDesks() {
                   <div className="space-y-1">
                     {deskMembers.map((m) => (
                       <div key={m.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
-                        <span className="font-medium text-sm">{m.nombre}</span>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRemoveMember(m.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        <span className="font-medium text-sm flex items-center gap-1.5">
+                          {m.nombre}
+                          {m.es_soporte && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Soporte</span>}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="sm" className={`h-8 text-xs ${m.es_soporte ? 'text-amber-700' : 'text-muted-foreground'}`} onClick={() => toggleSoporte(m)} title="Marcar como soporte: se muestra pero no cuenta para el % de la mesa">
+                            {m.es_soporte ? 'Es soporte' : 'Marcar soporte'}
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleRemoveMember(m.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>

@@ -140,7 +140,7 @@ export default function Cumplimiento() {
 
   // Stats globales (top resumen)
   const totals = useMemo(() => {
-    return sorted.reduce(
+    return sorted.filter((r) => !r.es_soporte).reduce(
       (acc, r) => ({
         a_tiempo: acc.a_tiempo + r.entregadas_a_tiempo,
         tarde: acc.tarde + r.entregadas_tarde,
@@ -260,6 +260,7 @@ export default function Cumplimiento() {
                           <div>
                             <span className="font-medium text-sm">{r.nombre}</span>
                             {r.rol && <Badge variant="outline" className="ml-1.5 text-[10px] capitalize">{r.rol}</Badge>}
+                            {r.es_soporte && <Badge variant="outline" className="ml-1 text-[10px] text-amber-700 border-amber-300">Soporte</Badge>}
                           </div>
                         </div>
                       </TableCell>
@@ -336,6 +337,9 @@ export default function Cumplimiento() {
       <p className="text-[11px] text-muted-foreground italic px-1">
         ℹ️ "A tiempo" significa que la tarea fue entregada antes o el día de la <strong>primera fecha</strong> que se prometió, no la última (no premia reagendar).
         Tareas sin fecha de entrega o sin estado entregado todavía cuentan en "En proceso" hasta que se entreguen o venzan.
+      </p>
+      <p className="text-[11px] text-muted-foreground italic px-1">
+        🎗️ Los miembros marcados como <strong>Soporte</strong> (en Mesas → Miembros) se muestran en la tabla pero <strong>NO cuentan</strong> para el % global de la mesa. Así el cumplimiento refleja solo al equipo base.
       </p>
       <p className="text-[11px] text-muted-foreground italic px-1">
         📊 <strong>A tiempo / Tarde / Vencida</strong>: <strong>A tiempo</strong> = se entregó en o antes de la fecha prometida. <strong>Tarde</strong> = se entregó, pero <strong>después</strong> de la fecha. <strong>Vencida</strong> = la fecha ya pasó y <strong>todavía no se entrega</strong>. Ejemplo: una tarea con fecha de hoy que se entrega mañana cuenta como <strong>tarde</strong>; mientras no se entregue, cuenta como <strong>vencida</strong>. La entrega se mide cuando el equipo manda la tarea a revisión o la entrega, no cuando se aprueba después.

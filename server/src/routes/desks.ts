@@ -116,12 +116,12 @@ desksRouter.get('/desks/:id/members', requireAuth, async (req: AuthRequest, res)
   try {
     const { id } = req.params;
     const rows = await query<any[]>(
-      `SELECT p.* FROM profiles p
+      `SELECT p.*, dm.es_soporte FROM profiles p
        INNER JOIN desk_members dm ON dm.user_id = p.id
        WHERE dm.desk_id = ? AND p.activo = 1 ORDER BY p.nombre`,
       [id]
     );
-    res.json(rows.map((r) => ({ ...r, activo: !!r.activo })));
+    res.json(rows.map((r) => ({ ...r, activo: !!r.activo, es_soporte: !!r.es_soporte })));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al cargar equipo' });
@@ -148,6 +148,21 @@ desksRouter.post('/desks/:id/members', requireAuth, async (req: AuthRequest, res
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al asignar' });
+  }
+});
+
+// Marcar/desmarcar a un miembro como SOPORTE (no cuenta para el % de la mesa)
+desksRouter.patch('/desks/:id/members/:userId/soporte', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const allowed = await hasRole(req.userId!, ['admin', 'ejecutivo']);
+    if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
+    const { id, userId } = req.params;
+    const esSoporte = req.body?.es_soporte ? 1 : 0;
+    await query('UPDATE desk_members SET es_soporte = ? WHERE desk_id = ? AND user_id = ?', [esSoporte, id, userId]);
+    res.json({ success: true, es_soporte: !!esSoporte });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al actualizar' });
   }
 });
 

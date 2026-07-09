@@ -335,6 +335,15 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
 
     result.sort((a, b) => b.tareas_total - a.tareas_total);
 
+    // Marca de SOPORTE (solo al filtrar por mesa): el equipo de soporte se muestra
+    // pero NO cuenta para el % de la mesa (equipo base = ejecutivo/diseno/content/etc.)
+    let soporteSet = new Set<string>();
+    if (deskFilter) {
+      const sop = await query<{ user_id: string }[]>('SELECT user_id FROM desk_members WHERE desk_id = ? AND es_soporte = 1', [deskFilter]);
+      soporteSet = new Set(sop.map((r) => r.user_id));
+    }
+    for (const r of result) (r as any).es_soporte = soporteSet.has(r.user_id);
+
     // Totales SIN doble-conteo: una tarea con N responsables se cuenta una sola vez.
     const entregablesByTask: Record<string, number> = {};
     for (const t of tasksRowsFinal) entregablesByTask[t.task_id] = Number(t.entregables) || 0;

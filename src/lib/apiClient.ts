@@ -107,6 +107,15 @@ export async function getDeskMembers(deskId: string) {
   return res.json();
 }
 
+export async function setDeskMemberSoporte(deskId: string, userId: string, esSoporte: boolean) {
+  const res = await request(`/api/data/desks/${deskId}/members/${userId}/soporte`, {
+    method: 'PATCH',
+    body: JSON.stringify({ es_soporte: esSoporte }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function addDeskMember(deskId: string, userId: string) {
   const res = await request(`/api/data/desks/${deskId}/members`, {
     method: 'POST',
@@ -1487,6 +1496,7 @@ export interface CumplimientoResponsable {
   reschedules_total?: number;
   reschedules_internos?: number;
   entregables_total?: number;
+  es_soporte?: boolean;
   vencidas_tasks?: { task_id: string; titulo: string; marca: string | null; fecha_objetivo: string | null; estado: string }[];
   tarde_tasks?: { task_id: string; titulo: string; marca: string | null; fecha_objetivo: string | null; entregada: string | null }[];
   porcentaje_cumplimiento: number | null;
