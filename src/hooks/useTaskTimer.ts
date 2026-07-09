@@ -166,8 +166,8 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
     if (elapsedTime >= warnThresholdRef.current) {
       warnThresholdRef.current = elapsedTime + 7200;
       const horas = Math.floor(elapsedTime / 3600);
-      const sigue = window.confirm(`⏱️ Llevas ${horas}h con esta tarea activa.\n\n¿Sigues trabajando en ella?\n\n[Aceptar] = sí, sigo trabajando\n[Cancelar] = pausar el timer ahora`);
-      if (!sigue) { stopTimer(); }
+      // Aviso como modal bonito (TimerWarningDialog escucha este evento), no window.confirm
+      window.dispatchEvent(new CustomEvent('timer:warning', { detail: { horas, onPause: () => stopTimer() } }));
     }
   }, [elapsedTime, isRunning, stopTimer]);
 
