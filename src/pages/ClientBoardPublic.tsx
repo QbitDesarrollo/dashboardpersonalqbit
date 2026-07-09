@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import * as api from '@/lib/apiClient';
 import type { PublicClientTask, PublicProject } from '@/lib/apiClient';
@@ -199,6 +199,12 @@ export default function ClientBoardPublic() {
     setOpenTask(t); setComments([]); setLoadingComments(true);
     try { setComments(await api.getPublicTaskComments(token, t.id)); } catch { /* */ } finally { setLoadingComments(false); }
   };
+  const didDeepLink = useRef(false);
+  useEffect(() => {
+    if (!data || didDeepLink.current) return;
+    const tid = new URLSearchParams(window.location.search).get('task');
+    if (tid) { const t = data.tasks.find((x) => x.id === tid); if (t) { didDeepLink.current = true; openDetail(t); } }
+  }, [data]);
   const sendComment = async (html: string) => { if (!openTask) return; const c = await api.postPublicComment(token, openTask.id, nombre || 'Cliente', html); setComments((p) => [...p, c]); };
   const actOnTask = async (estado: 'aprobado' | 'en_proceso') => {
     if (!openTask) return;
@@ -498,7 +504,10 @@ export default function ClientBoardPublic() {
       <Dialog open={!!openTask} onOpenChange={(o) => { if (!o) setOpenTask(null); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>{openTask?.titulo}</DialogTitle>
+            <DialogTitle className="flex items-center justify-between gap-2 pr-6">
+              <span className="truncate">{openTask?.titulo}</span>
+              {openTask && <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/c/${token}?task=${openTask.id}`); toast.success('Link de la tarea copiado'); }} className="shrink-0 inline-flex items-center gap-1 text-xs text-primary hover:underline font-normal" title="Copiar link a esta tarea"><ExternalLink className="h-3.5 w-3.5" />Copiar link</button>}
+            </DialogTitle>
             <DialogDescription className="flex items-center gap-2 flex-wrap text-xs">
               {openTask && <Badge variant="outline" className="text-[10px]">{openTask.estado}</Badge>}
               {openTask && <span>Creada: {fmtCorta(openTask.creada)}</span>}

@@ -2591,7 +2591,12 @@ export default function Tasks() {
                 <div className="space-y-5">
                   {canOperateTask(selectedTask) && (
                     <div className="pb-4 border-b border-border">
-                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Cambiar Estado</h4>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-muted-foreground">Cambiar Estado</h4>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/tareas?task=${selectedTask.id}`); toast.success('Link de la tarea copiado'); }} title="Copiar link a esta tarea">
+                          <Link2 className="h-3.5 w-3.5" />Copiar link
+                        </Button>
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {['backlog', 'en_proceso', 'revision_interna', 'revision_cliente', 'entregado', 'bloqueado'].map((status) => (
                           <Button
