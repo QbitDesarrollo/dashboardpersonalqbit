@@ -6,9 +6,11 @@ const navigate = vi.fn();
 vi.mock('react-router-dom', async (orig) => ({ ...(await orig<typeof import('react-router-dom')>()), useNavigate: () => navigate }));
 import MinutaDetalle from './MinutaDetalle';
 import * as minutasApi from '@/lib/minutasApi';
+import * as minutaPdf from '@/lib/minutaPdf';
 import type { Minuta, Punto } from '@/lib/minutasApi';
 
 vi.mock('@/lib/minutasApi', () => ({ obtenerMinuta: vi.fn(), agregarPunto: vi.fn(), editarMinuta: vi.fn(), borrarMinuta: vi.fn() }));
+vi.mock('@/lib/minutaPdf', () => ({ exportarMinutaPdf: vi.fn() }));
 vi.mock('@/lib/apiClient', () => ({ getProfiles: vi.fn(async () => []), getProjects: vi.fn(async () => [{ id: 'p1', nombre: 'Rediseño del sitio web Dinatek' }]) }));
 vi.mock('@/components/minutas/PuntoDialog', () => ({
   PuntoDialog: ({ punto, abierto }: { punto: Punto; abierto: boolean }) => (abierto ? <div role="dialog">Diálogo de {punto.titulo}</div> : null),
@@ -105,5 +107,17 @@ describe('MinutaDetalle · editar y borrar', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Sí, borrar' }));
     await waitFor(() => expect(minutasApi.borrarMinuta).toHaveBeenCalledWith('m3'));
     expect(navigate).toHaveBeenCalledWith('/minutas');
+  });
+});
+
+describe('MinutaDetalle · PDF', () => {
+  beforeEach(() => { vi.mocked(minutasApi.obtenerMinuta).mockReset().mockResolvedValue(minuta); vi.mocked(minutaPdf.exportarMinutaPdf).mockReset(); });
+
+  it('exporta el PDF completo o solo lo visible para el cliente', async () => {
+    renderDetalle();
+    fireEvent.click(await screen.findByRole('button', { name: 'Exportar PDF' }));
+    fireEvent.click(screen.getByRole('button', { name: 'PDF para el cliente' }));
+    expect(minutaPdf.exportarMinutaPdf).toHaveBeenNthCalledWith(1, minuta, { soloVisibles: false });
+    expect(minutaPdf.exportarMinutaPdf).toHaveBeenNthCalledWith(2, minuta, { soloVisibles: true });
   });
 });

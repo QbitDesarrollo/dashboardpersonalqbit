@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, FolderKanban, Link2, Loader2, Plus, SquareCheck, User } from 'lucide-react';
+import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, FileDown, FolderKanban, Link2, Loader2, Plus, SquareCheck, User } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
 import { agregarPunto, borrarMinuta, editarMinuta, obtenerMinuta, type Minuta, type Punto } from '@/lib/minutasApi';
 import { estadoPunto, fechaCorta, hoyEcuador, vencimiento } from '@/lib/minutas';
+import { exportarMinutaPdf } from '@/lib/minutaPdf';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -242,6 +243,10 @@ export default function MinutaDetalle() {
             {minuta.estado === 'borrador' && <Badge variant="outline" className="text-muted-foreground">Borrador</Badge>}
             {minuta.estado === 'borrador' && <Button size="sm" onClick={publicar}>Publicar</Button>}
             <Button size="sm" variant="outline" onClick={() => setEditando(true)}>Editar</Button>
+            <Button size="sm" variant="outline" onClick={() => exportarMinutaPdf(minuta, { soloVisibles: false })}>
+              <FileDown className="h-4 w-4" />Exportar PDF
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => exportarMinutaPdf(minuta, { soloVisibles: true })}>PDF para el cliente</Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button size="sm" variant="ghost" className="text-muted-foreground">Borrar minuta</Button>
