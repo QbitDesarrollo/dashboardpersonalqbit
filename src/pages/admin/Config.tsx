@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Edit, Trash2, Loader2, FileBox, CheckSquare, Image, Mail, Upload, UserPlus, LayoutGrid, Video, Bell, Volume2, VolumeX, MessageCircle, FolderOpen, Sparkles } from 'lucide-react';
 import { playNotificationSound, SOUND_TYPES, SOUND_LABELS, type SoundType } from '@/lib/notificationSound';
+import { ConfigGemini } from '@/components/admin/ConfigGemini';
 import { ConfigMinutasIa } from '@/components/admin/ConfigMinutasIa';
 
 interface ItemType {
@@ -190,8 +191,6 @@ export default function AdminConfig() {
 
   const [driveEnabled, setDriveEnabled] = useState(false);
   const [driveSaving, setDriveSaving] = useState(false);
-  const [geminiEnabled, setGeminiEnabled] = useState(false);
-  const [geminiSaving, setGeminiSaving] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -253,9 +252,8 @@ export default function AdminConfig() {
         if (st && SOUND_TYPES.includes(st as SoundType)) setNotifSoundType(st as SoundType);
         // Chat setting
         setChatEnabled(settings.chat_enabled === 'true');
-        // Drive + Gemini settings
+        // Drive settings
         setDriveEnabled(settings.drive_enabled === 'true');
-        setGeminiEnabled(settings.gemini_enabled === 'true');
       }
     } catch (error) {
       toast.error('Error al cargar datos');
@@ -529,20 +527,6 @@ export default function AdminConfig() {
     }
   };
 
-  const handleSaveGemini = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setGeminiSaving(true);
-    try {
-      await api.patchSiteSettings({ gemini_enabled: String(geminiEnabled) } as any);
-      toast.success('Configuración de Gemini guardada');
-      fetchData();
-    } catch (err: unknown) {
-      toast.error('Error', { description: err instanceof Error ? err.message : 'No se pudo guardar' });
-    } finally {
-      setGeminiSaving(false);
-    }
-  };
-
   const closeTypeDialog = () => {
     setFormData({ nombre: '', activo: true });
     setSelectedItem(null);
@@ -576,12 +560,11 @@ export default function AdminConfig() {
             <TabsTrigger value="correos" className="text-xs sm:text-sm">Correos</TabsTrigger>
             <TabsTrigger value="scrum" className="text-xs sm:text-sm">Scrum</TabsTrigger>
             <TabsTrigger value="reuniones" className="text-xs sm:text-sm">Reuniones</TabsTrigger>
-            <TabsTrigger value="minutas-ia" className="text-xs sm:text-sm">Minutas IA</TabsTrigger>
             <TabsTrigger value="campos" className="text-xs sm:text-sm">Campos</TabsTrigger>
             <TabsTrigger value="notificaciones" className="text-xs sm:text-sm">Sonido</TabsTrigger>
             <TabsTrigger value="chat" className="text-xs sm:text-sm">Chat</TabsTrigger>
             <TabsTrigger value="drive" className="text-xs sm:text-sm">Drive</TabsTrigger>
-            <TabsTrigger value="gemini" className="text-xs sm:text-sm">Gemini</TabsTrigger>
+            <TabsTrigger value="ia" className="text-xs sm:text-sm">IA</TabsTrigger>
           </TabsList>
         </div>
 
@@ -1171,16 +1154,6 @@ export default function AdminConfig() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="minutas-ia" className="mt-4">
-          {/* key: re-reads the saved values once settings load or change */}
-          <ConfigMinutasIa
-            key={`${siteSettings?.ia_minutas_desk_ids ?? ''}|${siteSettings?.ia_minutas_limite_diario ?? ''}`}
-            desks={desks}
-            ajustes={siteSettings ?? {}}
-            onGuardado={fetchData}
-          />
-        </TabsContent>
-
         <TabsContent value="chat" className="mt-4">
           <Card className="glass-card max-w-2xl">
             <CardHeader>
@@ -1273,59 +1246,15 @@ export default function AdminConfig() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="gemini" className="mt-4">
-          <Card className="glass-card max-w-2xl">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-purple-500" />
-                Gemini AI
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Asistente de inteligencia artificial integrado con contexto de tareas y proyectos.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSaveGemini} className="space-y-6">
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="flex items-center gap-3">
-                    <Sparkles className={cn('h-5 w-5', geminiEnabled ? 'text-purple-500' : 'text-muted-foreground')} />
-                    <div>
-                      <p className="font-medium">Gemini AI habilitado</p>
-                      <p className="text-xs text-muted-foreground">
-                        {geminiEnabled
-                          ? 'Los usuarios verán el botón de Gemini y podrán interactuar con el asistente AI'
-                          : 'El asistente Gemini está oculto para todos los usuarios'}
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={geminiEnabled}
-                    onCheckedChange={setGeminiEnabled}
-                  />
-                </div>
-                <div className="rounded-lg border p-4 bg-muted/30 space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Funcionalidades:</strong>
-                  </p>
-                  <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
-                    <li>Chat conversacional con contexto de tus tareas y proyectos</li>
-                    <li>Resúmenes automáticos de tareas, comentarios y sprints</li>
-                    <li>Historial de conversaciones por usuario</li>
-                  </ul>
-                </div>
-                <div className="rounded-lg border p-4 bg-muted/30">
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Nota:</strong> Gemini AI utiliza la API de Google Gemini.
-                    La clave API se configura en el servidor. Contacta al administrador del sistema si necesitas actualizar la clave.
-                  </p>
-                </div>
-                <Button type="submit" disabled={geminiSaving}>
-                  {geminiSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  Guardar configuración de Gemini
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+        <TabsContent value="ia" className="mt-4 space-y-6">
+          {/* key: re-reads the saved values once settings load or change */}
+          <ConfigMinutasIa
+            key={`ia-${siteSettings?.ia_minutas_desk_ids ?? ''}|${siteSettings?.ia_minutas_limite_diario ?? ''}`}
+            desks={desks}
+            ajustes={siteSettings ?? {}}
+            onGuardado={fetchData}
+          />
+          <ConfigGemini key={`gemini-${siteSettings?.gemini_enabled ?? ''}`} ajustes={siteSettings ?? {}} onGuardado={fetchData} />
         </TabsContent>
 
         <TabsContent value="notificaciones" className="mt-4">
