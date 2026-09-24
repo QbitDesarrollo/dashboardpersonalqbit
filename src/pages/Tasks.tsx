@@ -98,6 +98,7 @@ import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 import { RichTextViewer } from '@/components/RichTextEditor';
 import { DepartmentBadge, useDepartments } from '@/components/tasks/DepartmentSelect';
 import { TaskFormDialog } from '@/components/tasks/form/TaskFormDialog';
+import { FiltroProyecto } from '@/components/tasks/FiltroProyecto';
 import { HandoffDialog } from '@/components/tasks/HandoffDialog';
 
 interface Task {
@@ -197,6 +198,7 @@ export default function Tasks() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBrand, setFilterBrand] = useState<string>('all');
+  const [filterProject, setFilterProject] = useState<string>('all');
   const [filterDesk, setFilterDesk] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
@@ -448,12 +450,16 @@ export default function Tasks() {
 
   useEffect(() => {
     fetchData();
-  }, [page, filterResponsable, filterBrand, filterDesk, filterStatus, filterPriority, debouncedSearch, pinnedDeskId, pinnedBrandId]);
+  }, [page, filterResponsable, filterBrand, filterProject, filterDesk, filterStatus, filterPriority, debouncedSearch, pinnedDeskId, pinnedBrandId]);
 
   // Reset to page 0 when any filter changes
   useEffect(() => {
     setPage(0);
-  }, [filterResponsable, filterBrand, filterDesk, filterStatus, filterPriority, debouncedSearch, pinnedDeskId, pinnedBrandId]);
+  }, [filterResponsable, filterBrand, filterProject, filterDesk, filterStatus, filterPriority, debouncedSearch, pinnedDeskId, pinnedBrandId]);
+
+  // Projects belong to a brand: changing the brand resets the project filter.
+  const marcaFiltrada = filterBrand !== 'all' ? filterBrand : (pinnedBrandId || 'all');
+  useEffect(() => { setFilterProject('all'); }, [marcaFiltrada]);
 
   useEffect(() => {
     const r = searchParams.get('responsable');
@@ -646,6 +652,8 @@ export default function Tasks() {
           estado: filterStatus,
           prioridad: filterPriority,
           search: debouncedSearch || undefined,
+          project_id: filterProject,
+          orden: 'entrega',
         }),
         api.getBrands(),
         api.getDesks(),
@@ -1203,9 +1211,10 @@ export default function Tasks() {
 
       {/* Filters */}
       {(() => {
-        const activeFilterCount = [filterBrand, filterDesk, filterStatus, filterPriority, filterResponsable].filter((v) => v !== 'all').length;
+        const activeFilterCount = [filterBrand, filterProject, filterDesk, filterStatus, filterPriority, filterResponsable].filter((v) => v !== 'all').length;
         const clearAllFilters = () => {
           setFilterBrand('all');
+          setFilterProject('all');
           setFilterDesk('all');
           setFilterStatus('all');
           setFilterPriority('all');
@@ -1225,6 +1234,7 @@ export default function Tasks() {
                 </SelectContent>
               </Select>
             </div>
+            <FiltroProyecto brandId={marcaFiltrada} value={filterProject} onChange={setFilterProject} />
             <div className="space-y-1.5 sm:space-y-0 w-full sm:w-auto">
               <Label className="text-xs text-muted-foreground block sm:hidden">Mesa</Label>
               <Select value={filterDesk} onValueChange={setFilterDesk}>

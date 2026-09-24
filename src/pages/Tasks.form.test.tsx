@@ -392,3 +392,32 @@ describe('Tasks · formulario de tarea (caracterización)', () => {
     await waitFor(() => expect(m.patchTask).toHaveBeenCalledWith('t1', expect.objectContaining({ fecha_cliente: '2026-10-03' })));
   });
 });
+
+describe('Tasks · orden y filtro por proyecto', () => {
+  const filtro = (prefijo: string) => screen.getAllByRole('combobox').find((c) => c.textContent?.startsWith(prefijo)) as HTMLElement;
+  async function elegirEnFiltro(combo: HTMLElement, opcion: string) {
+    fireEvent.keyDown(combo, { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('option', { name: opcion }));
+    await act(async () => {});
+  }
+
+  it('pide las tareas ordenadas por fecha de entrega', async () => {
+    renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    expect(m.getTasks).toHaveBeenCalledWith(expect.objectContaining({ orden: 'entrega' }));
+  });
+
+  it('con una marca elegida filtra por proyecto; al cambiar de marca el proyecto vuelve a "todos"', async () => {
+    m.getProjects.mockResolvedValue([{ id: 'p1', nombre: 'Portal' }]);
+    renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    expect(screen.getByRole('combobox', { name: 'Proyecto' })).toBeDisabled();
+    await elegirEnFiltro(filtro('Marca:'), 'Dinatek');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Proyecto' })).toBeEnabled());
+    await elegirEnFiltro(screen.getByRole('combobox', { name: 'Proyecto' }), 'Portal');
+    await waitFor(() => expect(m.getTasks).toHaveBeenLastCalledWith(expect.objectContaining({ brand_id: 'b1', project_id: 'p1' })));
+    await elegirEnFiltro(filtro('Marca:'), 'Pronaca');
+    await waitFor(() => expect(m.getTasks).toHaveBeenLastCalledWith(expect.objectContaining({ brand_id: 'b2', project_id: 'all' })));
+  });
+});
+

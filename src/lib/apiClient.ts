@@ -290,6 +290,9 @@ export interface GetTasksOptions {
   estado?: string;
   prioridad?: string;
   search?: string;
+  project_id?: string;
+  /** 'entrega': open tasks by nearest due date, then closed ones (Tasks page). */
+  orden?: 'entrega';
 }
 
 export async function getTask(id: string): Promise<unknown> {
@@ -310,6 +313,8 @@ export async function getTasks(options?: GetTasksOptions): Promise<{ tasks: unkn
   if (options?.estado && options.estado !== 'all') params.set('estado', options.estado);
   if (options?.prioridad && options.prioridad !== 'all') params.set('prioridad', options.prioridad);
   if (options?.search) params.set('search', options.search);
+  if (options?.project_id && options.project_id !== 'all') params.set('project_id', options.project_id);
+  if (options?.orden) params.set('orden', options.orden);
   const qs = params.toString();
   const res = await request(`/api/data/tasks${qs ? `?${qs}` : ''}`);
   if (!res.ok) throw new Error(await res.text());

@@ -35,7 +35,7 @@ export function ProjectSelect({
   return (
     <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? null : v)} disabled={!brandId}>
       <SelectTrigger>
-        <SelectValue placeholder={!brandId ? 'Elegí primero la marca' : (loading ? 'Cargando…' : 'Sin proyecto')} />
+        <SelectValue placeholder={!brandId ? 'Elige primero la marca' : (loading ? 'Cargando…' : 'Sin proyecto')} />
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={NONE}><span className="text-muted-foreground">Sin proyecto</span></SelectItem>
