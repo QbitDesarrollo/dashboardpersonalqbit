@@ -95,7 +95,7 @@ describe('MinutaNueva', () => {
       renderNueva();
       fireEvent.click(await screen.findByRole('button', { name: 'Generar con IA' }));
       fireEvent.change(screen.getByLabelText('Transcripción de la reunión'), { target: { value: 'Even: revisamos el home.' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Crear borrador' }));
 
       await waitFor(() => expect(screen.getByLabelText('Título')).toHaveValue('Revisión de avance: home'));
       expect(minutasIa.pedirBorrador).toHaveBeenCalledWith({ transcripcion: 'Even: revisamos el home.', notas_cliente: '', indicaciones: '', fecha: '2026-09-24' });
@@ -116,7 +116,7 @@ describe('MinutaNueva', () => {
       expect(await screen.findByText('Te quedan 6 de 10 minutas con IA hoy')).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Generar con IA' }));
       fireEvent.change(screen.getByLabelText('Transcripción de la reunión'), { target: { value: 'Hola' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Crear borrador' }));
       expect(await screen.findByText('Te quedan 5 de 10 minutas con IA hoy')).toBeInTheDocument();
     });
 
@@ -131,7 +131,7 @@ describe('MinutaNueva', () => {
       fireEvent.keyDown(captura, { key: 'Enter' });
       fireEvent.click(await screen.findByRole('button', { name: 'Generar con IA' }));
       fireEvent.change(screen.getByLabelText('Transcripción de la reunión'), { target: { value: 'Hola' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Crear borrador' }));
 
       await waitFor(() => expect(screen.getByLabelText('Título del punto 3')).toHaveValue('Fichas técnicas'));
       expect(screen.getByLabelText('Título')).toHaveValue('Mi título');

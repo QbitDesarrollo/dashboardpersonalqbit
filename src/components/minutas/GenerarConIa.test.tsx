@@ -25,9 +25,9 @@ describe('GenerarConIa', () => {
 
   it('genera el borrador con la transcripción pegada y lo entrega', async () => {
     const { onBorrador, onOpenChange } = montar();
-    expect(screen.getByRole('button', { name: 'Generar borrador' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Crear borrador' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Transcripción de la reunión'), { target: { value: '  Even: revisamos el home.  ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear borrador' }));
     await waitFor(() => expect(onBorrador).toHaveBeenCalledWith(BORRADOR));
     expect(ia.pedirBorrador).toHaveBeenCalledWith({ transcripcion: 'Even: revisamos el home.', notas_cliente: '', indicaciones: '', fecha: '2026-09-24' });
     expect(ia.esperarBorrador).toHaveBeenCalledWith('job1');
@@ -36,9 +36,9 @@ describe('GenerarConIa', () => {
 
   it('genera solo con lo que mandó el cliente y las indicaciones del equipo', async () => {
     const { onBorrador } = montar();
-    fireEvent.change(screen.getByLabelText('Lo que mandó el cliente'), { target: { value: 'Even,\n- Agregar incidencias\nGracias' } });
-    fireEvent.change(screen.getByLabelText('Indicaciones para la IA'), { target: { value: ' Solo lo del portal ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
+    fireEvent.change(screen.getByLabelText('Correo o notas del cliente (opcional)'), { target: { value: 'Even,\n- Agregar incidencias\nGracias' } });
+    fireEvent.change(screen.getByLabelText('¿Algo que la IA deba tener en cuenta? (opcional)'), { target: { value: ' Solo lo del portal ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear borrador' }));
     await waitFor(() => expect(onBorrador).toHaveBeenCalledWith(BORRADOR));
     expect(ia.pedirBorrador).toHaveBeenCalledWith({
       transcripcion: '', notas_cliente: 'Even,\n- Agregar incidencias\nGracias', indicaciones: 'Solo lo del portal', fecha: '2026-09-24',
@@ -49,14 +49,14 @@ describe('GenerarConIa', () => {
     vi.mocked(ia.esperarBorrador).mockReturnValue(new Promise(() => {}));
     montar();
     fireEvent.change(screen.getByLabelText('Transcripción de la reunión'), { target: { value: 'Hola' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
-    expect(await screen.findByText('Generando… suele tardar entre 10 segundos y un minuto.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Crear borrador' }));
+    expect(await screen.findByText('Armando la minuta… suele tomar entre 10 segundos y un minuto.')).toBeInTheDocument();
   });
 
   it('carga la transcripción desde un archivo de texto', async () => {
     montar();
     const archivo = new File(['Cliente: queremos el video sin sonido.'], 'reunion.txt', { type: 'text/plain' });
-    fireEvent.change(screen.getByLabelText('Cargar archivo'), { target: { files: [archivo] } });
+    fireEvent.change(screen.getByLabelText('Subir archivo'), { target: { files: [archivo] } });
     await waitFor(() => expect(screen.getByLabelText('Transcripción de la reunión')).toHaveValue('Cliente: queremos el video sin sonido.'));
   });
 
@@ -64,29 +64,30 @@ describe('GenerarConIa', () => {
     montar();
     const archivo = new File(['x'], 'reunion.txt', { type: 'text/plain' });
     archivo.text = () => Promise.reject(new Error('dañado'));
-    fireEvent.change(screen.getByLabelText('Cargar archivo'), { target: { files: [archivo] } });
-    expect(await screen.findByText('No se pudo leer el archivo. Copia y pega el texto.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Subir archivo'), { target: { files: [archivo] } });
+    expect(await screen.findByText('No pudimos leer el archivo. Copia el texto y pégalo aquí.')).toBeInTheDocument();
   });
 
   it('si falla muestra el motivo y deja intentar de nuevo', async () => {
     vi.mocked(ia.pedirBorrador).mockRejectedValue(new Error('Llegaste al límite de 10 minutas con IA por hoy.'));
     const { onBorrador } = montar();
     fireEvent.change(screen.getByLabelText('Transcripción de la reunión'), { target: { value: 'Hola' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear borrador' }));
     expect(await screen.findByText('Llegaste al límite de 10 minutas con IA por hoy.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Generar borrador' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Crear borrador' })).toBeEnabled();
     expect(onBorrador).not.toHaveBeenCalled();
   });
 
   it('muestra cuántas le quedan hoy', () => {
     montar();
-    expect(screen.getByText('Te quedan 8 de 10 hoy.')).toBeInTheDocument();
+    expect(screen.getByText('Te quedan 8 de 10 hoy. No guardamos lo que pegues aquí.')).toBeInTheDocument();
   });
 
   it('si Codex no está disponible, lo dice y no deja generar', () => {
     montar({ ...LISTO, disponible: false, detalle: 'Not logged in' });
-    expect(screen.getByText('La IA no está disponible ahora: Not logged in')).toBeInTheDocument();
+    expect(screen.getByText('La IA no está disponible en este momento. Si sigue así, avísale a un administrador.')).toBeInTheDocument();
+    expect(screen.queryByText(/Not logged in/)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Transcripción de la reunión'), { target: { value: 'Hola' } });
-    expect(screen.getByRole('button', { name: 'Generar borrador' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Crear borrador' })).toBeDisabled();
   });
 });
