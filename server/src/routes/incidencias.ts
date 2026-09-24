@@ -13,10 +13,12 @@ const ESTADOS = ['ABIERTO', 'EN_PROGRESO', 'RESUELTO', 'CERRADO'];
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
 
-/** Solo admin y ejecutivo pueden usar el módulo de incidencias (Opción A). */
+/** Acceso al módulo de incidencias: todo el equipo interno puede ver, crear y
+ *  comentar (pedido de Steven 21-jul). Cambiar estado/prioridad queda para
+ *  admin/ejecutivo; asignar/eliminar solo admin (cada endpoint lo valida). */
 async function requireIncidenciaAccess(req: AuthRequest): Promise<{ ok: boolean; role: string }> {
   const role = await getUserRole(req.userId!);
-  return { ok: role === 'admin' || role === 'ejecutivo', role };
+  return { ok: role === 'admin' || role === 'ejecutivo' || role === 'equipo', role };
 }
 
 /** Registra una línea en el timeline de actividad. Fire-and-forget. */
@@ -271,8 +273,8 @@ incidenciasRouter.post('/incidencias/:id/comentarios', requireAuth, async (req: 
 // ─────────────────────────────────────────────────────────────────────────────
 incidenciasRouter.patch('/incidencias/:id/estado', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { ok } = await requireIncidenciaAccess(req);
-    if (!ok) return res.status(403).json({ error: 'Sin acceso' });
+    const { ok, role } = await requireIncidenciaAccess(req);
+    if (!ok || role === 'equipo') return res.status(403).json({ error: 'Solo admin/ejecutivo pueden cambiar el estado' });
     const id = String(req.params.id);
     const estado = String(req.body?.estado || '');
     if (!ESTADOS.includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
@@ -322,8 +324,8 @@ incidenciasRouter.patch('/incidencias/:id/estado', requireAuth, async (req: Auth
 // ─────────────────────────────────────────────────────────────────────────────
 incidenciasRouter.patch('/incidencias/:id/prioridad', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { ok } = await requireIncidenciaAccess(req);
-    if (!ok) return res.status(403).json({ error: 'Sin acceso' });
+    const { ok, role } = await requireIncidenciaAccess(req);
+    if (!ok || role === 'equipo') return res.status(403).json({ error: 'Solo admin/ejecutivo pueden cambiar la prioridad' });
     const id = String(req.params.id);
     const prioridad = String(req.body?.prioridad || '');
     if (!PRIORIDADES.includes(prioridad)) return res.status(400).json({ error: 'Prioridad inválida' });
@@ -397,8 +399,8 @@ incidenciasRouter.delete('/incidencias/:id', requireAuth, async (req: AuthReques
 // ─────────────────────────────────────────────────────────────────────────────
 incidenciasRouter.get('/incidencias-asignables', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { ok } = await requireIncidenciaAccess(req);
-    if (!ok) return res.status(403).json({ error: 'Sin acceso' });
+    const { ok, role } = await requireIncidenciaAccess(req);
+    if (!ok || role === 'equipo') return res.status(403).json({ error: 'Sin acceso' });
     const rows = await query<any[]>(
       `SELECT id, nombre, email, avatar_url, rol FROM profiles
        WHERE activo = 1 AND rol IN ('admin','ejecutivo') ORDER BY nombre`
