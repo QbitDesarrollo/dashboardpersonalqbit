@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import mysql from 'mysql2/promise';
@@ -30,7 +31,7 @@ export async function levantarAppEn(base: string, ...routers: express.Router[]):
 }
 
 const TABLAS_DE_PRUEBA = [
-  'minuta_ia_trabajos', 'desk_members', 'desks', 'site_settings',
+  'api_tokens', 'minuta_ia_trabajos', 'desk_members', 'desks', 'site_settings',
   'minuta_item_notas', 'minuta_item_evidencias', 'minuta_items', 'minuta_miembros', 'minutas',
   'tasks', 'projects', 'brands', 'user_roles', 'profiles', 'users',
 ];
@@ -64,6 +65,14 @@ export async function crearMarca(nombre: string): Promise<string> {
   const id = uuid();
   await query('INSERT INTO brands (id, nombre) VALUES (?, ?)', [id, nombre]);
   return id;
+}
+
+/** Personal API token (the one the MCP sends), returned as a Usuario so `llamar` can use it. */
+export async function crearTokenApi(usuario: Usuario): Promise<Usuario> {
+  const plano = `tiusdei_${crypto.randomBytes(24).toString('hex')}`;
+  const hash = crypto.createHash('sha256').update(plano).digest('hex');
+  await query('INSERT INTO api_tokens (id, user_id, token_hash, token_prefix, created_at) VALUES (?, ?, ?, ?, NOW(3))', [uuid(), usuario.id, hash, plano.slice(0, 16)]);
+  return { ...usuario, token: plano };
 }
 
 export async function crearMesa(nombre: string, miembros: string[] = []): Promise<string> {

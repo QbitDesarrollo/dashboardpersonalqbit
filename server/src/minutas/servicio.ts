@@ -10,7 +10,8 @@ import { codigo, insertarPunto, sincronizarArranques } from './consultas.js';
  * Errors meant for the caller carry an HTTP status and a message that can be shown as-is.
  */
 export class ErrorMinuta extends Error {
-  constructor(readonly status: number, mensaje: string) { super(mensaje); }
+  /** `codigo` is the named error the MCP API returns (TIUSDEI_*). */
+  constructor(readonly status: number, mensaje: string, readonly codigo = 'TIUSDEI_ERROR') { super(mensaje); }
 }
 
 export async function listarMinutas(filtros: { brandId?: string; projectId?: string; q?: string }) {
@@ -71,10 +72,10 @@ export async function listarMinutas(filtros: { brandId?: string; projectId?: str
 export async function crearMinuta(b: z.infer<typeof crearSchema>, userId: string): Promise<string> {
   if (!pool) throw new ErrorMinuta(500, 'Base de datos no configurada');
   const marca = await queryOne('SELECT id FROM brands WHERE id = ?', [b.brand_id]);
-  if (!marca) throw new ErrorMinuta(400, 'La marca no existe.');
+  if (!marca) throw new ErrorMinuta(400, 'La marca no existe.', 'TIUSDEI_INVALID_BRAND');
   if (b.project_id) {
     const proyecto = await queryOne('SELECT id FROM projects WHERE id = ? AND brand_id = ?', [b.project_id, b.brand_id]);
-    if (!proyecto) throw new ErrorMinuta(400, 'El proyecto no pertenece a esa marca.');
+    if (!proyecto) throw new ErrorMinuta(400, 'El proyecto no pertenece a esa marca.', 'TIUSDEI_INVALID_PROJECT');
   }
   const conn = await pool.getConnection();
   try {
@@ -115,10 +116,10 @@ export async function vincularTarea(itemId: string, taskId: string): Promise<str
     'SELECT i.minuta_id, m.brand_id FROM minuta_items i JOIN minutas m ON m.id = i.minuta_id WHERE i.id = ?',
     [itemId],
   );
-  if (!item) throw new ErrorMinuta(404, 'Punto no encontrado');
+  if (!item) throw new ErrorMinuta(404, 'Punto no encontrado', 'TIUSDEI_NOT_FOUND');
   const tarea = await queryOne<{ brand_id: string }>('SELECT brand_id FROM tasks WHERE id = ?', [taskId]);
-  if (!tarea) throw new ErrorMinuta(404, 'Tarea no encontrada');
-  if (tarea.brand_id !== item.brand_id) throw new ErrorMinuta(400, 'La tarea es de otra marca.');
+  if (!tarea) throw new ErrorMinuta(404, 'Tarea no encontrada', 'TIUSDEI_NOT_FOUND');
+  if (tarea.brand_id !== item.brand_id) throw new ErrorMinuta(400, 'La tarea es de otra marca.', 'TIUSDEI_BRAND_MISMATCH');
   await query('UPDATE tasks SET minuta_item_id = ? WHERE id = ?', [itemId, taskId]);
   return item.minuta_id;
 }
