@@ -8,7 +8,21 @@ const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const ESQUEMA = path.join(AQUI, 'minuta.schema.json');
 const PROMPT = path.join(AQUI, 'prompt.txt');
 
-export const promptConFecha = (plantilla, fecha) => plantilla.replaceAll('{{FECHA}}', fecha);
+/** Prompt for one minuta: meeting date and, when given, the team's instructions (trusted, unlike the sources). */
+export function armarPrompt(plantilla, { fecha, indicaciones = '' }) {
+  const extra = indicaciones.trim()
+    ? `Indicaciones del equipo para esta minuta (síguelas mientras no contradigan las reglas):\n${indicaciones.trim()}`
+    : '';
+  return plantilla.replaceAll('{{FECHA}}', fecha).replaceAll('{{INDICACIONES}}', extra);
+}
+
+/** What Codex reads on stdin: each source in its own block so it never mixes who said what. */
+export function entradaCodex({ transcripcion = '', notasCliente = '' }) {
+  return [
+    transcripcion.trim() && `<transcripcion>\n${transcripcion.trim()}\n</transcripcion>`,
+    notasCliente.trim() && `<notas_del_cliente>\n${notasCliente.trim()}\n</notas_del_cliente>`,
+  ].filter(Boolean).join('\n\n');
+}
 
 /** Runs a command feeding `entrada` on stdin. Resolves with its output; rejects on error or timeout. */
 function correr(bin, args, { entrada = '', limiteMs, cwd }) {
@@ -33,10 +47,10 @@ function correr(bin, args, { entrada = '', limiteMs, cwd }) {
 }
 
 /**
- * Turns a transcript into a minuta draft with `codex exec`. Codex works in an empty
+ * Turns a transcript and/or the client's own notes into a minuta draft with `codex exec`. Codex works in an empty
  * folder with a read-only sandbox and must answer with the JSON schema.
  */
-export async function generarMinuta({ transcripcion, fecha }, {
+export async function generarMinuta({ transcripcion = '', notasCliente = '', indicaciones = '', fecha }, {
   bin = 'codex', modelo = 'gpt-6-luna', esfuerzo = 'medium', limiteMs = 180_000,
 } = {}) {
   const carpeta = await mkdtemp(path.join(tmpdir(), 'minuta-'));
@@ -44,12 +58,12 @@ export async function generarMinuta({ transcripcion, fecha }, {
   const vacia = path.join(carpeta, 'vacia');
   try {
     await mkdir(vacia);
-    const prompt = promptConFecha(await readFile(PROMPT, 'utf8'), fecha);
+    const prompt = armarPrompt(await readFile(PROMPT, 'utf8'), { fecha, indicaciones });
     await correr(bin, [
       'exec', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', vacia,
       '-m', modelo, '-c', `model_reasoning_effort="${esfuerzo}"`,
       '--output-schema', ESQUEMA, '-o', salida, prompt,
-    ], { entrada: transcripcion, limiteMs, cwd: vacia });
+    ], { entrada: entradaCodex({ transcripcion, notasCliente }), limiteMs, cwd: vacia });
     return JSON.parse(await readFile(salida, 'utf8'));
   } finally {
     await rm(carpeta, { recursive: true, force: true });

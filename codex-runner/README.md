@@ -1,10 +1,12 @@
 # codex-runner
 
-Turns a meeting transcript into a minuta draft (title, summary, points) with Codex CLI.
+Turns a meeting transcript and/or the client's own notes (an email, a to-do list) into a minuta draft (title, summary, points) with Codex CLI.
 Tiusdei's API is its only client: it listens on 127.0.0.1, requires a bearer token and runs one minuta at a time.
 
 - `GET /salud` → `{ listo, detalle }` from `codex login status`.
-- `POST /minuta` `{ transcripcion, fecha: "YYYY-MM-DD" }` → JSON following `minuta.schema.json`.
+- `POST /minuta` `{ transcripcion?, notas_cliente?, indicaciones?, fecha: "YYYY-MM-DD" }` → JSON following `minuta.schema.json`.
+  At least one source is required. Sources reach Codex on stdin in separate blocks (`<transcripcion>`, `<notas_del_cliente>`);
+  `indicaciones` come from the team and go into the prompt.
 
 The prompt (`prompt.txt`) and schema are the contract with Tiusdei; change them together with `server/src/minutas/ia/`.
 

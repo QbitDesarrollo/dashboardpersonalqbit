@@ -8,7 +8,7 @@ async function levantar(opciones = {}) {
   const servidor = crearServidor({
     token: TOKEN,
     verificarSesion: async () => ({ listo: true, detalle: 'Logged in using ChatGPT' }),
-    generar: async ({ transcripcion, fecha }) => ({ titulo: `Minuta ${fecha}`, resumen: transcripcion.slice(0, 10), puntos: [] }),
+    generar: async (datos) => ({ titulo: `Minuta ${datos.fecha}`, recibido: datos, puntos: [] }),
     log: { error: () => {} },
     ...opciones,
   });
@@ -42,15 +42,32 @@ test('genera la minuta con la transcripción y la fecha', async (t) => {
   t.after(() => servidor.close());
   const r = await llamar('/minuta', cuerpo({ transcripcion: 'Hola, revisamos el home.', fecha: '2026-09-24' }));
   assert.equal(r.status, 200);
-  assert.deepEqual(await r.json(), { titulo: 'Minuta 2026-09-24', resumen: 'Hola, revi', puntos: [] });
+  assert.deepEqual(await r.json(), {
+    titulo: 'Minuta 2026-09-24', puntos: [],
+    recibido: { transcripcion: 'Hola, revisamos el home.', notasCliente: '', indicaciones: '', fecha: '2026-09-24' },
+  });
+});
+
+test('acepta lo que mandó el cliente y las indicaciones, aunque no haya transcripción', async (t) => {
+  const { servidor, llamar } = await levantar();
+  t.after(() => servidor.close());
+  const r = await llamar('/minuta', cuerpo({ notas_cliente: '- Agregar incidencias', indicaciones: 'Solo lo del portal', fecha: '2026-09-24' }));
+  assert.equal(r.status, 200);
+  assert.deepEqual((await r.json()).recibido, { transcripcion: '', notasCliente: '- Agregar incidencias', indicaciones: 'Solo lo del portal', fecha: '2026-09-24' });
 });
 
 test('valida la transcripción y la fecha', async (t) => {
   const { servidor, llamar } = await levantar({ maxCaracteres: 20 });
   t.after(() => servidor.close());
-  const vacia = await llamar('/minuta', cuerpo({ transcripcion: '   ', fecha: '2026-09-24' }));
+  const vacia = await llamar('/minuta', cuerpo({ transcripcion: '   ', notas_cliente: ' ', fecha: '2026-09-24' }));
   assert.equal(vacia.status, 400);
-  assert.deepEqual(await vacia.json(), { error: 'Falta la transcripción.' });
+  assert.deepEqual(await vacia.json(), { error: 'Falta la transcripción o lo que mandó el cliente.' });
+  const notasLargas = await llamar('/minuta', cuerpo({ notas_cliente: 'a'.repeat(30_001), fecha: '2026-09-24' }));
+  assert.equal(notasLargas.status, 413);
+  assert.deepEqual(await notasLargas.json(), { error: 'Lo que mandó el cliente es demasiado largo.' });
+  const indicaciones = await llamar('/minuta', cuerpo({ transcripcion: 'Hola', indicaciones: 'a'.repeat(501), fecha: '2026-09-24' }));
+  assert.equal(indicaciones.status, 400);
+  assert.deepEqual(await indicaciones.json(), { error: 'Las indicaciones son demasiado largas (máximo 500 caracteres).' });
   const sinFecha = await llamar('/minuta', cuerpo({ transcripcion: 'Hola', fecha: '24/09/2026' }));
   assert.equal(sinFecha.status, 400);
   assert.deepEqual(await sinFecha.json(), { error: 'La fecha debe tener el formato AAAA-MM-DD.' });

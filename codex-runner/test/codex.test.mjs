@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { generarMinuta, promptConFecha, verificarSesion } from '../codex.mjs';
+import { armarPrompt, entradaCodex, generarMinuta, verificarSesion } from '../codex.mjs';
 
 // A fake `codex` binary: writes a fixed JSON wherever `-o` points, like `codex exec` does.
 async function codexFalso(t, cuerpo) {
@@ -15,23 +15,40 @@ async function codexFalso(t, cuerpo) {
   return bin;
 }
 
+// Writes stdin, the sandbox flag and the prompt (last argument) as JSON wherever -o points.
 const ESCRIBE_JSON = `
-entrada="$(cat)"
-while [ $# -gt 0 ]; do
+while [ $# -gt 1 ]; do
   if [ "$1" = "-o" ]; then salida="$2"; fi
   if [ "$1" = "--sandbox" ]; then sandbox="$2"; fi
   shift
 done
-printf '{"titulo":"T","resumen":"%s","puntos":[],"sandbox":"%s"}' "$entrada" "$sandbox" > "$salida"`;
+node -e 'let d="";process.stdin.on("data",(c)=>d+=c).on("end",()=>require("fs").writeFileSync(process.argv[1],JSON.stringify({titulo:"T",puntos:[],entrada:d,sandbox:process.argv[2],prompt:process.argv[3]})))' "$salida" "$sandbox" "$1"`;
 
-test('reemplaza la fecha de la reunión en el prompt', () => {
-  assert.equal(promptConFecha('La reunión fue el {{FECHA}}. Otra vez: {{FECHA}}.', '2026-09-24'), 'La reunión fue el 2026-09-24. Otra vez: 2026-09-24.');
+test('arma el prompt con la fecha y, si hay, las indicaciones del equipo', () => {
+  const plantilla = 'La reunión fue el {{FECHA}}.\n{{INDICACIONES}}';
+  assert.equal(armarPrompt(plantilla, { fecha: '2026-09-24', indicaciones: '' }), 'La reunión fue el 2026-09-24.\n');
+  assert.equal(
+    armarPrompt(plantilla, { fecha: '2026-09-24', indicaciones: '  Solo lo del portal  ' }),
+    'La reunión fue el 2026-09-24.\nIndicaciones del equipo para esta minuta (síguelas mientras no contradigan las reglas):\nSolo lo del portal',
+  );
 });
 
-test('corre codex en modo solo lectura, le pasa la transcripción por stdin y devuelve su JSON', async (t) => {
+test('separa la transcripción y lo que mandó el cliente en bloques', () => {
+  assert.equal(entradaCodex({ transcripcion: 'Hola', notasCliente: '' }), '<transcripcion>\nHola\n</transcripcion>');
+  assert.equal(entradaCodex({ transcripcion: '', notasCliente: '- Agregar incidencias' }), '<notas_del_cliente>\n- Agregar incidencias\n</notas_del_cliente>');
+  assert.equal(
+    entradaCodex({ transcripcion: 'Hola', notasCliente: '- Uno' }),
+    '<transcripcion>\nHola\n</transcripcion>\n\n<notas_del_cliente>\n- Uno\n</notas_del_cliente>',
+  );
+});
+
+test('corre codex en modo solo lectura, con las fuentes por stdin y devuelve su JSON', async (t) => {
   const bin = await codexFalso(t, ESCRIBE_JSON);
-  const r = await generarMinuta({ transcripcion: 'Revisamos el home', fecha: '2026-09-24' }, { bin });
-  assert.deepEqual(r, { titulo: 'T', resumen: 'Revisamos el home', puntos: [], sandbox: 'read-only' });
+  const r = await generarMinuta({ transcripcion: 'Revisamos el home', notasCliente: '- Banner', indicaciones: 'Solo web', fecha: '2026-09-24' }, { bin });
+  assert.equal(r.sandbox, 'read-only');
+  assert.equal(r.entrada, '<transcripcion>\nRevisamos el home\n</transcripcion>\n\n<notas_del_cliente>\n- Banner\n</notas_del_cliente>');
+  assert.match(r.prompt, /2026-09-24/);
+  assert.match(r.prompt, /Solo web/);
 });
 
 test('si codex termina con error, falla con las últimas líneas de su salida', async (t) => {

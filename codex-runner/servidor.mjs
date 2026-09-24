@@ -3,6 +3,8 @@ import { timingSafeEqual } from 'node:crypto';
 
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_BYTES = 1024 * 1024;
+const MAX_NOTAS = 30_000;
+const MAX_INDICACIONES = 500;
 
 class ErrorHttp extends Error {
   constructor(status, mensaje) { super(mensaje); this.status = status; }
@@ -44,15 +46,22 @@ export function crearServidor({ token, generar, verificarSesion, maxCaracteres =
       if (req.method === 'GET' && req.url === '/salud') return responder(res, 200, await verificarSesion());
 
       if (req.method === 'POST' && req.url === '/minuta') {
-        const { transcripcion, fecha } = await leerJson(req);
-        if (typeof transcripcion !== 'string' || !transcripcion.trim()) throw new ErrorHttp(400, 'Falta la transcripción.');
+        const cuerpo = await leerJson(req);
+        const texto = (v) => (typeof v === 'string' ? v : '');
+        const transcripcion = texto(cuerpo.transcripcion);
+        const notasCliente = texto(cuerpo.notas_cliente);
+        const indicaciones = texto(cuerpo.indicaciones);
+        const { fecha } = cuerpo;
+        if (!transcripcion.trim() && !notasCliente.trim()) throw new ErrorHttp(400, 'Falta la transcripción o lo que mandó el cliente.');
         if (typeof fecha !== 'string' || !FECHA.test(fecha)) throw new ErrorHttp(400, 'La fecha debe tener el formato AAAA-MM-DD.');
         if (transcripcion.length > maxCaracteres) throw new ErrorHttp(413, 'La transcripción es demasiado larga.');
+        if (notasCliente.length > MAX_NOTAS) throw new ErrorHttp(413, 'Lo que mandó el cliente es demasiado largo.');
+        if (indicaciones.length > MAX_INDICACIONES) throw new ErrorHttp(400, 'Las indicaciones son demasiado largas (máximo 500 caracteres).');
         if (ocupado) throw new ErrorHttp(429, 'Codex está ocupado con otra minuta. Intenta en un minuto.');
 
         ocupado = true;
         try {
-          return responder(res, 200, await generar({ transcripcion, fecha }));
+          return responder(res, 200, await generar({ transcripcion, notasCliente, indicaciones, fecha }));
         } catch (e) {
           // The detail stays in the runner log; it may mention local paths.
           log.error('[codex-runner] generar falló:', e instanceof Error ? e.message : e);
