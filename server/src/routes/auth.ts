@@ -9,6 +9,7 @@ import fs from 'fs';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
 import { sendEmail, bienvenidaEmail } from '../services/email.js';
+import { getUserRole } from '../utils/roles.js';
 
 export const authRouter = Router();
 
@@ -56,9 +57,15 @@ const registerSchema = z.object({
   rol: z.enum(['admin', 'ejecutivo', 'equipo', 'cliente']).optional().default('equipo'),
 });
 
-function signToken(userId: string, rol: string): string {
+const DIAS_MAX_SESION = 30;
+
+/**
+ * Session token: 7 days, renewed silently while the app is used (POST /renovar).
+ * `login` keeps when the person last entered their password, so renewals stop after 30 days.
+ */
+function signToken(userId: string, rol: string, login = Math.floor(Date.now() / 1000)): string {
   return jwt.sign(
-    { sub: userId, role: rol },
+    { sub: userId, role: rol, login },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -205,6 +212,27 @@ authRouter.post('/register', async (req, res) => {
 /**
  * GET /api/auth/me - Current user profile
  */
+/**
+ * POST /api/auth/renovar — new 7-day token for an active user, keeping the original login time.
+ * Refused 30 days after the last password login, so a stolen token cannot be extended forever.
+ */
+authRouter.post('/renovar', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const actual = jwt.decode(String(req.headers.authorization).slice(7)) as jwt.JwtPayload | null;
+    const login = Number(actual?.login ?? actual?.iat);
+    const ahora = Math.floor(Date.now() / 1000);
+    if (!login || ahora - login > DIAS_MAX_SESION * 86400) {
+      return res.status(401).json({ error: 'La sesión ya no se puede renovar. Vuelve a entrar.' });
+    }
+    const perfil = await queryOne<{ activo: number }>('SELECT activo FROM profiles WHERE id = ?', [req.userId]);
+    if (!perfil || !perfil.activo) return res.status(401).json({ error: 'Usuario desactivado' });
+    res.json({ token: signToken(req.userId!, await getUserRole(req.userId!), login) });
+  } catch (e) {
+    console.error('[AUTH] renovar:', e);
+    res.status(500).json({ error: 'No se pudo renovar la sesión' });
+  }
+});
+
 authRouter.get('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
     const userId = req.userId!;
