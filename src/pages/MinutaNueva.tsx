@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, NotebookPen } from 'lucide-react';
+import { ArrowLeft, Loader2, NotebookPen, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
 import { crearMinuta } from '@/lib/minutasApi';
-import { aPuntosNuevos, hoyEcuador } from '@/lib/minutas';
+import { aPuntosNuevos, hoyEcuador, puntosDesdeIa } from '@/lib/minutas';
+import { estadoIa, type BorradorIa, type EstadoIa } from '@/lib/minutasIaApi';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { EditorPuntos, SELECT, type PuntoBorrador } from '@/components/minutas/EditorPuntos';
 import { SelectorEquipo } from '@/components/minutas/SelectorEquipo';
+import { GenerarConIa } from '@/components/minutas/GenerarConIa';
 
 interface Opcion { id: string; nombre: string }
 
@@ -33,6 +35,8 @@ export default function MinutaNueva() {
   const [resumen, setResumen] = useState('');
   const [puntos, setPuntos] = useState<PuntoBorrador[]>([]);
   const [guardando, setGuardando] = useState(false);
+  const [ia, setIa] = useState<EstadoIa | null>(null);
+  const [iaAbierto, setIaAbierto] = useState(false);
 
   useEffect(() => {
     api.getBrands()
@@ -42,6 +46,17 @@ export default function MinutaNueva() {
       .then((p: Array<Opcion & { activo?: unknown }>) => setPersonas((Array.isArray(p) ? p : []).filter((x) => x.activo !== 0 && x.activo !== false)))
       .catch(() => toast.error('No se pudo cargar el equipo'));
   }, []);
+
+  // Only members of the desks enabled in Admin → Config see the AI button.
+  useEffect(() => { estadoIa().then(setIa).catch(() => setIa(null)); }, []);
+
+  // The AI draft never overwrites what was already written: it fills blanks and appends points.
+  const aplicarBorrador = (b: BorradorIa) => {
+    setTitulo((t) => (t.trim() ? t : b.titulo));
+    setResumen((r) => (!b.resumen ? r : r.trim() ? `${r.trim()}\n\n${b.resumen}` : b.resumen));
+    setPuntos((p) => [...p, ...puntosDesdeIa(b.puntos)]);
+    estadoIa().then(setIa).catch(() => {});
+  };
 
   useEffect(() => {
     setProjectId('');
@@ -92,7 +107,15 @@ export default function MinutaNueva() {
           <h1 className="text-2xl font-bold">Nueva minuta</h1>
           <p className="text-sm text-muted-foreground">Se numera sola por marca: M-01, M-02…</p>
         </div>
+        {ia?.permitido && (
+          <Button variant="outline" className="ml-auto" onClick={() => setIaAbierto(true)}>
+            <Sparkles className="h-4 w-4 text-primary" />Generar con IA
+          </Button>
+        )}
       </div>
+      {ia?.permitido && (
+        <GenerarConIa abierto={iaAbierto} onOpenChange={setIaAbierto} fecha={fecha} estado={ia} onBorrador={aplicarBorrador} />
+      )}
 
       <Card><CardContent className="p-4 sm:p-5 space-y-4">
         <h2 className="font-semibold">Datos</h2>

@@ -20,3 +20,15 @@ Object.defineProperty(window, "matchMedia", {
 
 // Radix (Switch, Checkbox) measures elements with ResizeObserver, which jsdom does not provide.
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
+
+// Browsers read uploaded files with Blob.text(); jsdom does not implement it.
+if (!Blob.prototype.text) {
+  Blob.prototype.text = function (this: Blob) {
+    return new Promise<string>((resolve, reject) => {
+      const lector = new FileReader();
+      lector.onload = () => resolve(String(lector.result));
+      lector.onerror = () => reject(lector.error);
+      lector.readAsText(this);
+    });
+  };
+}
