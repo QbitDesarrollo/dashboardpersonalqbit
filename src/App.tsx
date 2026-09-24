@@ -30,6 +30,9 @@ const Tasks = lazy(() => import("./pages/Tasks"));
 const TasksKanban = lazy(() => import("./pages/TasksKanban"));
 const PipelineBoard = lazy(() => import("./pages/PipelineBoard"));
 const Proyectos = lazy(() => import("./pages/Proyectos"));
+import Minutas from "./pages/Minutas";
+import MinutaNueva from "./pages/MinutaNueva";
+import MinutaDetalle from "./pages/MinutaDetalle";
 const TasksGantt = lazy(() => import("./pages/TasksGantt"));
 const TasksCalendar = lazy(() => import("./pages/TasksCalendar"));
 const TasksWorkload = lazy(() => import("./pages/TasksWorkload"));
@@ -150,6 +153,21 @@ const App = () => (
             <Route path="/proyectos" element={
               <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Proyectos /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/minutas" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
+                <AppLayout><Minutas /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/minutas/nueva" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
+                <AppLayout><MinutaNueva /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/minutas/:id" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
+                <AppLayout><MinutaDetalle /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/tareas/gantt" element={
