@@ -3,6 +3,7 @@ import { signPath } from '../utils/signedUrl.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
+import { reunionesDeHoy, horaLimiteIngreso, esIngresoTarde } from '../services/meetingsNow.js';
 
 export const teamMonitorRouter = Router();
 
@@ -15,24 +16,34 @@ teamMonitorRouter.get('/team-monitor/live', requireAuth, async (req: AuthRequest
   try {
     if (!(await requireAdminOps(req))) return res.status(403).json({ error: 'Sin permisos' });
 
-    const today = new Date().toISOString().slice(0, 10);
+    // hoy en Ecuador (no UTC): después de las 19:00 la fecha UTC ya es mañana
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
 
     const users = await query<any[]>(
       `SELECT p.id as user_id, p.nombre, p.avatar_url, p.rol,
               te.id as session_id, te.task_id, te.start_time as session_start,
               te.activity_level, te.status as session_status,
-              t.titulo_tarea,
+              t.titulo_tarea, t.tiempo_trabajado as task_tiempo_trabajado, t.estimated_hours as task_estimated_hours,
               att.check_in as checked_in_at, att.check_out as checked_out_at,
-              (SELECT SUM(te2.duration_seconds) FROM time_entries te2 WHERE te2.user_id = p.id AND DATE(te2.start_time) = ? AND te2.status = 'completed') as today_completed_seconds
+              att.lunch_start, att.lunch_end,
+              (SELECT SUM(te2.duration_seconds) FROM time_entries te2 WHERE te2.user_id = p.id AND DATE(CONVERT_TZ(te2.start_time, '+00:00', '-05:00')) = ? AND te2.status = 'completed') as today_completed_seconds
        FROM profiles p
        LEFT JOIN time_entries te ON te.user_id = p.id AND te.status IN ('active','paused')
        LEFT JOIN tasks t ON t.id = te.task_id
-       LEFT JOIN attendance att ON att.user_id = p.id AND DATE(att.check_in) = ? AND att.check_out IS NULL
+       LEFT JOIN attendance att ON att.user_id = p.id AND DATE(CONVERT_TZ(att.check_in, '+00:00', '-05:00')) = ? AND att.check_out IS NULL
        WHERE p.activo = 1 AND p.rol IN ('admin','ejecutivo','equipo')
        ORDER BY te.status DESC, p.nombre`,
       [today, today]
     );
 
+    // Reuniones del calendario (Google) de hoy, por persona
+    const reuniones = await reunionesDeHoy(users.map((u: any) => u.user_id));
+    // Primer ingreso del día (Ecuador) para marcar "ingreso tarde"
+    const limiteIngreso = await horaLimiteIngreso();
+    const primerosIngresos = new Map((await query<any[]>(
+      `SELECT user_id, MIN(check_in) AS primero FROM attendance WHERE DATE(CONVERT_TZ(check_in, '+00:00', '-05:00')) = ? GROUP BY user_id`,
+      [today],
+    )).map((r: any) => [r.user_id, r.primero]));
     // Get last screenshot for active users
     for (const user of users) {
       if (user.session_id) {
@@ -60,6 +71,36 @@ teamMonitorRouter.get('/team-monitor/live', requireAuth, async (req: AuthRequest
       user.today_completed_seconds = Number(user.today_completed_seconds || 0);
       user.current_session_seconds = Number(user.current_session_seconds || 0);
       user.today_total_seconds = user.today_completed_seconds + user.current_session_seconds;
+      // Acumulado de la tarea en curso: lo ya guardado en la tarea + la sesión activa (aún no sumada)
+      user.task_total_seconds = user.task_id
+        ? Number(user.task_tiempo_trabajado || 0) + (user.session_status === 'active' ? user.current_session_seconds : 0)
+        : null;
+      user.task_estimated_hours = user.task_estimated_hours != null ? Number(user.task_estimated_hours) : null;
+      // Reuniones y utilización del día: (timer + reuniones) / tiempo conectado (sin almuerzo)
+      const reu = reuniones.get(user.user_id);
+      user.calendar_connected = !!reu?.conectado;
+      user.meeting_now = reu?.ahora ?? null;
+      user.meetings_today = reu?.eventos.length ?? 0;
+      user.meetings_today_seconds = reu?.hasta_ahora_seg ?? 0;
+      user.meetings_today_total_seconds = reu?.hoy_seg ?? 0;
+      // Reuniones antes del ingreso, después de la salida o en el almuerzo: no cuentan
+      user.meetings_outside_seconds = reu?.fuera_jornada_seg ?? 0;
+      user.first_check_in = primerosIngresos.get(user.user_id) ?? null;
+      user.late_check_in = esIngresoTarde(user.first_check_in, limiteIngreso);
+      user.late_limit = limiteIngreso;
+      let attSeg = 0;
+      if (user.checked_in_at) {
+        const fin = user.checked_out_at ? new Date(user.checked_out_at).getTime() : Date.now();
+        attSeg = Math.max(0, (fin - new Date(user.checked_in_at).getTime()) / 1000);
+        if (user.lunch_start) {
+          const lFin = user.lunch_end ? new Date(user.lunch_end).getTime() : Math.min(Date.now(), fin);
+          attSeg -= Math.max(0, (lFin - new Date(user.lunch_start).getTime()) / 1000);
+        }
+      }
+      user.attendance_today_seconds = Math.round(attSeg);
+      // Horas trabajadas de hoy = timer + reuniones del calendario (una reunión es trabajo)
+      user.work_today_seconds = user.today_total_seconds + user.meetings_today_seconds;
+      user.utilization_pct = attSeg >= 600 ? Math.min(100, Math.round((user.work_today_seconds / attSeg) * 100)) : null;
     }
 
     res.json({ users });

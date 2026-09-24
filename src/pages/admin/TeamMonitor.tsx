@@ -41,6 +41,7 @@ export default function TeamMonitor() {
   const navigate = useNavigate();
   const [tab, setTab] = useState('live');
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
 
   // Live tab
   const [liveUsers, setLiveUsers] = useState<any[]>([]);
@@ -73,6 +74,7 @@ export default function TeamMonitor() {
     } catch {} finally {
       setRefreshing(false);
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -126,7 +128,10 @@ export default function TeamMonitor() {
     } catch {} finally { setAttLoading(false); }
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -134,9 +139,9 @@ export default function TeamMonitor() {
     );
   }
 
-  const activeUsers = liveUsers.filter(u => u.session_status === 'active');
+  const activeUsers = liveUsers.filter(u => u.session_status === 'active' || u.meeting_now);
   const checkedInUsers = liveUsers.filter(u => u.checked_in_at && !u.checked_out_at);
-  const totalHoursToday = liveUsers.reduce((sum, u) => sum + Number(u.today_total_seconds || 0), 0);
+  const totalHoursToday = liveUsers.reduce((sum, u) => sum + Number(u.work_today_seconds ?? u.today_total_seconds ?? 0), 0);
 
   return (
     <div className="space-y-4">
@@ -162,18 +167,28 @@ export default function TeamMonitor() {
             <SummaryCard icon={<Users className="h-4 w-4" />} label="Equipo" value={String(liveUsers.length)} color="text-blue-600 dark:text-blue-400" />
             <SummaryCard icon={<Activity className="h-4 w-4" />} label="Activos ahora" value={String(activeUsers.length)} color="text-green-600 dark:text-green-400" />
             <SummaryCard icon={<CalendarCheck className="h-4 w-4" />} label="Check-in" value={String(checkedInUsers.length)} color="text-purple-600 dark:text-purple-400" />
-            <SummaryCard icon={<Clock className="h-4 w-4" />} label="Horas hoy" value={formatShortTime(totalHoursToday)} color="text-orange-600 dark:text-orange-400" />
+            <SummaryCard icon={<Clock className="h-4 w-4" />} label="Horas hoy (timer + reuniones)" value={formatShortTime(totalHoursToday)} color="text-orange-600 dark:text-orange-400" />
           </div>
+          <p className="text-[11px] text-muted-foreground -mt-1">
+            Las <strong className="text-foreground">horas de hoy</strong> suman timer + reuniones del Google Calendar (una reunión es trabajo). <strong className="text-foreground">Utilización</strong> = esas horas ÷ tiempo conectado hoy, sin almuerzo. Las reuniones solo cuentan dentro de la jornada marcada: las de antes del ingreso o del almuerzo no suman.
+            Verde 40–85 % · <span className="text-amber-600 font-medium">ámbar más de 85 % (al tope, tenerlo en cuenta)</span> · rojo menos de 40 %.
+            {liveUsers.filter((u) => Number(u.utilization_pct) > 85).length > 0 && <> Hoy por encima del 85 %: <strong className="text-foreground">{liveUsers.filter((u) => Number(u.utilization_pct) > 85).map((u) => String(u.nombre || '').trim().split(' ')[0]).join(', ')}</strong>.</>}
+          </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {liveUsers.map((user) => (
+            {ordenarLive(liveUsers).map((user, idx, arr) => (
+              <div key={user.user_id} className="contents">
+              {(idx === 0 || rangoLive(arr[idx - 1]) !== rangoLive(user)) && (
+                <div className="col-span-full text-[11px] uppercase tracking-wide text-muted-foreground mt-2 first:mt-0">{ETIQUETA_RANGO[rangoLive(user)]} ({arr.filter((x) => rangoLive(x) === rangoLive(user)).length})</div>
+              )}
               <Card
                 key={user.user_id}
                 className={cn(
                   "transition-all hover:shadow-md",
                   user.session_status === 'active' && "border-green-500/40 bg-green-500/[0.03]",
                   user.session_status === 'paused' && "border-yellow-500/40 bg-yellow-500/[0.03]",
-                  !user.session_status && user.checked_in_at && !user.checked_out_at && "border-blue-500/40 bg-blue-500/[0.03]"
+                  !user.session_status && user.meeting_now && "border-emerald-500/40 bg-emerald-500/[0.03]",
+                  !user.session_status && !user.meeting_now && user.checked_in_at && !user.checked_out_at && "border-blue-500/40 bg-blue-500/[0.03]"
                 )}
               >
                 <CardContent className="p-4">
@@ -196,7 +211,7 @@ export default function TeamMonitor() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{user.nombre}</span>
-                        <StatusBadge status={user.session_status} hasSession={!!user.session_id} checkedIn={!!user.checked_in_at && !user.checked_out_at} />
+                        <StatusBadge status={user.session_status} hasSession={!!user.session_id} checkedIn={!!user.checked_in_at && !user.checked_out_at} meeting={!!user.meeting_now} />
                       </div>
 
                       {user.titulo_tarea && (
@@ -206,14 +221,31 @@ export default function TeamMonitor() {
                           <div className="text-xs text-muted-foreground truncate mt-0.5">{user.titulo_tarea}</div>
                         )
                       )}
+                      {user.meeting_now && (
+                        <div className="text-xs text-emerald-700 dark:text-emerald-400 truncate mt-0.5" title={`Reunión del calendario: ${user.meeting_now.summary}`}>
+                          📅 En reunión: {user.meeting_now.summary} · hasta {new Date(user.meeting_now.end).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Guayaquil' })}
+                        </div>
+                      )}
+                      {user.task_id && user.task_total_seconds != null && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5" title="Tiempo total registrado en esta tarea (todas las sesiones, de cualquier día) más la sesión en curso">
+                          Acumulado en la tarea: <strong className="text-foreground">{formatTime(Number(user.task_total_seconds))}</strong>
+                          {user.task_estimated_hours ? <span> de {user.task_estimated_hours} h estimadas</span> : null}
+                        </div>
+                      )}
 
-                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1" title={`Horas trabajadas HOY = timer ${formatTime(user.today_total_seconds || 0)} (sesiones cerradas + en curso) + reuniones del calendario ${formatTime(user.meetings_today_seconds || 0)}. El % de actividad mide teclado/mouse mientras el timer corre.`}>
                           <Clock className="h-3 w-3" />
-                          <strong className="text-foreground">{formatTime(user.today_total_seconds || 0)}</strong>
+                          <strong className="text-foreground">{formatTime(Number(user.work_today_seconds ?? user.today_total_seconds ?? 0))}</strong>
+                          {Number(user.meetings_today_seconds) > 0 && <span className="text-[10px]">(timer {formatShortTime(Number(user.today_total_seconds || 0))} + reun. {formatShortTime(Number(user.meetings_today_seconds))})</span>}
                         </span>
-                        {user.activity_level != null && user.session_id && (
-                          <ActivityIndicator percent={user.activity_level} showLabel size="sm" />
+                        {Number(user.meetings_today_total_seconds) > 0 && (
+                          <span title={`Reuniones de su Google Calendar: ${formatShortTime(Number(user.meetings_today_seconds))} ya cuentan como trabajo (dentro de su jornada), de ${formatShortTime(Number(user.meetings_today_total_seconds))} agendadas hoy.${Number(user.meetings_outside_seconds) > 0 ? ` ${formatShortTime(Number(user.meetings_outside_seconds))} fueron antes de marcar ingreso o en el almuerzo y no cuentan.` : ''}`}>📅 Reuniones: {formatShortTime(Number(user.meetings_today_seconds))} de {formatShortTime(Number(user.meetings_today_total_seconds))}{Number(user.meetings_outside_seconds) > 0 && <span className="text-amber-600"> · {formatShortTime(Number(user.meetings_outside_seconds))} fuera de jornada</span>}</span>
+                        )}
+                        {user.utilization_pct != null && (
+                          <span title="Utilización = (tiempo con timer + reuniones del calendario) ÷ tiempo conectado hoy, sin almuerzo. Más de 85 % = al tope, tenerlo en cuenta." className={cn('font-medium', user.utilization_pct > 85 ? 'text-amber-600' : user.utilization_pct >= 40 ? 'text-green-600' : 'text-red-600')}>
+                            {user.utilization_pct}% util.{user.utilization_pct > 85 ? ' ⚠' : ''} <span className="font-normal text-muted-foreground">({formatShortTime(Number(user.today_total_seconds || 0) + Number(user.meetings_today_seconds || 0))} de {formatShortTime(Number(user.attendance_today_seconds || 0))})</span>
+                          </span>
                         )}
                       </div>
 
@@ -221,6 +253,16 @@ export default function TeamMonitor() {
                         <div className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
                           <CalendarCheck className="h-2.5 w-2.5" />
                           Check-in: {new Date(user.checked_in_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                          {user.late_check_in && (
+                            <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 font-medium" title={`Primer ingreso de hoy después de las ${user.late_limit}`}>
+                              ⚠ Ingreso tarde
+                            </span>
+                          )}
+                          {user.lunch_start && !user.lunch_end && (
+                            <span className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 font-medium">
+                              🍴 En almuerzo
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -237,6 +279,7 @@ export default function TeamMonitor() {
                   </div>
                 </CardContent>
               </Card>
+              </div>
             ))}
           </div>
           {liveUsers.length === 0 && <EmptyState text="No hay usuarios en el equipo" />}
@@ -501,6 +544,7 @@ export default function TeamMonitor() {
                           <th className="text-left p-3 font-medium text-muted-foreground">Fecha</th>
                           <th className="text-left p-3 font-medium text-muted-foreground">Entrada</th>
                           <th className="text-left p-3 font-medium text-muted-foreground">Salida</th>
+                          <th className="text-left p-3 font-medium text-muted-foreground">Almuerzo</th>
                           <th className="text-right p-3 font-medium text-muted-foreground">Total</th>
                           <th className="text-center p-3 font-medium text-muted-foreground">Estado</th>
                         </tr>
@@ -528,6 +572,21 @@ export default function TeamMonitor() {
                                 ? new Date(r.check_out).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
                                 : <Badge className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20 text-[10px]">Abierto</Badge>
                               }
+                            </td>
+                            <td className="p-3 font-mono text-xs text-muted-foreground">
+                              {r.lunch_start ? (
+                                r.lunch_end ? (
+                                  <span title="El almuerzo no cuenta en el total">
+                                    🍴 {new Date(r.lunch_start).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                                    –{new Date(r.lunch_end).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                                    {' '}({Math.round((new Date(r.lunch_end).getTime() - new Date(r.lunch_start).getTime()) / 60000)}m)
+                                  </span>
+                                ) : (
+                                  <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px]">🍴 En almuerzo</Badge>
+                                )
+                              ) : (
+                                <span className="opacity-40">—</span>
+                              )}
                             </td>
                             <td className="p-3 text-right font-mono font-medium">{formatTime(r.total_seconds || 0)}</td>
                             <td className="p-3 text-center">
@@ -582,9 +641,23 @@ function LoadingState() {
   );
 }
 
-function StatusBadge({ status, hasSession, checkedIn }: { status?: string; hasSession: boolean; checkedIn?: boolean }) {
+function StatusBadge({ status, hasSession, checkedIn, meeting }: { status?: string; hasSession: boolean; checkedIn?: boolean; meeting?: boolean }) {
   if (status === 'active') return <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0">Activo</Badge>;
+  if (meeting) return <Badge className="bg-emerald-600 text-white text-[10px] px-1.5 py-0" title="Reunión en curso según su Google Calendar">En reunión</Badge>;
   if (status === 'paused') return <Badge className="bg-yellow-500 text-white text-[10px] px-1.5 py-0">Pausado</Badge>;
   if (checkedIn) return <Badge className="bg-blue-500 text-white text-[10px] px-1.5 py-0">Conectado</Badge>;
   return <Badge variant="outline" className="text-[10px] px-1.5 py-0">Offline</Badge>;
+}
+
+// Orden de preferencia en el monitor: activos y en reunión primero, después pausados,
+// conectados sin tarea y al final los que no están.
+function rangoLive(u: any): number {
+  if (u.session_status === 'active' || u.meeting_now) return 0;
+  if (u.session_status === 'paused') return 1;
+  if (u.checked_in_at && !u.checked_out_at) return 2;
+  return 3;
+}
+const ETIQUETA_RANGO: Record<number, string> = { 0: 'Activos y en reunión', 1: 'Timer en pausa', 2: 'Conectados sin tarea activa', 3: 'Fuera / sin ingreso' };
+function ordenarLive(list: any[]): any[] {
+  return [...list].sort((a, b) => rangoLive(a) - rangoLive(b) || String(a.nombre || '').trim().localeCompare(String(b.nombre || '').trim()));
 }

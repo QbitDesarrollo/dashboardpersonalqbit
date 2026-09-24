@@ -153,7 +153,7 @@ export default function GoogleCalendarWidget() {
           <Button
             onClick={() => {
               const base = import.meta.env.VITE_API_URL || window.location.origin;
-              window.location.href = `${base}/api/auth/google`;
+              window.location.href = `${base}/api/auth/google?mode=connect`;
             }}
             className="gap-2"
           >

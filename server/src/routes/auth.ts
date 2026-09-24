@@ -371,21 +371,32 @@ authRouter.get('/google', (req, res) => {
   }
   const mode = req.query.mode as string;
   const oauth2Client = getOAuth2Client();
-  // Siempre forzar consent para garantizar refresh_token (sin él Google Calendar/Chat se rompen)
-  // Ver: https://developers.google.com/identity/protocols/oauth2/web-server#offline
+
+  // Solo pedimos permisos cuando hace falta: al registrarse o al conectar un
+  // servicio (botones "Conectar Google Drive/Calendar"). En un login normal NO
+  // se vuelve a mostrar la pantalla de permisos: Google ya los recuerda y con
+  // include_granted_scopes el token sigue trayendo lo concedido antes.
+  const pidePermisos = mode === 'register' || mode === 'connect';
+
+  const SCOPE_IDENTIDAD = [
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+  ];
+  const SCOPE_SERVICIOS = [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/chat.spaces.readonly',
+    'https://www.googleapis.com/auth/chat.messages.readonly',
+  ];
+
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     include_granted_scopes: true,
-    prompt: 'consent',
-    scope: [
-      'openid',
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile',
-      'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/chat.spaces.readonly',
-      'https://www.googleapis.com/auth/chat.messages.readonly',
-    ],
+    // 'consent' garantiza refresh_token al registrar/conectar.
+    // 'select_account' en login: elegir cuenta SIN repetir permisos.
+    prompt: pidePermisos ? 'consent' : 'select_account',
+    scope: pidePermisos ? [...SCOPE_IDENTIDAD, ...SCOPE_SERVICIOS] : SCOPE_IDENTIDAD,
     state: mode || 'login',
   });
   res.redirect(url);
