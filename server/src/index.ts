@@ -56,7 +56,7 @@ import { errorLogsRouter } from './routes/error-logs.js';
 import { agentRouter } from './routes/agent.js';
 import { clientBoardsRouter } from './routes/client-boards.js';
 import { projectsRouter } from './routes/projects.js';
-import { minutasRouter, minutasPublicRouter } from './routes/minutas.js';
+import { minutasRouter } from './routes/minutas.js';
 import { publicClientRouter } from './routes/public-client.js';
 import { initErrorCapture, errorLogMiddleware } from './utils/errorLog.js';
 import { setSocketIO } from './services/whatsapp.js';
@@ -167,7 +167,6 @@ app.use('/api/', apiLimiter);
 // --- Routes ---
 app.use('/api', publicFormsPublicRouter);
 app.use('/api', publicClientRouter);
-app.use('/api', minutasPublicRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/data', profilesRouter);

@@ -61,28 +61,7 @@ export interface MinutaResumen {
 export interface Minuta extends MinutaResumen {
   resumen: string | null;
   miembros: Persona[];
-  enlace_publico: { activo: boolean; token: string | null };
   items: Punto[];
-}
-
-/** Lo que ve el cliente por el enlace público: solo los puntos visibles, sin equipo ni tareas. */
-export interface PuntoPublico {
-  numero: number;
-  titulo: string;
-  descripcion: string | null;
-  estado: EstadoPunto;
-  responsable_cliente: boolean;
-  fecha_compromiso: string | null;
-  resolucion: string | null;
-  evidencias: { tipo: Evidencia['tipo']; nombre: string; url: string }[];
-}
-
-export interface MinutaPublica {
-  marca: string;
-  codigo: string;
-  titulo: string;
-  fecha: string;
-  puntos: PuntoPublico[];
 }
 
 export interface PuntoNuevo {
@@ -179,16 +158,4 @@ export function vincularTarea(itemId: string, taskId: string): Promise<Minuta> {
 
 export function desvincularTarea(itemId: string, taskId: string): Promise<Minuta> {
   return llamar<Minuta>(`/api/data/minuta-items/${itemId}/tareas/${taskId}`, 'DELETE');
-}
-
-export function activarEnlace(minutaId: string): Promise<Minuta> {
-  return llamar<Minuta>(`/api/data/minutas/${minutaId}/enlace`, 'POST');
-}
-
-export function desactivarEnlace(minutaId: string): Promise<Minuta> {
-  return llamar<Minuta>(`/api/data/minutas/${minutaId}/enlace`, 'DELETE');
-}
-
-export function obtenerMinutaPublica(token: string): Promise<MinutaPublica> {
-  return llamar<MinutaPublica>(`/api/public/minutas/${encodeURIComponent(token)}`);
 }

@@ -33,7 +33,6 @@ const Proyectos = lazy(() => import("./pages/Proyectos"));
 import Minutas from "./pages/Minutas";
 import MinutaNueva from "./pages/MinutaNueva";
 import MinutaDetalle from "./pages/MinutaDetalle";
-import MinutaPublica from "./pages/MinutaPublica";
 const TasksGantt = lazy(() => import("./pages/TasksGantt"));
 const TasksCalendar = lazy(() => import("./pages/TasksCalendar"));
 const TasksWorkload = lazy(() => import("./pages/TasksWorkload"));
@@ -115,7 +114,6 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/form/:slug" element={<PublicFormView />} />
             <Route path="/c/:token" element={<ClientBoardPublic />} />
-            <Route path="/m/:token" element={<MinutaPublica />} />
             <Route path="/auth/google/success" element={<GoogleAuthSuccess />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
