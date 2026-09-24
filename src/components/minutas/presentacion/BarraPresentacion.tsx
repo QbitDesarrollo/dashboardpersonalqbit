@@ -11,10 +11,13 @@ interface Props {
   onActualizada: (minuta: Minuta) => void;
 }
 
-/** Floating bar at the bottom: move between points and record what the client decides, without scrolling. */
+/**
+ * Bar that always sits at the bottom of the screen, in the same spot whatever the point's length,
+ * so "Siguiente" never moves while presenting. Long points scroll behind it.
+ */
 export function BarraPresentacion({ punto, posicion, total, onIr, onActualizada }: Props) {
   return (
-    <div className="sticky bottom-3 z-10 rounded-2xl border bg-card/95 p-2.5 shadow-lg backdrop-blur-xl sm:p-3">
+    <div className="sticky bottom-3 z-10 mt-auto rounded-2xl border bg-card/95 p-2.5 shadow-lg backdrop-blur-xl sm:p-3">
       <div className="flex items-center gap-2">
         <Button variant="ghost" aria-label="Anterior" disabled={posicion === 0} onClick={() => onIr(posicion - 1)}>
           <ChevronLeft className="h-5 w-5" /><span className="hidden md:inline">Anterior</span>

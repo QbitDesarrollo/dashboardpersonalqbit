@@ -50,10 +50,11 @@ export default function MinutaPresentar() {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-gradient-to-b from-primary/10 to-transparent" aria-hidden />
       <EncabezadoPresentacion minuta={minuta} listos={listos} total={total} />
 
-      <div className="relative mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:py-8">
+      {/* Fills the screen below the header so the bar can rest at the bottom even for short points. */}
+      <div className="relative mx-auto grid min-h-[calc(100svh-4.1rem)] max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:py-8">
         <PanelMinuta minuta={minuta} puntos={puntos} actualId={actual?.id} onElegir={setIndice} />
 
-        <main className="min-w-0 space-y-4 pb-2">
+        <main className="flex min-w-0 flex-col gap-4 pb-2">
           {actual ? (
             <>
               <PuntoPresentado punto={actual} codigo={`${minuta.numero}.${actual.numero}`} />
