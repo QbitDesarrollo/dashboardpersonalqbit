@@ -25,9 +25,10 @@ afterEach(() => new Promise<void>((r) => (servidor ? servidor.close(() => r()) :
 describe('crearRunnerHttp', () => {
   it('pide la minuta con el token y devuelve la respuesta del runner', async () => {
     const { url, recibido } = await runnerFalso(200, { titulo: 'X', resumen: '', puntos: [] });
-    const r = await crearRunnerHttp({ url, token: TOKEN }).generar({ transcripcion: 'Hola', fecha: '2026-09-24' });
+    const datos = { transcripcion: 'Hola', notas_cliente: '- Banner', indicaciones: 'Solo web', fecha: '2026-09-24' };
+    const r = await crearRunnerHttp({ url, token: TOKEN }).generar(datos);
     expect(r).toEqual({ titulo: 'X', resumen: '', puntos: [] });
-    expect(recibido).toEqual({ auth: `Bearer ${TOKEN}`, url: 'POST /minuta', body: { transcripcion: 'Hola', fecha: '2026-09-24' } });
+    expect(recibido).toEqual({ auth: `Bearer ${TOKEN}`, url: 'POST /minuta', body: datos });
   });
 
   it('pasa el mensaje del runner cuando rechaza el pedido', async () => {

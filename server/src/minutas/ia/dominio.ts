@@ -3,10 +3,14 @@ import { z } from 'zod';
 /** Pure rules of the minutas AI: who may use it, the daily cap and cleaning up what the model returns. */
 
 export interface TareaSugerida { titulo: string; departamento: string }
+/** Where a point came from: the meeting transcript, the client's own notes, or both. */
+export type OrigenPunto = 'reunion' | 'cliente' | 'ambos';
+
 export interface PuntoIa {
   titulo: string;
   descripcion: string;
   responsable_cliente: boolean;
+  origen: OrigenPunto;
   fecha_compromiso: string | null;
   cita: string;
   tareas_sugeridas: TareaSugerida[];
@@ -48,6 +52,7 @@ const salidaSchema = z.object({
     titulo: texto(300),
     descripcion: texto(5000),
     responsable: z.enum(['agencia', 'cliente']),
+    origen: z.unknown(),
     fecha: z.unknown(),
     cita: texto(500),
     tareas_sugeridas: z.array(z.object({ titulo: texto(300), departamento: texto(60) })),
@@ -68,6 +73,7 @@ export function normalizarBorrador(salida: unknown): BorradorIa {
         titulo: p.titulo,
         descripcion: p.descripcion,
         responsable_cliente: p.responsable === 'cliente',
+        origen: p.origen === 'cliente' || p.origen === 'ambos' ? p.origen : 'reunion',
         fecha_compromiso: fechaReal(p.fecha),
         cita: p.cita,
         tareas_sugeridas: p.tareas_sugeridas.filter((t) => t.titulo).slice(0, 3),

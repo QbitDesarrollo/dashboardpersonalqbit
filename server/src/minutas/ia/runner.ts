@@ -1,9 +1,11 @@
 /** Client of the local Codex runner (codex-runner/, 127.0.0.1 only, bearer token). */
 
 export interface SaludIa { listo: boolean; detalle: string }
+/** Sources for a draft: the meeting transcript and/or what the client sent; `indicaciones` come from the team. */
+export interface DatosMinutaIa { transcripcion: string; notas_cliente: string; indicaciones: string; fecha: string }
 export interface RunnerIa {
   salud(): Promise<SaludIa>;
-  generar(datos: { transcripcion: string; fecha: string }): Promise<unknown>;
+  generar(datos: DatosMinutaIa): Promise<unknown>;
 }
 
 /** Errors whose message can be shown to the user as-is. */

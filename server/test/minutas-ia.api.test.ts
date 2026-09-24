@@ -61,10 +61,22 @@ describe('POST /minutas/ia/borradores', () => {
       id: r.body.id, estado: 'listo', error: null,
       borrador: {
         titulo: 'Revisión de avance', resumen: 'Lanzamiento el 26 de noviembre.',
-        puntos: [{ titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, fecha_compromiso: '2026-10-03', cita: 'que no suene', tareas_sugeridas: [] }],
+        puntos: [{ titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que no suene', tareas_sugeridas: [] }],
       },
     });
-    expect(runner.generar).toHaveBeenCalledWith(PEDIDO);
+    expect(runner.generar).toHaveBeenCalledWith({ ...PEDIDO, notas_cliente: '', indicaciones: '' });
+  });
+
+  it('acepta solo lo que mandó el cliente, con indicaciones del equipo', async () => {
+    const pedido = { notas_cliente: 'Even,\n- Agregar incidencias\nGracias', indicaciones: 'Solo lo del portal', fecha: '2026-09-24' };
+    const r = await llamar(`${api.url}/minutas/ia/borradores`, even, 'POST', pedido);
+    expect(r.status).toBe(202);
+    await esperar(r.body.id, even);
+    expect(runner.generar).toHaveBeenCalledWith({ transcripcion: '', ...pedido });
+    const [fila] = await query<any[]>('SELECT * FROM minuta_ia_trabajos WHERE id = ?', [r.body.id]);
+    expect(fila.caracteres).toBe(pedido.notas_cliente.length);
+    expect(JSON.stringify(fila)).not.toContain('Agregar incidencias');
+    expect(JSON.stringify(fila)).not.toContain('Solo lo del portal');
   });
 
   it('no guarda la transcripción, solo su largo', async () => {
@@ -101,8 +113,10 @@ describe('POST /minutas/ia/borradores', () => {
     expect((await llamar(`${api.url}/minutas/ia/estado`, even)).body).toMatchObject({ usados: 1, limite: 1 });
   });
 
-  it('valida la transcripción y la fecha', async () => {
-    expect((await llamar(`${api.url}/minutas/ia/borradores`, even, 'POST', { ...PEDIDO, transcripcion: '   ' })).status).toBe(400);
+  it('valida que haya una fuente, la fecha y el largo de las indicaciones', async () => {
+    const sinFuente = await llamar(`${api.url}/minutas/ia/borradores`, even, 'POST', { transcripcion: '   ', notas_cliente: ' ', fecha: '2026-09-24' });
+    expect(sinFuente).toEqual({ status: 400, body: { error: 'Pega la transcripción o lo que mandó el cliente, y elige la fecha.' } });
+    expect((await llamar(`${api.url}/minutas/ia/borradores`, even, 'POST', { ...PEDIDO, indicaciones: 'a'.repeat(501) })).status).toBe(400);
     expect((await llamar(`${api.url}/minutas/ia/borradores`, even, 'POST', { ...PEDIDO, fecha: 'ayer' })).status).toBe(400);
   });
 

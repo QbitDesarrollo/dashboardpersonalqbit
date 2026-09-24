@@ -5,13 +5,15 @@ import { hasRole } from '../utils/roles.js';
 import { fechaIso } from '../minutas/esquemas.js';
 import { soloEquipoInterno } from '../minutas/permisos.js';
 import { ErrorBorrador, normalizarBorrador, tieneAcceso } from '../minutas/ia/dominio.js';
-import { ErrorRunner, type RunnerIa } from '../minutas/ia/runner.js';
+import { ErrorRunner, type DatosMinutaIa, type RunnerIa } from '../minutas/ia/runner.js';
 import { configuracionIa, crearTrabajo, fallarTrabajo, leerTrabajo, mesasDe, terminarTrabajo, usadosHoy } from '../minutas/ia/consultas.js';
 
 const pedidoSchema = z.object({
-  transcripcion: z.string().trim().min(1).max(120_000),
+  transcripcion: z.string().trim().max(120_000).default(''),
+  notas_cliente: z.string().trim().max(30_000).default(''),
+  indicaciones: z.string().trim().max(500).default(''),
   fecha: fechaIso,
-});
+}).refine((p) => p.transcripcion || p.notas_cliente);
 
 // Express 4 does not catch rejected async handlers: answer 500 instead of leaving the request hanging.
 const seguro = (fn: (req: AuthRequest, res: Response) => Promise<unknown>) => (req: AuthRequest, res: Response) => {
@@ -23,7 +25,7 @@ const seguro = (fn: (req: AuthRequest, res: Response) => Promise<unknown>) => (r
 
 /**
  * Minuta drafts written by AI. Only members of the desks chosen in Admin → Config may use it,
- * with a daily cap per person. The transcript goes to the runner and is never stored.
+ * with a daily cap per person. The sources go to the runner and are never stored.
  */
 export function crearRouterMinutasIa(runner: RunnerIa) {
   const router = Router();
@@ -35,7 +37,7 @@ export function crearRouterMinutasIa(runner: RunnerIa) {
   };
 
   // Runs in the background: the request answers 202 right away and the screen polls the job.
-  const procesar = async (id: string, datos: { transcripcion: string; fecha: string }) => {
+  const procesar = async (id: string, datos: DatosMinutaIa) => {
     try {
       await terminarTrabajo(id, normalizarBorrador(await runner.generar(datos)));
     } catch (e) {
@@ -58,13 +60,13 @@ export function crearRouterMinutasIa(runner: RunnerIa) {
 
   router.post('/minutas/ia/borradores', seguro(async (req, res) => {
     const pedido = pedidoSchema.safeParse(req.body);
-    if (!pedido.success) return res.status(400).json({ error: 'Pega la transcripción y elige la fecha de la reunión.' });
+    if (!pedido.success) return res.status(400).json({ error: 'Pega la transcripción o lo que mandó el cliente, y elige la fecha.' });
     const { permitido, limite } = await acceso(req.userId!);
     if (!permitido) return res.status(403).json({ error: 'La IA de minutas no está habilitada para tu mesa.' });
     if ((await usadosHoy(req.userId!)) >= limite) {
       return res.status(429).json({ error: `Llegaste al límite de ${limite} ${limite === 1 ? 'minuta' : 'minutas'} con IA por hoy.` });
     }
-    const id = await crearTrabajo(req.userId!, pedido.data.transcripcion.length);
+    const id = await crearTrabajo(req.userId!, pedido.data.transcripcion.length + pedido.data.notas_cliente.length);
     res.status(202).json({ id });
     void procesar(id, pedido.data);
   }));

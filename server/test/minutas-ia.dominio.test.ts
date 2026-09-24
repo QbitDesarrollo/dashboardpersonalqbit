@@ -52,11 +52,18 @@ describe('normalizarBorrador', () => {
     expect(b).toEqual({
       titulo: 'Revisión de avance', resumen: 'Lanzamiento el 26.',
       puntos: [
-        { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, fecha_compromiso: '2026-10-03', cita: 'que no suene',
+        { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que no suene',
           tareas_sugeridas: [{ titulo: 'Editar video', departamento: 'Audiovisual' }] },
-        { titulo: 'Fichas técnicas', descripcion: 'Sin sonido.', responsable_cliente: true, fecha_compromiso: null, cita: 'que no suene', tareas_sugeridas: [] },
+        { titulo: 'Fichas técnicas', descripcion: 'Sin sonido.', responsable_cliente: true, origen: 'reunion', fecha_compromiso: null, cita: 'que no suene', tareas_sugeridas: [] },
       ],
     });
+  });
+
+  it('conserva de dónde salió cada punto; si falta o no es válido, lo da por dicho en la reunión', () => {
+    const b = normalizarBorrador({ titulo: 'X', resumen: '', puntos: [
+      punto({ origen: 'cliente' }), punto({ origen: 'ambos' }), punto({ origen: 'correo' }), punto({}),
+    ] });
+    expect(b.puntos.map((p) => p.origen)).toEqual(['cliente', 'ambos', 'reunion', 'reunion']);
   });
 
   it('descarta fechas que no existen o no tienen formato y puntos sin título', () => {
