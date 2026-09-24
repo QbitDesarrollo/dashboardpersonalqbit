@@ -71,3 +71,7 @@ export const getDaysRemaining = (fechaEntrega: string) => {
   const entrega = parseLocalDate(fechaEntrega);
   return Math.ceil((entrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 };
+
+/** A date-only value (YYYY-MM-DD, with or without time) as d/m/yyyy on the same calendar day, in any time zone. */
+export const fechaCorta = (valor: string | null | undefined) =>
+  valor ? parseLocalDate(valor).toLocaleDateString('es-ES') : 'Sin fecha';

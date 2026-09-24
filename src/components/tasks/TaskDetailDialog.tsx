@@ -9,6 +9,7 @@ import { Eye, EyeOff, Calendar, Loader2, Clock, Repeat, Link2, RotateCcw, Users 
 import { toast } from 'sonner';
 import { CustomFieldsSection } from './CustomFieldsSection';
 import { cn, getInitials } from '@/lib/utils';
+import { fechaCorta } from '@/lib/tareasLista';
 import { TaskTimer } from '@/components/tasks/TaskTimer';
 import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 import { TaskFiles } from '@/components/tasks/TaskFiles';
@@ -26,6 +27,7 @@ interface TaskData {
   id: string;
   titulo_tarea: string;
   detalle?: string;
+  brand_id?: string | null;
   estado: string;
   prioridad: string;
   fecha_inicio?: string;
@@ -108,7 +110,7 @@ const parseLocalDate = (dateStr: string | null | undefined): Date => {
 export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialogProps) {
   const { profile, isAdmin, isEjecutivo, isEquipo } = useAuth();
   const [task, setTask] = useState<TaskData | null>(null);
-  const [deadlineHistory, setDeadlineHistory] = useState<{ count: number; original: string | null; history: Array<{ old: string; new: string; by: string; at: string }> } | null>(null);
+  const [deadlineHistory, setDeadlineHistory] = useState<{ count: number; original: string | null; history: Array<{ old: string | null; new: string | null; by: string; at: string }> } | null>(null);
   const [showHistoryPopover, setShowHistoryPopover] = useState(false);
   const [loading, setLoading] = useState(false);
   const [taskReads, setTaskReads] = useState<{ user_id: string; read_at: string; nombre: string; avatar_url: string | null }[]>([]);
@@ -144,7 +146,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
   }, [open, taskId]);
 
   const isAssigned = () =>
-    task?.responsable_user_id === profile?.id || task?.responsables?.some(r => r.user_id === profile?.id);
+    task?.responsable_user_id === profile?.id || !!task?.responsables?.some(r => r.user_id === profile?.id);
 
   const canEdit = () => {
     if (!task) return false;
@@ -295,7 +297,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                         {deadlineHistory.original && (
                           <div className="text-xs mb-2 pb-2 border-b">
                             <span className="text-muted-foreground">Fecha original: </span>
-                            <span className="font-medium">{new Date(deadlineHistory.original).toLocaleDateString('es-ES')}</span>
+                            <span className="font-medium">{fechaCorta(deadlineHistory.original)}</span>
                           </div>
                         )}
                         <div className="space-y-1.5 max-h-[240px] overflow-y-auto">
@@ -305,9 +307,9 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                                 {new Date(h.at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
                               </span>
                               <span className="flex-1">
-                                <span className="line-through text-muted-foreground">{new Date(h.old).toLocaleDateString('es-ES')}</span>
+                                <span className="line-through text-muted-foreground">{fechaCorta(h.old)}</span>
                                 {' → '}
-                                <span className="font-medium">{new Date(h.new).toLocaleDateString('es-ES')}</span>
+                                <span className="font-medium">{fechaCorta(h.new)}</span>
                                 <span className="text-muted-foreground block text-[10px]">por {h.by}</span>
                               </span>
                             </div>
@@ -404,9 +406,9 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                   <h4 className="text-sm font-medium text-muted-foreground mb-2">Tiempo Trabajado</h4>
                   <TaskTimer
                     taskId={task.id}
-                    initialTime={task.tiempo_trabajado}
-                    isActive={task.timer_activo}
-                    startTime={task.timer_inicio}
+                    initialTime={task.tiempo_trabajado ?? 0}
+                    isActive={!!task.timer_activo}
+                    startTime={task.timer_inicio ?? null}
                     canEdit={canOperate()}
                     estimatedHours={task.estimated_hours}
                     warnEnabled={isAssigned()}

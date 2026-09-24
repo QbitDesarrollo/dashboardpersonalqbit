@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getDaysRemaining, getDepartmentColor, getPriorityColor, getStatusColor, getStatusLabel, parseLocalDate } from './tareasLista';
+import { fechaCorta, getDaysRemaining, getDepartmentColor, getPriorityColor, getStatusColor, getStatusLabel, parseLocalDate } from './tareasLista';
 
 afterEach(() => { vi.useRealTimers(); });
 
@@ -36,5 +36,22 @@ describe('colores y etiquetas', () => {
     expect(getDepartmentColor(' diseño ')).toBe('bg-purple-500/90 text-white');
     expect(getDepartmentColor('Otro')).toBe('bg-primary/80 text-primary-foreground');
     expect(getDepartmentColor(null)).toBe('bg-muted text-muted-foreground');
+  });
+});
+
+describe('fechaCorta', () => {
+  it('muestra el mismo día que llega del servidor, también en Ecuador (UTC-5)', () => {
+    const antes = process.env.TZ;
+    process.env.TZ = 'America/Guayaquil';
+    try {
+      expect(fechaCorta('2026-09-24')).toBe('24/9/2026');
+      expect(fechaCorta('2026-09-24T00:00:00.000Z')).toBe('24/9/2026');
+    } finally {
+      process.env.TZ = antes;
+    }
+  });
+
+  it('sin fecha muestra "Sin fecha" en vez de 1/1/1970', () => {
+    expect(fechaCorta(null)).toBe('Sin fecha');
   });
 });
