@@ -39,6 +39,7 @@ const ESTADO_CLIENTE: Record<string, string> = {
   aprobado: 'Aprobado',
   entregado: 'Entregado',
   bloqueado: 'En pausa',
+  ajustes: 'En proceso', // cocina interna: el cliente no ve "ajustes"
 };
 
 

@@ -23,6 +23,7 @@ export interface TaskForExport {
 
 const ESTADO_LABELS: Record<string, string> = {
   backlog: 'Pendiente',
+  ajustes: 'Ajustes',
   en_proceso: 'En Proceso',
   en_revision: 'En Revisión',
   aprobado: 'Aprobado',

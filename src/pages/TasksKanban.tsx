@@ -31,6 +31,7 @@ import { Link } from 'react-router-dom';
 
 export type TaskStatus =
   | 'backlog'
+  | 'ajustes'
   | 'en_proceso'
   | 'en_revision'
   | 'revision_interna'
@@ -41,6 +42,7 @@ export type TaskStatus =
 
 const STATUS_ORDER: TaskStatus[] = [
   'backlog',
+  'ajustes',
   'en_proceso',
   'revision_interna',
   'revision_cliente',
@@ -50,6 +52,7 @@ const STATUS_ORDER: TaskStatus[] = [
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   backlog: 'Pendiente',
+  ajustes: 'Ajustes',
   en_proceso: 'En proceso',
   en_revision: 'En revisión',
   revision_interna: 'Revisión interna',
@@ -61,6 +64,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
 
 const STATUS_COLORS: Record<TaskStatus, string> = {
   backlog: 'border-l-status-backlog',
+  ajustes: 'border-l-orange-600',
   en_proceso: 'border-l-status-in-progress',
   en_revision: 'border-l-status-in-review',
   revision_interna: 'border-l-amber-500',
@@ -239,6 +243,7 @@ export default function TasksKanban() {
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
 
@@ -252,6 +257,7 @@ export default function TasksKanban() {
       toast.error('Error al cargar tareas');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -265,6 +271,7 @@ export default function TasksKanban() {
     if (pinnedDeskId) list = list.filter((t) => t.desk_id === pinnedDeskId);
     const map: Record<TaskStatus, Task[]> = {
       backlog: [],
+    ajustes: [],
       en_proceso: [],
       en_revision: [],
       revision_interna: [],
@@ -320,7 +327,10 @@ export default function TasksKanban() {
     }
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
