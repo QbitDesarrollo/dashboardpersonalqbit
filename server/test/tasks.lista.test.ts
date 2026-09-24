@@ -50,3 +50,16 @@ describe('GET /tasks · filtro por proyecto', () => {
     expect(await titulos(`project_id=${portal}`)).toEqual(['Del portal']);
   });
 });
+
+describe('GET /tasks · conteo de archivos', () => {
+  it('trae cuántos archivos tiene cada tarea, para no pedirlos fila por fila', async () => {
+    const con = await tarea('Con archivos', '2026-09-26');
+    await tarea('Sin archivos', '2026-09-27');
+    for (const n of ['brief.pdf', 'logo.png']) {
+      await query('INSERT INTO files (id, task_id, nombre_archivo, url_storage, created_at) VALUES (UUID(), ?, ?, ?, NOW(3))', [con, n, `/uploads/tasks/${n}`]);
+    }
+    const r = await llamar(`${api.url}/tasks?orden=entrega`, admin);
+    expect(r.body.tasks.map((t: any) => [t.titulo_tarea, Number(t.files_count)])).toEqual([['Con archivos', 2], ['Sin archivos', 0]]);
+  });
+});
+

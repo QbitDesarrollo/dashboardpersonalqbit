@@ -137,7 +137,8 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
          LEFT JOIN task_folders tf ON tf.id = t.folder_id`;
     const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre as department_nombre, dep.color as department_color, t.fecha_cliente, t.cliente_visible, t.client_board_id, t.project_id, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol, tf.nombre as folder_nombre,
        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count,
-       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id AND (st.check_done = 1 OR st.estado IN ('entregado','aprobado'))) AS subtask_done_count
+       (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id AND (st.check_done = 1 OR st.estado IN ('entregado','aprobado'))) AS subtask_done_count,
+       (SELECT COUNT(*) FROM files fl WHERE fl.task_id = t.id) AS files_count
        ${baseFrom}`;
     // orden=entrega (Tasks page): open tasks first, soonest due date first and undated last;
     // then closed ones, most recent first. Without it, newest created first as always.

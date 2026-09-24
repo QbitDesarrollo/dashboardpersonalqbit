@@ -31,7 +31,7 @@ export async function levantarAppEn(base: string, ...routers: express.Router[]):
 }
 
 const TABLAS_DE_PRUEBA = [
-  'api_tokens', 'minuta_ia_trabajos', 'desk_members', 'desks', 'site_settings',
+  'files', 'api_tokens', 'minuta_ia_trabajos', 'desk_members', 'desks', 'site_settings',
   'minuta_item_notas', 'minuta_item_evidencias', 'minuta_items', 'minuta_miembros', 'minutas',
   'tasks', 'projects', 'brands', 'user_roles', 'profiles', 'users',
 ];
