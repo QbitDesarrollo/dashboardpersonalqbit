@@ -48,10 +48,13 @@ export function ChatPanel({ soundEnabled = true, soundType = 'chime', onUnreadCh
     } catch { /* silent */ }
   }, []);
 
+  const [lastActivity, setLastActivity] = useState<Record<string, string>>({});
+
   const fetchUnread = useCallback(async () => {
     try {
       const data = await api.getDeskUnreadCounts();
       setUnreadCounts(data.counts || {});
+      setLastActivity((data as any).last_activity || {});
       if (onUnreadChange) {
         const total = Object.values(data.counts || {}).reduce((a, b) => a + b, 0);
         onUnreadChange(total);
@@ -80,6 +83,21 @@ export function ChatPanel({ soundEnabled = true, soundType = 'chime', onUnreadCh
     };
     window.addEventListener('open-desk-chat', handler);
     return () => window.removeEventListener('open-desk-chat', handler);
+  }, [desks]);
+
+  // Enlace directo del correo (/?chat=<mesa>): App.tsx lo dejó en
+  // sessionStorage; se resuelve cuando las mesas ya cargaron y se consume
+  // una sola vez.
+  useEffect(() => {
+    if (desks.length === 0) return;
+    try {
+      const chatParam = sessionStorage.getItem('tiusdei_pending_chat');
+      if (!chatParam) return;
+      sessionStorage.removeItem('tiusdei_pending_chat');
+      const match = desks.find(d => d.nombre.toLowerCase() === chatParam.toLowerCase());
+      if (match) handleSelectDesk(match);
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [desks]);
 
   const loadDesks = async () => {
@@ -190,7 +208,9 @@ export function ChatPanel({ soundEnabled = true, soundType = 'chime', onUnreadCh
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {desks.map((desk) => {
+            {[...desks].sort((a, b) =>
+              new Date(lastActivity[b.id] || 0).getTime() - new Date(lastActivity[a.id] || 0).getTime()
+            ).map((desk) => {
               const deskMembers = deskMembersMap[desk.id] || [];
               const activeCount = deskMembers.filter(m => {
                 const p = globalPresence.find(gp => gp.userId === m.id);

@@ -91,7 +91,18 @@ desksRouter.get('/desks/unread-counts', requireAuth, async (req: AuthRequest, re
     for (const r of rows) {
       counts[r.desk_id] = Number(r.unread);
     }
-    res.json({ counts });
+
+    // Última actividad por mesa: el panel ordena como WhatsApp (reciente arriba)
+    const lastRows = await query<any[]>(
+      `SELECT desk_id, MAX(created_at) AS last_at FROM desk_messages
+       WHERE desk_id IN (${placeholders}) GROUP BY desk_id`,
+      deskIds
+    );
+    const last_activity: Record<string, string> = {};
+    for (const r of lastRows) {
+      if (r.last_at) last_activity[r.desk_id] = new Date(r.last_at).toISOString();
+    }
+    res.json({ counts, last_activity });
   } catch (e) {
     console.error('[DESKS] Error unread counts:', e);
     res.status(500).json({ error: 'Error al cargar no leídos' });

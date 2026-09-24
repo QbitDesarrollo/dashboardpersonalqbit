@@ -68,6 +68,14 @@ export function ChatBubble({ soundEnabled = true, soundType = 'chime' }: ChatBub
     return () => window.removeEventListener('open-desk-chat', handler);
   }, [fetchUnread]);
 
+  // Enlace directo desde el correo de mención (/?chat=<mesa>): App.tsx lo dejó
+  // en sessionStorage porque el router pierde el query al redirigir.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('tiusdei_pending_chat')) setOpen(true);
+    } catch { /* ignore */ }
+  }, []);
+
   // Socket for preview notifications
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -200,7 +208,7 @@ export function ChatBubble({ soundEnabled = true, soundType = 'chime' }: ChatBub
           ref={panelRef}
           className={cn(
             'fixed z-50 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col',
-            'bottom-20 right-4 sm:right-6 w-[380px] sm:w-[400px] h-[560px]',
+            'bottom-20 right-4 sm:right-6 w-[calc(100vw-2rem)] sm:w-[560px] lg:w-[680px] h-[75vh] max-h-[780px]',
             'max-sm:inset-x-2 max-sm:bottom-20 max-sm:top-16 max-sm:w-auto max-sm:h-auto max-sm:rounded-xl',
             'animate-scale-in origin-bottom-right'
           )}
