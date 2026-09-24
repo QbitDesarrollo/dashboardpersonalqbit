@@ -32,3 +32,7 @@ server/uploads
 *.sw?
 .agent.env
 server/.env.bak.*
+
+# Local backups made before edits and deploys
+*.bak
+*.bak.*
