@@ -195,8 +195,19 @@ export default function Dashboard() {
   const [desks, setDesks] = useState<{ id: string; nombre: string }[]>([]);
   const [filterBrand, setFilterBrand] = useState<string>('all');
   const [filterResponsable, setFilterResponsable] = useState<string>('all');
+  // Período por fecha de entrega ("hay como dejarlo x dia o mes?" — Steven)
+  const [filterPeriodo, setFilterPeriodo] = useState<string>(() => {
+    try { return localStorage.getItem('dashboard_periodo') || 'all'; } catch { return 'all'; }
+  });
+  const [periodoDesde, setPeriodoDesde] = useState<string>(() => {
+    try { return localStorage.getItem('dashboard_periodo_desde') || ''; } catch { return ''; }
+  });
+  const [periodoHasta, setPeriodoHasta] = useState<string>(() => {
+    try { return localStorage.getItem('dashboard_periodo_hasta') || ''; } catch { return ''; }
+  });
   const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
 
   useEffect(() => {
     fetchDashboardData();
@@ -235,6 +246,7 @@ export default function Dashboard() {
       toast.error('Error al cargar los datos del dashboard');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -245,9 +257,25 @@ export default function Dashboard() {
       const matchesResponsable = filterResponsable === 'all' || task.responsable_user_id === filterResponsable;
       const matchesPinnedDesk = !pinnedDeskId || task.desk_id === pinnedDeskId;
       const matchesPinnedBrand = !pinnedBrandId || task.brand_id === pinnedBrandId;
-      return matchesBrand && matchesResponsable && matchesPinnedDesk && matchesPinnedBrand;
+      const matchesPeriodo = (() => {
+        if (filterPeriodo === 'all') return true;
+        if (!task.fecha_entrega) return false;
+        const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+        const fe = new Date(task.fecha_entrega.substring(0, 10) + 'T00:00:00');
+        if (filterPeriodo === 'custom') {
+          if (periodoDesde && fe < new Date(periodoDesde + 'T00:00:00')) return false;
+          if (periodoHasta && fe > new Date(periodoHasta + 'T00:00:00')) return false;
+          return true;
+        }
+        if (filterPeriodo === 'hoy') return fe.getTime() === hoy.getTime();
+        if (filterPeriodo === 'mes') return fe.getMonth() === hoy.getMonth() && fe.getFullYear() === hoy.getFullYear();
+        const dias = parseInt(filterPeriodo, 10); // '7' | '15' | '30': últimos N días hasta hoy
+        const desde = new Date(hoy); desde.setDate(desde.getDate() - dias);
+        return fe >= desde && fe <= hoy;
+      })();
+      return matchesBrand && matchesResponsable && matchesPinnedDesk && matchesPinnedBrand && matchesPeriodo;
     });
-  }, [tasks, filterBrand, filterResponsable, pinnedDeskId, pinnedBrandId]);
+  }, [tasks, filterBrand, filterResponsable, filterPeriodo, periodoDesde, periodoHasta, pinnedDeskId, pinnedBrandId]);
 
   // My tasks (for equipo)
   const myTasks = useMemo(() => {
@@ -506,7 +534,10 @@ export default function Dashboard() {
     return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -570,6 +601,38 @@ export default function Dashboard() {
                   ))}
                 </SelectContent>
               </Select>
+              <Select value={filterPeriodo} onValueChange={(v) => { setFilterPeriodo(v); try { localStorage.setItem('dashboard_periodo', v); } catch { /* ignore */ } }}>
+                <SelectTrigger className="w-full sm:w-44 h-9">
+                  <SelectValue placeholder="Período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todo el histórico</SelectItem>
+                  <SelectItem value="hoy">Hoy</SelectItem>
+                  <SelectItem value="7">Últimos 7 días</SelectItem>
+                  <SelectItem value="15">Últimos 15 días</SelectItem>
+                  <SelectItem value="30">Últimos 30 días</SelectItem>
+                  <SelectItem value="mes">Este mes</SelectItem>
+                  <SelectItem value="custom">Personalizado…</SelectItem>
+                </SelectContent>
+              </Select>
+              {filterPeriodo === 'custom' && (
+                <>
+                  <input
+                    type="date"
+                    value={periodoDesde}
+                    onChange={(e) => { setPeriodoDesde(e.target.value); try { localStorage.setItem('dashboard_periodo_desde', e.target.value); } catch { /* ignore */ } }}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    title="Desde"
+                  />
+                  <input
+                    type="date"
+                    value={periodoHasta}
+                    onChange={(e) => { setPeriodoHasta(e.target.value); try { localStorage.setItem('dashboard_periodo_hasta', e.target.value); } catch { /* ignore */ } }}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    title="Hasta"
+                  />
+                </>
+              )}
               <Select value={filterResponsable} onValueChange={setFilterResponsable}>
                 <SelectTrigger className="w-full sm:w-44 h-9">
                   <SelectValue placeholder="Responsable" />

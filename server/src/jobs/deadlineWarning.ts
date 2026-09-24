@@ -31,7 +31,7 @@ export async function runDeadlineWarning(): Promise<{ enviados: number; total: n
        WHERE t.fecha_entrega BETWEEN ? AND ?
          AND t.responsable_user_id IS NOT NULL
          AND p.email IS NOT NULL AND p.email != ''
-         AND t.estado NOT IN ('entregado', 'aprobado')`,
+         AND t.estado NOT IN ('entregado', 'aprobado', 'revision_cliente', 'revision_interna', 'en_revision')`,
       [hoyStr, hastaStr]
     );
 

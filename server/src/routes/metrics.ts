@@ -218,6 +218,36 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
       deliveredAtByTask[d.task_id] = new Date(d.delivered_at);
     }
 
+    // 3b. Tiempo EN MANOS DEL CLIENTE: mientras la tarea esta en revision_cliente
+    // el reloj del equipo se detiene (el cliente puede demorar dias en revisar y
+    // devolver cambios; ese tiempo no puede contar como atraso del equipo).
+    const clientHeldMs: Record<string, number> = {};
+    if (taskIds.length > 0) {
+      const ph = taskIds.map(() => '?').join(',');
+      const transRows = await query<any[]>(
+        `SELECT entity_id AS task_id, old_value, new_value, created_at
+         FROM activity_log
+         WHERE entity_type = 'task' AND field_name = 'estado'
+           AND (new_value = 'revision_cliente' OR old_value = 'revision_cliente')
+           AND entity_id IN (${ph})
+         ORDER BY entity_id, created_at`,
+        taskIds
+      );
+      const enteredAt: Record<string, number | null> = {};
+      for (const r of transRows) {
+        if (r.new_value === 'revision_cliente') {
+          enteredAt[r.task_id] = new Date(r.created_at).getTime();
+        } else if (r.old_value === 'revision_cliente' && enteredAt[r.task_id]) {
+          clientHeldMs[r.task_id] = (clientHeldMs[r.task_id] || 0) + Math.max(0, new Date(r.created_at).getTime() - (enteredAt[r.task_id] as number));
+          enteredAt[r.task_id] = null;
+        }
+      }
+      // Si sigue con el cliente ahora, el reloj sigue detenido hasta hoy
+      for (const [tid, ent] of Object.entries(enteredAt)) {
+        if (ent) clientHeldMs[tid] = (clientHeldMs[tid] || 0) + Math.max(0, Date.now() - ent);
+      }
+    }
+
     // 4. Calcular métricas por usuario
     type UserMetric = {
       user_id: string;
@@ -284,8 +314,12 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
           m.entregadas_a_tiempo += 1;
         }
       } else {
-        // No entregada — vencida solo si la fecha objetivo justa ya pasó
-        const fObjVencer = fechaObjetivo || (t.fecha_entrega ? new Date(t.fecha_entrega) : null);
+        // No entregada — vencida solo si la fecha objetivo justa ya pasó.
+        // La fecha se extiende por el tiempo que la tarea estuvo EN MANOS DEL CLIENTE:
+        // si el cliente la tuvo 4 dias y devolvio cambios, esos 4 dias no cuentan.
+        const fObjBase = fechaObjetivo || (t.fecha_entrega ? new Date(t.fecha_entrega) : null);
+        const heldMs = clientHeldMs[t.task_id] || 0;
+        const fObjVencer = fObjBase ? new Date(fObjBase.getTime() + heldMs) : null;
         if (fObjVencer && fObjVencer < today && !['entregado', 'aprobado', 'revision_cliente'].includes(t.estado)) {
           m.vencidas_no_entregadas += 1;
           m.vencidas_tasks.push({ task_id: t.task_id, titulo: t.titulo_tarea, marca: t.marca || null, fecha_objetivo: fechaTxt(fObjVencer), estado: t.estado });

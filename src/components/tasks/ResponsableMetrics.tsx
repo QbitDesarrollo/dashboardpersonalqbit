@@ -41,7 +41,7 @@ export function ResponsableMetrics({ userId, userName, avatarUrl, allTasks, comp
                   {getInitials(userName)}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-sm font-medium truncate max-w-[120px]">{userName}</span>
+              <span className="text-sm font-medium truncate max-w-[96px]">{userName}</span>
               <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full font-medium">
                 {metrics.total}
               </span>
@@ -75,35 +75,39 @@ export function ResponsableMetrics({ userId, userName, avatarUrl, allTasks, comp
     );
   }
 
+  // Version compacta pedida por el equipo: solo iconos a la derecha del nombre,
+  // el nombre de cada metrica aparece al hacer hover.
+  const stats: { key: string; label: string; value: number; icon: JSX.Element; cls: string }[] = [
+    { key: 'completadas', label: 'Completadas', value: metrics.completed, icon: <CheckCircle2 className="h-3.5 w-3.5" />, cls: 'bg-status-delivered/10 text-status-delivered' },
+    { key: 'progreso', label: 'En progreso', value: metrics.inProgress, icon: <Clock className="h-3.5 w-3.5" />, cls: 'bg-status-in-progress/10 text-status-in-progress' },
+    { key: 'pendientes', label: 'Pendientes', value: metrics.pending, icon: <AlertCircle className="h-3.5 w-3.5" />, cls: 'bg-status-backlog/10 text-status-backlog' },
+    { key: 'total', label: 'Total', value: metrics.total, icon: <User className="h-3.5 w-3.5" />, cls: 'bg-primary/10 text-primary' },
+  ];
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
+    <TooltipProvider>
+      <div className="flex items-center gap-2 flex-wrap">
         <Avatar className="h-7 w-7">
           {avatarUrl ? <AvatarImage src={avatarUrl} alt={userName} className="object-cover" /> : null}
           <AvatarFallback className="bg-primary/20 text-primary text-xs font-semibold">
             {getInitials(userName)}
           </AvatarFallback>
         </Avatar>
-        <span className="font-medium">{userName}</span>
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        <div className="flex items-center gap-2 p-2 rounded-md bg-status-delivered/10">
-          <CheckCircle2 className="h-4 w-4 text-status-delivered" />
-          <span>Completadas: <strong>{metrics.completed}</strong></span>
-        </div>
-        <div className="flex items-center gap-2 p-2 rounded-md bg-status-in-progress/10">
-          <Clock className="h-4 w-4 text-status-in-progress" />
-          <span>En progreso: <strong>{metrics.inProgress}</strong></span>
-        </div>
-        <div className="flex items-center gap-2 p-2 rounded-md bg-status-backlog/10">
-          <AlertCircle className="h-4 w-4 text-status-backlog" />
-          <span>Pendientes: <strong>{metrics.pending}</strong></span>
-        </div>
-        <div className="flex items-center gap-2 p-2 rounded-md bg-primary/10">
-          <User className="h-4 w-4 text-primary" />
-          <span>Total: <strong>{metrics.total}</strong></span>
+        <span className="font-medium truncate">{userName}</span>
+        <div className="flex items-center gap-1 ml-auto">
+          {stats.map((st) => (
+            <Tooltip key={st.key}>
+              <TooltipTrigger asChild>
+                <span className={cn('inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-xs font-semibold cursor-default', st.cls)}>
+                  {st.icon}
+                  {st.value}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">{st.label}: {st.value}</TooltipContent>
+            </Tooltip>
+          ))}
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
