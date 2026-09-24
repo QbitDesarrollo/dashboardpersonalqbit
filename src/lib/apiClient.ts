@@ -1366,7 +1366,8 @@ export async function postActivitySnapshot(timeEntryId: string, counts: { keyboa
     method: 'POST',
     body: JSON.stringify({ time_entry_id: timeEntryId, keyboard_events: counts.keyboard, mouse_events: counts.mouse, scroll_events: counts.scroll, click_events: counts.click, tab_hidden: tabHidden }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  // status lets the tracker tell "this session is over" (404) from a network blip.
+  if (!res.ok) throw Object.assign(new Error(await res.text()), { status: res.status });
   return res.json();
 }
 

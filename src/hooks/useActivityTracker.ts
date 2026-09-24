@@ -12,7 +12,11 @@ interface ActivityCounts {
  * Tracks keyboard/mouse/scroll/click events while a time session is active.
  * Every 60 seconds, sends the counts to the server.
  */
-export function useActivityTracker(activeSessionId: string | null) {
+/**
+ * onSesionCerrada: the server no longer has this session open (stopped or paused
+ * elsewhere); the caller refreshes its session so tracking stops.
+ */
+export function useActivityTracker(activeSessionId: string | null, onSesionCerrada?: () => void) {
   const counters = useRef<ActivityCounts>({ keyboard: 0, mouse: 0, scroll: 0, click: 0 });
   const intervalRef = useRef<number | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
@@ -21,9 +25,13 @@ export function useActivityTracker(activeSessionId: string | null) {
   // descontaba del tiempo: en la pestana de Tiusdei no hay teclas ni clics.
   const hiddenMsRef = useRef<number>(0);
   const hiddenSinceRef = useRef<number | null>(document.hidden ? Date.now() : null);
+  const onSesionCerradaRef = useRef(onSesionCerrada);
+  // Set once the server answered 404: nothing more is sent for that session.
+  const cerradaRef = useRef(false);
+  onSesionCerradaRef.current = onSesionCerrada;
 
   const flush = useCallback(async () => {
-    if (!activeSessionId) return;
+    if (!activeSessionId || cerradaRef.current) return;
     const snapshot = { ...counters.current };
     counters.current = { keyboard: 0, mouse: 0, scroll: 0, click: 0 };
 
@@ -38,13 +46,18 @@ export function useActivityTracker(activeSessionId: string | null) {
 
     try {
       await api.postActivitySnapshot(activeSessionId, snapshot, tabHidden);
-    } catch {
-      // silent - server might be unreachable momentarily
+    } catch (e) {
+      // A network blip is retried next minute; a 404 means the session is over.
+      if ((e as { status?: number }).status === 404) {
+        cerradaRef.current = true;
+        onSesionCerradaRef.current?.();
+      }
     }
   }, [activeSessionId]);
 
   useEffect(() => {
     if (!activeSessionId) return;
+    cerradaRef.current = false;
 
     const onKeydown = () => { counters.current.keyboard++; lastActivityRef.current = Date.now(); };
     const onMousemove = () => { counters.current.mouse++; lastActivityRef.current = Date.now(); };

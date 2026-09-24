@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import * as api from '@/lib/apiClient';
-import { toast } from 'sonner';
+import { fueraDeLaVista } from '@/lib/capturaPantalla';
 
 /**
  * Captures periodic screenshots of the current tab while a session is active.
@@ -28,6 +28,8 @@ export function useScreenshotCapture(
           useCORS: true,
           logging: false,
           backgroundColor: null,
+          // Skip what is off screen: cloning every node froze the tab for seconds.
+          ignoreElements: (el) => fueraDeLaVista(el, window.innerWidth, window.innerHeight),
         });
 
         // Convert to JPEG base64 (smaller than PNG)

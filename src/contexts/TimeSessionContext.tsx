@@ -44,16 +44,6 @@ export function TimeSessionProvider({ children }: { children: React.ReactNode })
 
   const isTracking = activeSession?.status === 'active';
 
-  // Activity tracking
-  useActivityTracker(isTracking ? activeSession?.id || null : null);
-
-  // Screenshot capture
-  useScreenshotCapture(
-    isTracking ? activeSession?.id || null : null,
-    isTracking ? activeSession?.task_id || null : null,
-    screenshotInterval
-  );
-
   // Load settings
   useEffect(() => {
     api.getSiteSettings()
@@ -77,6 +67,17 @@ export function TimeSessionProvider({ children }: { children: React.ReactNode })
   }, [profile]);
 
   useEffect(() => { refreshSession(); }, [refreshSession]);
+
+  // Activity tracking. If the server says the session is over (stopped or paused
+  // elsewhere), refresh it so this tab stops tracking a closed session.
+  useActivityTracker(isTracking ? activeSession?.id || null : null, refreshSession);
+
+  // Screenshot capture
+  useScreenshotCapture(
+    isTracking ? activeSession?.id || null : null,
+    isTracking ? activeSession?.task_id || null : null,
+    screenshotInterval
+  );
 
   // Elapsed time counter
   useEffect(() => {
