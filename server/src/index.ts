@@ -164,6 +164,11 @@ const apiLimiter = rateLimit({
   message: { error: 'Demasiadas peticiones, intenta más tarde' },
   standardHeaders: true,
   legacyHeaders: false,
+  // Log every cut so a shared office IP hitting the limit is visible in the logs.
+  handler: (req, res, _next, options) => {
+    console.warn(`[RATE-LIMIT] 429 ip=${req.ip} ${req.method} ${req.originalUrl.split('?')[0]}`);
+    res.status(options.statusCode).json(options.message);
+  },
 });
 app.use('/api/', apiLimiter);
 
