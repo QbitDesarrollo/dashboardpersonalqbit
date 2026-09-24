@@ -7,6 +7,7 @@ vi.mock('react-router-dom', async (orig) => ({ ...(await orig<typeof import('rea
 import MinutaDetalle from './MinutaDetalle';
 import * as minutasApi from '@/lib/minutasApi';
 import * as minutaPdf from '@/lib/minutaPdf';
+import * as apiClient from '@/lib/apiClient';
 import type { Minuta, Punto } from '@/lib/minutasApi';
 
 vi.mock('@/lib/minutasApi', () => ({
@@ -133,6 +134,19 @@ describe('MinutaDetalle · editar y borrar', () => {
       titulo: 'Revisión del home', resumen: 'Lanzamiento el 26 de noviembre. Revisiones los lunes.',
     })));
     expect(await screen.findByRole('heading', { name: 'Revisión del home' })).toBeInTheDocument();
+  });
+
+  it('edita el equipo buscando a la persona', async () => {
+    vi.mocked(apiClient.getProfiles).mockResolvedValue([
+      { id: 'u1', nombre: 'Even' }, { id: 'u2', nombre: 'Diego Ruiz' }, { id: 'u3', nombre: 'Andrés Monge' },
+    ]);
+    vi.mocked(minutasApi.editarMinuta).mockResolvedValue(minuta);
+    renderDetalle();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+    fireEvent.change(await screen.findByRole('searchbox', { name: 'Buscar persona' }), { target: { value: 'andres' } });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Andrés Monge' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(minutasApi.editarMinuta).toHaveBeenCalledWith('m3', expect.objectContaining({ miembros: ['u2', 'u3'] })));
   });
 
   it('borra la minuta tras confirmar y vuelve a la lista', async () => {

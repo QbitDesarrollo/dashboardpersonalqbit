@@ -18,6 +18,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { SELECT } from '@/components/minutas/EditorPuntos';
+import { SelectorEquipo } from '@/components/minutas/SelectorEquipo';
 import { PuntoDialog, type VistaPunto } from '@/components/minutas/PuntoDialog';
 import { TONO } from '@/components/minutas/tonos';
 import { cn } from '@/lib/utils';
@@ -155,25 +156,7 @@ function EditarMinuta({ minuta, personas, abierto, onOpenChange, onGuardada }: {
               {proyectos.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
           </div>
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">Equipo</span>
-            <div className="flex flex-wrap gap-1.5">
-              {personas.filter((p) => p.id !== minuta.owner.id).map((p) => {
-                const activo = miembros.includes(p.id);
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    aria-pressed={activo}
-                    onClick={() => setMiembros((m) => (activo ? m.filter((x) => x !== p.id) : [...m, p.id]))}
-                    className={cn('rounded-full border px-3 py-1 text-xs font-medium', activo ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted')}
-                  >
-                    {p.nombre}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <SelectorEquipo personas={personas} seleccionados={miembros} excluir={minuta.owner.id} onChange={setMiembros} />
           <div className="space-y-1.5">
             <Label htmlFor="em-resumen">Resumen y acuerdos</Label>
             <Textarea id="em-resumen" rows={4} value={resumen} onChange={(e) => setResumen(e.target.value)} />

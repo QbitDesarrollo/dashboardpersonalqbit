@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { EditorPuntos, SELECT, type PuntoBorrador } from '@/components/minutas/EditorPuntos';
-import { cn } from '@/lib/utils';
+import { SelectorEquipo } from '@/components/minutas/SelectorEquipo';
 
 interface Opcion { id: string; nombre: string }
 
@@ -49,8 +49,7 @@ export default function MinutaNueva() {
     api.getProjects({ brand_id: brandId }).then((p) => setProyectos(p)).catch(() => setProyectos([]));
   }, [brandId]);
 
-  // El equipo se elige entre quienes no son el responsable; los asignables son responsable + equipo primero.
-  const equipoDisponible = useMemo(() => personas.filter((p) => p.id !== ownerId), [personas, ownerId]);
+  // Los asignables son responsable + equipo primero.
   const asignables = useMemo(() => {
     const primero = new Set([ownerId, ...miembros]);
     return [...personas.filter((p) => primero.has(p.id)), ...personas.filter((p) => !primero.has(p.id))];
@@ -128,24 +127,7 @@ export default function MinutaNueva() {
           </select>
         </div>
         <div className="space-y-1.5">
-          <span className="text-sm font-medium">Equipo</span>
-          <div className="flex flex-wrap gap-1.5">
-            {equipoDisponible.map((p) => {
-              const activo = miembros.includes(p.id);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  aria-pressed={activo}
-                  onClick={() => setMiembros((m) => (activo ? m.filter((x) => x !== p.id) : [...m, p.id]))}
-                  className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                    activo ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted')}
-                >
-                  {p.nombre}
-                </button>
-              );
-            })}
-          </div>
+          <SelectorEquipo personas={personas} seleccionados={miembros} excluir={ownerId} onChange={setMiembros} />
           <p className="text-xs text-muted-foreground">Quienes estuvieron o siguen esta minuta. Aparecen primero al asignar puntos.</p>
         </div>
       </CardContent></Card>

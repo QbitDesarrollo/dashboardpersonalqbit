@@ -57,7 +57,7 @@ describe('MinutaNueva', () => {
     await waitFor(() => expect(screen.getByRole('option', { name: 'Rediseño del sitio web Dinatek' })).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText('Proyecto'), { target: { value: 'p1' } });
     fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Kickoff' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Diego Ruiz' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Diego Ruiz' }));
     fireEvent.change(screen.getByLabelText('Resumen y acuerdos'), { target: { value: 'Revisiones los lunes.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
     await waitFor(() => expect(minutasApi.crearMinuta).toHaveBeenCalledWith(expect.objectContaining({
