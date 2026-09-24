@@ -146,6 +146,16 @@ describe('MinutaPresentar', () => {
     expect(await screen.findByText('1 de 2 listos')).toBeInTheDocument();
   });
 
+  it('al cambiar de punto vuelve al inicio del punto', async () => {
+    const scrollTo = vi.fn();
+    HTMLElement.prototype.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+    renderPresentar();
+    await screen.findByRole('heading', { name: 'Video en el home' });
+    scrollTo.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0 });
+  });
+
   it('permite salir de la presentación a la minuta', async () => {
     renderPresentar();
     expect(await screen.findByRole('link', { name: 'Salir de la presentación' })).toHaveAttribute('href', '/minutas/m3');

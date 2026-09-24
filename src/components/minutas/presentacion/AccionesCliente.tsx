@@ -11,7 +11,7 @@ interface Props {
   onActualizada: (minuta: Minuta) => void;
 }
 
-/** Lo que el cliente decide sobre un punto durante la presentación. */
+/** What the client decides about a point during the presentation. The text box opens above the bar. */
 export function AccionesCliente({ punto, onActualizada }: Props) {
   const { enviando, conError, accion } = usePuntoAcciones(punto.id, onActualizada);
   const [abierto, setAbierto] = useState<'ajuste' | 'nota' | null>(null);
@@ -27,32 +27,32 @@ export function AccionesCliente({ punto, onActualizada }: Props) {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-3">
+    <>
+      <div className="flex flex-wrap items-center justify-center gap-2">
         {listo && (
           <>
-            <Button size="lg" disabled={enviando} onClick={() => accion('aprobar')}>
-              <CheckCircle2 className="h-5 w-5" />Aprobar
+            <Button disabled={enviando} onClick={() => accion('aprobar')}>
+              <CheckCircle2 className="h-4 w-4" />Aprobar
             </Button>
-            <Button size="lg" variant="outline" disabled={enviando} onClick={() => abrir('ajuste')}>
-              <RotateCcw className="h-5 w-5" />Pedir ajuste
+            <Button variant="outline" disabled={enviando} onClick={() => abrir('ajuste')}>
+              <RotateCcw className="h-4 w-4" />Pedir ajuste
             </Button>
           </>
         )}
-        <Button size="lg" variant="outline" disabled={enviando} onClick={() => abrir('nota')}>
-          <MessageSquarePlus className="h-5 w-5" />Agregar nota
+        <Button variant="outline" disabled={enviando} onClick={() => abrir('nota')}>
+          <MessageSquarePlus className="h-4 w-4" />Agregar nota
         </Button>
       </div>
       {abierto && (
-        <div className="space-y-2 rounded-xl border p-4">
+        <div className="absolute inset-x-0 bottom-full mb-3 space-y-3 rounded-2xl border bg-card p-4 shadow-xl">
           <Label htmlFor="pp-texto" className="text-base">{abierto === 'ajuste' ? '¿Qué ajuste pide el cliente?' : 'Nota del cliente'}</Label>
           <Textarea id="pp-texto" rows={3} className="text-lg" value={texto} onChange={(e) => setTexto(e.target.value)} autoFocus />
-          <div className="flex gap-2">
-            <Button disabled={!texto.trim() || enviando} onClick={enviar}>{abierto === 'ajuste' ? 'Enviar ajuste' : 'Guardar nota'}</Button>
+          <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setAbierto(null)}>Cancelar</Button>
+            <Button disabled={!texto.trim() || enviando} onClick={enviar}>{abierto === 'ajuste' ? 'Enviar ajuste' : 'Guardar nota'}</Button>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

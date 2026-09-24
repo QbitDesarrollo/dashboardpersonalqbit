@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { CalendarDays, CheckCircle2, Hourglass } from 'lucide-react';
 import type { Punto } from '@/lib/minutasApi';
 import { estadoCliente, fechaCorta } from '@/lib/minutas';
@@ -10,12 +9,10 @@ import { NotasPunto } from './NotasPunto';
 interface Props {
   punto: Punto;
   codigo: string;
-  /** What the client can decide, shown at the bottom of the card. */
-  acciones?: ReactNode;
 }
 
 /** One point on screen, in the client's language: what was asked, what was done and the evidence. */
-export function PuntoPresentado({ punto, codigo, acciones }: Props) {
+export function PuntoPresentado({ punto, codigo }: Props) {
   const estado = estadoCliente(punto);
   const hayAvance = !!punto.resolucion || punto.evidencias.length > 0;
   return (
@@ -53,7 +50,6 @@ export function PuntoPresentado({ punto, codigo, acciones }: Props) {
 
         <NotasPunto notas={punto.notas} />
       </div>
-      {acciones && <div className="border-t bg-muted/30 px-6 py-4 sm:px-8">{acciones}</div>}
     </article>
   );
 }
