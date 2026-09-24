@@ -3,8 +3,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Minutas from './Minutas';
 import * as minutasApi from '@/lib/minutasApi';
+import * as minutasIa from '@/lib/minutasIaApi';
 
 vi.mock('@/lib/minutasApi', () => ({ listarMinutas: vi.fn() }));
+vi.mock('@/lib/minutasIaApi', () => ({ estadoIa: vi.fn(async () => ({ permitido: false, disponible: false, detalle: null, usados: 0, limite: 10 })) }));
 vi.mock('@/lib/apiClient', () => ({
   getBrands: vi.fn(async () => [{ id: 'b1', nombre: 'Dinatek', activo: 1 }, { id: 'b2', nombre: 'Alba del Bosque', activo: 1 }]),
   getProjects: vi.fn(async () => [{ id: 'p1', nombre: 'Asistente Proyecta · Bot' }]),
@@ -45,5 +47,19 @@ describe('Minutas (lista)', () => {
     render(<MemoryRouter future={futuro}><Minutas /></MemoryRouter>);
     fireEvent.change(screen.getByLabelText('Buscar'), { target: { value: ' whatsapp ' } });
     await waitFor(() => expect(minutasApi.listarMinutas).toHaveBeenLastCalledWith({ brand_id: '', project_id: '', q: 'whatsapp' }));
+  });
+
+  it('muestra cuántas minutas con IA te quedan hoy si tu mesa puede usarla', async () => {
+    vi.mocked(minutasApi.listarMinutas).mockResolvedValue([] as never);
+    vi.mocked(minutasIa.estadoIa).mockResolvedValueOnce({ permitido: true, disponible: true, detalle: 'ok', usados: 3, limite: 10 });
+    render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Minutas /></MemoryRouter>);
+    expect(await screen.findByText('Te quedan 7 de 10 minutas con IA hoy')).toBeInTheDocument();
+  });
+
+  it('sin acceso a la IA no muestra el contador', async () => {
+    vi.mocked(minutasApi.listarMinutas).mockResolvedValue([] as never);
+    render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Minutas /></MemoryRouter>);
+    await waitFor(() => expect(minutasIa.estadoIa).toHaveBeenCalled());
+    expect(screen.queryByText(/minutas con IA/)).not.toBeInTheDocument();
   });
 });

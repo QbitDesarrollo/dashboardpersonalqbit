@@ -106,6 +106,19 @@ describe('MinutaNueva', () => {
       await waitFor(() => expect(minutasIa.estadoIa).toHaveBeenCalledTimes(2));
     });
 
+    it('muestra junto al botón cuántas quedan hoy y lo actualiza al generar', async () => {
+      vi.mocked(minutasIa.estadoIa)
+        .mockResolvedValueOnce({ permitido: true, disponible: true, detalle: 'ok', usados: 4, limite: 10 })
+        .mockResolvedValueOnce({ permitido: true, disponible: true, detalle: 'ok', usados: 5, limite: 10 });
+      vi.mocked(minutasIa.esperarBorrador).mockResolvedValue(BORRADOR);
+      renderNueva();
+      expect(await screen.findByText('Te quedan 6 de 10 minutas con IA hoy')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Generar con IA' }));
+      fireEvent.change(screen.getByLabelText('Transcripción de la reunión'), { target: { value: 'Hola' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
+      expect(await screen.findByText('Te quedan 5 de 10 minutas con IA hoy')).toBeInTheDocument();
+    });
+
     it('no pisa lo que ya escribiste: los puntos se agregan al final', async () => {
       vi.mocked(minutasIa.estadoIa).mockResolvedValueOnce({ permitido: true, disponible: true, detalle: 'ok', usados: 0, limite: 10 });
       vi.mocked(minutasIa.esperarBorrador).mockResolvedValue(BORRADOR);

@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
 import { crearMinuta } from '@/lib/minutasApi';
 import { aPuntosNuevos, hoyEcuador, puntosDesdeIa } from '@/lib/minutas';
-import { estadoIa, type BorradorIa, type EstadoIa } from '@/lib/minutasIaApi';
+import type { BorradorIa } from '@/lib/minutasIaApi';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,6 +15,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { EditorPuntos, SELECT, type PuntoBorrador } from '@/components/minutas/EditorPuntos';
 import { SelectorEquipo } from '@/components/minutas/SelectorEquipo';
 import { GenerarConIa } from '@/components/minutas/GenerarConIa';
+import { CupoIa } from '@/components/minutas/CupoIa';
+import { useEstadoIa } from '@/components/minutas/useEstadoIa';
 
 interface Opcion { id: string; nombre: string }
 
@@ -35,7 +37,7 @@ export default function MinutaNueva() {
   const [resumen, setResumen] = useState('');
   const [puntos, setPuntos] = useState<PuntoBorrador[]>([]);
   const [guardando, setGuardando] = useState(false);
-  const [ia, setIa] = useState<EstadoIa | null>(null);
+  const { estado: ia, refrescar: refrescarIa } = useEstadoIa();
   const [iaAbierto, setIaAbierto] = useState(false);
 
   useEffect(() => {
@@ -47,15 +49,12 @@ export default function MinutaNueva() {
       .catch(() => toast.error('No se pudo cargar el equipo'));
   }, []);
 
-  // Only members of the desks enabled in Admin → Config see the AI button.
-  useEffect(() => { estadoIa().then(setIa).catch(() => setIa(null)); }, []);
-
   // The AI draft never overwrites what was already written: it fills blanks and appends points.
   const aplicarBorrador = (b: BorradorIa) => {
     setTitulo((t) => (t.trim() ? t : b.titulo));
     setResumen((r) => (!b.resumen ? r : r.trim() ? `${r.trim()}\n\n${b.resumen}` : b.resumen));
     setPuntos((p) => [...p, ...puntosDesdeIa(b.puntos)]);
-    estadoIa().then(setIa).catch(() => {});
+    refrescarIa();
   };
 
   useEffect(() => {
@@ -107,10 +106,14 @@ export default function MinutaNueva() {
           <h1 className="text-2xl font-bold">Nueva minuta</h1>
           <p className="text-sm text-muted-foreground">Se numera sola por marca: M-01, M-02…</p>
         </div>
+        {/* Only members of the desks enabled in Admin → Config see the AI button. */}
         {ia?.permitido && (
-          <Button variant="outline" className="ml-auto" onClick={() => setIaAbierto(true)}>
-            <Sparkles className="h-4 w-4 text-primary" />Generar con IA
-          </Button>
+          <div className="ml-auto flex flex-col items-end gap-1.5">
+            <Button variant="outline" onClick={() => setIaAbierto(true)}>
+              <Sparkles className="h-4 w-4 text-primary" />Generar con IA
+            </Button>
+            <CupoIa estado={ia} />
+          </div>
         )}
       </div>
       {ia?.permitido && (

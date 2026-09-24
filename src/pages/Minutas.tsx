@@ -10,6 +10,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { SELECT } from '@/components/minutas/EditorPuntos';
+import { CupoIa } from '@/components/minutas/CupoIa';
+import { useEstadoIa } from '@/components/minutas/useEstadoIa';
 import { cn } from '@/lib/utils';
 
 interface Opcion { id: string; nombre: string }
@@ -54,6 +56,7 @@ function Fila({ m }: { m: MinutaResumen }) {
 
 export default function Minutas() {
   const [minutas, setMinutas] = useState<MinutaResumen[]>([]);
+  const { estado: ia } = useEstadoIa();
   const [cargando, setCargando] = useState(true);
   const [marcas, setMarcas] = useState<Opcion[]>([]);
   const [proyectos, setProyectos] = useState<Opcion[]>([]);
@@ -92,7 +95,10 @@ export default function Minutas() {
           <h1 className="text-2xl font-bold">Minutas</h1>
           <p className="text-sm text-muted-foreground">Lo que se habló con cada cliente, punto por punto.</p>
         </div>
-        <Button asChild><Link to="/minutas/nueva"><Plus className="h-4 w-4" />Nueva minuta</Link></Button>
+        <div className="flex flex-wrap items-center gap-3">
+          {ia && <CupoIa estado={ia} />}
+          <Button asChild><Link to="/minutas/nueva"><Plus className="h-4 w-4" />Nueva minuta</Link></Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
