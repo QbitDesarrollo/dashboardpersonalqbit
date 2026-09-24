@@ -138,6 +138,11 @@ export function borrarMinuta(id: string): Promise<{ ok: true }> {
   return llamar<{ ok: true }>(`/api/data/minutas/${id}`, 'DELETE');
 }
 
+/** New order of all the points; their codes follow the position. */
+export function reordenarPuntos(minutaId: string, itemIds: string[]): Promise<Minuta> {
+  return llamar<Minuta>(`/api/data/minutas/${minutaId}/orden`, 'PUT', { items: itemIds });
+}
+
 export function agregarPunto(minutaId: string, punto: PuntoNuevo): Promise<Minuta> {
   return llamar<Minuta>(`/api/data/minutas/${minutaId}/items`, 'POST', punto);
 }

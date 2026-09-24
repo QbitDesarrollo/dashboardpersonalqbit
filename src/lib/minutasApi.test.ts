@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as api from './minutasApi';
-import { listarMinutas, accionPunto } from './minutasApi';
+import { listarMinutas, accionPunto, reordenarPuntos } from './minutasApi';
 
 function respuesta(status: number, body: unknown) {
   return Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
@@ -16,6 +16,14 @@ describe('minutasApi', () => {
     await listarMinutas({ brand_id: 'b1', project_id: '', q: 'whatsapp' });
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toMatch(/\/api\/data\/minutas\?brand_id=b1&q=whatsapp$/);
+  });
+
+  it('manda el nuevo orden de los puntos', async () => {
+    fetchMock.mockReturnValue(respuesta(200, { id: 'm1' }));
+    expect(await reordenarPuntos('m1', ['i3', 'i1', 'i2'])).toEqual({ id: 'm1' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/api\/data\/minutas\/m1\/orden$/);
+    expect(init).toMatchObject({ method: 'PUT', body: JSON.stringify({ items: ['i3', 'i1', 'i2'] }) });
   });
 
   it('envía la acción del punto y devuelve la minuta actualizada', async () => {

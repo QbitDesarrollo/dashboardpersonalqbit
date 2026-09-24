@@ -1,3 +1,4 @@
+import type { CSSProperties, ReactNode, Ref } from 'react';
 import { CalendarDays, Link2, Pencil, SquareCheck, User } from 'lucide-react';
 import type { Minuta, Punto } from '@/lib/minutasApi';
 import { estadoPunto, vencimiento } from '@/lib/minutas';
@@ -6,8 +7,13 @@ import { IconoEstado } from './IconoEstado';
 import type { VistaPunto } from './PuntoDialog';
 import { TONO } from './tonos';
 
+/** Drag support given by the sortable list: the row node, its moving style and the grip button. */
+export interface Arrastre { ref: Ref<HTMLLIElement>; estilo: CSSProperties; agarradera: ReactNode; arrastrando: boolean }
+
 /** One point in the minuta list: full description, status, due date and one button per view. */
-export function FilaPunto({ minuta, p, hoy, onAbrir }: { minuta: Minuta; p: Punto; hoy: string; onAbrir: (vista: VistaPunto) => void }) {
+export function FilaPunto({ minuta, p, hoy, onAbrir, arrastre }: {
+  minuta: Minuta; p: Punto; hoy: string; onAbrir: (vista: VistaPunto) => void; arrastre?: Arrastre;
+}) {
   const codigo = `${minuta.numero}.${p.numero}`;
   const estado = estadoPunto(p);
   const aviso = vencimiento(p.fecha_compromiso, p.estado, hoy);
@@ -15,7 +21,17 @@ export function FilaPunto({ minuta, p, hoy, onAbrir }: { minuta: Minuta; p: Punt
   const listas = p.tareas.filter((t) => t.estado === 'entregado' || t.estado === 'aprobado').length;
   const chip = 'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium text-foreground/80 hover:bg-muted';
   return (
-    <li aria-label={`Punto ${codigo}`} className="grid grid-cols-[24px_36px_minmax(0,1fr)_32px] gap-x-3 border-t px-4 py-3.5 first:border-t-0">
+    <li
+      ref={arrastre?.ref}
+      style={arrastre?.estilo}
+      aria-label={`Punto ${codigo}`}
+      className={cn(
+        'grid gap-x-3 border-t bg-card px-4 py-3.5 first:border-t-0',
+        arrastre ? 'grid-cols-[18px_24px_36px_minmax(0,1fr)_32px] pl-2' : 'grid-cols-[24px_36px_minmax(0,1fr)_32px]',
+        arrastre?.arrastrando && 'relative z-10 rounded-lg shadow-lg ring-1 ring-primary/30',
+      )}
+    >
+      {arrastre?.agarradera}
       <button
         type="button"
         aria-label={cerrado ? `Punto ${codigo} cerrado` : `Cerrar el punto ${codigo}`}

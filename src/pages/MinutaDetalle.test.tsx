@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { toast } from 'sonner';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 const navigate = vi.fn();
@@ -11,8 +13,15 @@ import * as apiClient from '@/lib/apiClient';
 import type { Minuta, Punto } from '@/lib/minutasApi';
 
 vi.mock('@/lib/minutasApi', () => ({
-  obtenerMinuta: vi.fn(), agregarPunto: vi.fn(), editarMinuta: vi.fn(), borrarMinuta: vi.fn(),
+  obtenerMinuta: vi.fn(), agregarPunto: vi.fn(), editarMinuta: vi.fn(), borrarMinuta: vi.fn(), reordenarPuntos: vi.fn(),
 }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+// jsdom cannot measure positions: the drop is simulated through the list's onDragEnd.
+let soltar: ((e: DragEndEvent) => void) | undefined;
+vi.mock('@dnd-kit/core', async (orig) => {
+  const real = await orig<typeof import('@dnd-kit/core')>();
+  return { ...real, DndContext: (props: { onDragEnd?: (e: DragEndEvent) => void; children: React.ReactNode }) => { soltar = props.onDragEnd; return <>{props.children}</>; } };
+});
 vi.mock('@/lib/minutaPdf', () => ({ exportarMinutaPdf: vi.fn() }));
 vi.mock('@/lib/apiClient', () => ({ getProfiles: vi.fn(async () => []), getProjects: vi.fn(async () => [{ id: 'p1', nombre: 'Rediseño del sitio web Dinatek' }]) }));
 vi.mock('@/components/minutas/PuntoDialog', () => ({
@@ -179,5 +188,37 @@ describe('MinutaDetalle · PDF', () => {
     renderDetalle();
     await screen.findByRole('button', { name: 'Exportar PDF' });
     expect(screen.queryByRole('button', { name: 'Copiar enlace para el cliente' })).not.toBeInTheDocument();
+  });
+});
+
+describe('MinutaDetalle · reordenar puntos', () => {
+  const titulos = () => screen.getAllByRole('listitem', { name: /^Punto 3\.\d$/ }).map((li) => li.querySelector('p')?.textContent);
+  const arrastrar = (desde: string, hasta: string) =>
+    act(async () => { soltar?.({ active: { id: desde }, over: { id: hasta } } as unknown as DragEndEvent); });
+
+  beforeEach(() => {
+    vi.mocked(minutasApi.obtenerMinuta).mockReset().mockResolvedValue(minuta);
+    vi.mocked(minutasApi.reordenarPuntos).mockReset();
+    vi.mocked(toast.error).mockReset();
+  });
+
+  it('mueve el punto al instante y guarda el nuevo orden', async () => {
+    const reordenada = { ...minuta, items: [{ ...minuta.items[1], numero: 1 }, { ...minuta.items[0], numero: 2 }] };
+    vi.mocked(minutasApi.reordenarPuntos).mockResolvedValue(reordenada);
+    renderDetalle();
+    await screen.findByRole('listitem', { name: 'Punto 3.1' });
+    await arrastrar('i2', 'i1');
+    expect(minutasApi.reordenarPuntos).toHaveBeenCalledWith('m3', ['i2', 'i1']);
+    await waitFor(() => expect(titulos()).toEqual(['Fichas técnicas', 'Filtro por marca']));
+    expect(screen.getByRole('listitem', { name: 'Punto 3.1' })).toHaveTextContent('Fichas técnicas');
+  });
+
+  it('si no se pudo guardar, vuelve al orden anterior y avisa', async () => {
+    vi.mocked(minutasApi.reordenarPuntos).mockRejectedValue(new Error('Sin conexión'));
+    renderDetalle();
+    await screen.findByRole('listitem', { name: 'Punto 3.1' });
+    await arrastrar('i2', 'i1');
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('No se pudo cambiar el orden', { description: 'Sin conexión' }));
+    expect(titulos()).toEqual(['Filtro por marca', 'Fichas técnicas']);
   });
 });

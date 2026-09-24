@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileDown, FolderKanban, Loader2, Plus, Presentation } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
-import { agregarPunto, borrarMinuta, editarMinuta, obtenerMinuta, type Minuta } from '@/lib/minutasApi';
+import { agregarPunto, borrarMinuta, editarMinuta, obtenerMinuta, reordenarPuntos, type Minuta } from '@/lib/minutasApi';
 import { fechaCorta, hoyEcuador } from '@/lib/minutas';
 import { exportarMinutaPdf } from '@/lib/minutaPdf';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { SELECT } from '@/components/minutas/EditorPuntos';
 import { SelectorEquipo } from '@/components/minutas/SelectorEquipo';
-import { FilaPunto } from '@/components/minutas/FilaPunto';
+import { ListaPuntos } from '@/components/minutas/ListaPuntos';
 import { PuntoDialog, type VistaPunto } from '@/components/minutas/PuntoDialog';
 
 function EditarMinuta({ minuta, personas, abierto, onOpenChange, onGuardada }: {
@@ -167,6 +167,19 @@ export default function MinutaDetalle() {
 
   const { total, cerrados, enCurso } = minuta.progreso;
   const puntoAbierto = abierto ? minuta.items.find((p) => p.id === abierto.id) ?? null : null;
+
+  // The new order shows right away; if saving fails, the previous one comes back.
+  const cambiarOrden = async (ids: string[]) => {
+    const anterior = minuta;
+    const porId = new Map(minuta.items.map((p) => [p.id, p]));
+    setMinuta({ ...minuta, items: ids.map((id, i) => ({ ...porId.get(id)!, numero: i + 1 })) });
+    try {
+      setMinuta(await reordenarPuntos(minuta.id, ids));
+    } catch (e) {
+      setMinuta(anterior);
+      toast.error('No se pudo cambiar el orden', { description: e instanceof Error ? e.message : undefined });
+    }
+  };
   // Al asignar puntos aparecen primero el responsable y el equipo de la minuta.
   const primero = new Set([minuta.owner.id, ...minuta.miembros.map((m) => m.id)]);
   const asignables = [...personas.filter((p) => primero.has(p.id)), ...personas.filter((p) => !primero.has(p.id))];
@@ -241,7 +254,7 @@ export default function MinutaDetalle() {
           <span className="text-xs text-muted-foreground">El círculo cierra el punto con evidencia</span>
         </div>
         {minuta.items.length > 0 && (
-          <ul>{minuta.items.map((p) => <FilaPunto key={p.id} minuta={minuta} p={p} hoy={hoy} onAbrir={(vista) => setAbierto({ id: p.id, vista })} />)}</ul>
+          <ListaPuntos minuta={minuta} hoy={hoy} onAbrir={(id, vista) => setAbierto({ id, vista })} onReordenar={cambiarOrden} />
         )}
         <label className="flex items-center gap-2 border-t px-4 py-3 text-muted-foreground focus-within:bg-muted/40 focus-within:text-primary">
           {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
