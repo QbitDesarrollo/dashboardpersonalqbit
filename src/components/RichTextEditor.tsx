@@ -98,6 +98,9 @@ export function RichTextEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
+        // Link and Underline are added below with our own settings.
+        link: false,
+        underline: false,
         heading: { levels: [1, 2, 3] },
         codeBlock: {
           HTMLAttributes: { class: 'bg-muted rounded-lg p-3 font-mono text-sm' },
@@ -479,6 +482,9 @@ export function RichTextViewer({ content }: { content: string }) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
+        // Link and Underline are added below with our own settings.
+        link: false,
+        underline: false,
         heading: { levels: [1, 2, 3] },
         codeBlock: {
           HTMLAttributes: { class: 'bg-muted rounded-lg p-3 font-mono text-sm' },

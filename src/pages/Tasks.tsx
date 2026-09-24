@@ -1677,10 +1677,10 @@ export default function Tasks() {
 
       {/* Task Detail Dialog */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto" aria-describedby="task-detail-desc">
+        <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl">{selectedTask?.titulo_tarea || 'Detalle de Tarea'}</DialogTitle>
-            <DialogDescription id="task-detail-desc">Información completa, timer, comentarios y entregables.</DialogDescription>
+            <DialogDescription>Información completa, timer, comentarios y entregables.</DialogDescription>
           </DialogHeader>
           {selectedTask && (
             <div className="space-y-5">

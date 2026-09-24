@@ -314,7 +314,8 @@ export function CommentsPanel({ taskId, deskId }: CommentsPanelProps) {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      // Link and Underline are added below with our own settings.
+      StarterKit.configure({ link: false, underline: false }),
       UnderlineExt,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TiptapImage.configure({ inline: true, allowBase64: true }),

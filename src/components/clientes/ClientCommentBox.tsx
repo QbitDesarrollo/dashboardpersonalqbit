@@ -55,7 +55,8 @@ export function ClientCommentBox({
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      // Link and Underline are added below with our own settings.
+      StarterKit.configure({ link: false, underline: false }),
       UnderlineExt,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TiptapImage.configure({ inline: false, HTMLAttributes: { class: 'rounded-lg border max-w-full h-auto my-1' } }),

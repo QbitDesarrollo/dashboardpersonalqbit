@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { RichTextEditor } from './RichTextEditor';
+import { RichTextEditor, RichTextViewer } from './RichTextEditor';
 
 const esperarEditor = () => waitFor(() => expect(document.querySelector('.ProseMirror')).not.toBeNull());
 
@@ -39,5 +39,13 @@ describe('RichTextEditor', () => {
     const editor = (document.querySelector('.ProseMirror') as unknown as { editor: { commands: { setContent: (html: string, o: { emitUpdate: boolean }) => void } } }).editor;
     act(() => { editor.commands.setContent('<img src="https://tiusdei.qbit.ec/uploads/editor/a.png">', { emitUpdate: true }); });
     expect(onChange).toHaveBeenLastCalledWith(expect.stringContaining('<img'));
+  });
+
+  it('el editor y el visor no cargan extensiones repetidas (link, underline)', async () => {
+    const avisos = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<><RichTextEditor content="<p>Hola</p>" onChange={vi.fn()} /><RichTextViewer content="<p>Hola</p>" /></>);
+    await waitFor(() => expect(document.querySelectorAll('.ProseMirror')).toHaveLength(2));
+    expect(avisos.mock.calls.flat().join(' ')).not.toMatch(/Duplicate extension names/);
+    avisos.mockRestore();
   });
 });
