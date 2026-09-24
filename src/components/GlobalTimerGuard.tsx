@@ -7,6 +7,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
+const PAUSA_AVISADA = 'timer_pausa_auto_avisada';
+
 /**
  * Guardián global del timer (regla: "trabajando = Tiusdei abierto con play").
  * - Latido cada 60s mientras haya sesión activa: si Tiusdei se cierra, el servidor
@@ -87,10 +89,17 @@ export function GlobalTimerGuard() {
     return () => window.removeEventListener('beforeunload', handler);
   }, []);
 
-  // Sugerencia de reanudar al volver (si un timer se pausó automáticamente hace poco)
+  // Sugerencia de reanudar al volver (si un timer se pausó automáticamente hace poco).
+  // Se avisa una sola vez por pausa: el servidor la sigue sugiriendo 12 h y sin esto
+  // salía en cada pestaña o recarga.
   useEffect(() => {
     api.getTimerResumeSuggestion().then((r: any) => {
       if (!r?.task_id) return;
+      const clave = `${r.task_id}|${r.end_time ?? ''}`;
+      try {
+        if (localStorage.getItem(PAUSA_AVISADA) === clave) return;
+        localStorage.setItem(PAUSA_AVISADA, clave);
+      } catch { /* sin almacenamiento: avisa como antes */ }
       const hhmm = r.end_time
         ? new Date(r.end_time).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Guayaquil' })
         : '';
