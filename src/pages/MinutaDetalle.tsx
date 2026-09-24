@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, FileDown, FolderKanban, Link2, Loader2, Plus, SquareCheck, User } from 'lucide-react';
+import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, FileDown, FolderKanban, Link2, Loader2, Pencil, Plus, SquareCheck, User } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
 import { agregarPunto, borrarMinuta, editarMinuta, obtenerMinuta, type Minuta, type Punto } from '@/lib/minutasApi';
@@ -18,7 +18,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { SELECT } from '@/components/minutas/EditorPuntos';
-import { PuntoDialog } from '@/components/minutas/PuntoDialog';
+import { PuntoDialog, type VistaPunto } from '@/components/minutas/PuntoDialog';
 import { TONO } from '@/components/minutas/tonos';
 import { cn } from '@/lib/utils';
 
@@ -28,31 +28,57 @@ function IconoEstado({ p }: { p: Punto }) {
   return <Circle className={cn('h-5 w-5', p.responsable_cliente ? 'text-amber-500' : 'text-muted-foreground/60')} />;
 }
 
-function FilaPunto({ minuta, p, hoy, onAbrir }: { minuta: Minuta; p: Punto; hoy: string; onAbrir: () => void }) {
+function FilaPunto({ minuta, p, hoy, onAbrir }: { minuta: Minuta; p: Punto; hoy: string; onAbrir: (vista: VistaPunto) => void }) {
+  const codigo = `${minuta.numero}.${p.numero}`;
   const estado = estadoPunto(p);
   const aviso = vencimiento(p.fecha_compromiso, p.estado, hoy);
+  const cerrado = p.estado === 'completado' || p.estado === 'aprobado';
   const listas = p.tareas.filter((t) => t.estado === 'entregado' || t.estado === 'aprobado').length;
+  const chip = 'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium text-foreground/80 hover:bg-muted';
   return (
-    <li className="border-t first:border-t-0">
-      <button type="button" onClick={onAbrir} className="grid w-full grid-cols-[20px_36px_minmax(0,1fr)] gap-x-3 gap-y-1 px-4 py-3 text-left hover:bg-muted/50">
+    <li aria-label={`Punto ${codigo}`} className="grid grid-cols-[24px_36px_minmax(0,1fr)_32px] gap-x-3 border-t px-4 py-3.5 first:border-t-0">
+      <button
+        type="button"
+        aria-label={cerrado ? `Punto ${codigo} cerrado` : `Cerrar el punto ${codigo}`}
+        title={cerrado ? 'Ver qué se hizo' : 'Cerrar el punto con evidencia'}
+        onClick={() => onAbrir('evidencia')}
+        className="mt-0.5 h-6 w-6 rounded-full hover:bg-muted grid place-items-center"
+      >
         <IconoEstado p={p} />
-        <span className="font-mono text-xs leading-5 text-muted-foreground">{minuta.numero}.{p.numero}</span>{' '}
-        <span className="font-medium leading-snug">{p.titulo}</span>
-        {p.descripcion && <span className="col-start-3 truncate text-sm text-muted-foreground">{p.descripcion}</span>}
-        <span className="col-start-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      </button>
+      <span className="font-mono text-xs leading-6 text-muted-foreground">{codigo}</span>
+      <div className="min-w-0 space-y-1">
+        <p className="font-medium leading-snug">{p.titulo}</p>
+        {p.descripcion && <p className="whitespace-pre-line text-sm text-muted-foreground">{p.descripcion}</p>}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 text-xs text-muted-foreground">
           <span className={cn('rounded-full px-2 py-0.5 font-medium', TONO[estado.tono])}>{estado.texto}</span>
           {p.responsable_cliente
             ? <span>Cliente</span>
             : p.responsable && <span className="inline-flex items-center gap-1"><User className="h-3.5 w-3.5" />{p.responsable.nombre}</span>}
-          {p.tareas.length > 0 && <span className="inline-flex items-center gap-1"><SquareCheck className="h-3.5 w-3.5" />{listas}/{p.tareas.length} tareas</span>}
-          {p.evidencias.length > 0 && <span className="inline-flex items-center gap-1"><Link2 className="h-3.5 w-3.5" />{p.evidencias.length}</span>}
           {aviso && (
             <span className={cn('inline-flex items-center gap-1', aviso.tono === 'rose' && 'font-medium text-rose-600', aviso.tono === 'amber' && 'font-medium text-amber-600')}>
               <CalendarDays className="h-3.5 w-3.5" />{aviso.texto}
             </span>
           )}
           {!p.visible_cliente && <span>Interno</span>}
-        </span>
+          <button type="button" aria-label={`Evidencias del punto ${codigo}`} className={chip} onClick={() => onAbrir('evidencia')}>
+            <Link2 className="h-3.5 w-3.5" />Evidencias{p.evidencias.length > 0 && ` · ${p.evidencias.length}`}
+          </button>
+          {!p.responsable_cliente && (
+            <button type="button" aria-label={`Tareas del punto ${codigo}`} className={chip} onClick={() => onAbrir('tareas')}>
+              <SquareCheck className="h-3.5 w-3.5" />Tareas{p.tareas.length > 0 && ` · ${listas}/${p.tareas.length}`}
+            </button>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        aria-label={`Gestionar el punto ${codigo}`}
+        title="Gestionar el punto"
+        onClick={() => onAbrir('gestionar')}
+        className="h-8 w-8 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground grid place-items-center"
+      >
+        <Pencil className="h-4 w-4" />
       </button>
     </li>
   );
@@ -160,7 +186,7 @@ export default function MinutaDetalle() {
   const [minuta, setMinuta] = useState<Minuta | null>(null);
   const [error, setError] = useState(false);
   const [personas, setPersonas] = useState<{ id: string; nombre: string }[]>([]);
-  const [abiertoId, setAbiertoId] = useState<string | null>(null);
+  const [abierto, setAbierto] = useState<{ id: string; vista: VistaPunto } | null>(null);
   const [nuevo, setNuevo] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [editando, setEditando] = useState(false);
@@ -220,7 +246,7 @@ export default function MinutaDetalle() {
   if (!minuta) return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   const { total, cerrados, enCurso } = minuta.progreso;
-  const abierto = minuta.items.find((p) => p.id === abiertoId) ?? null;
+  const puntoAbierto = abierto ? minuta.items.find((p) => p.id === abierto.id) ?? null : null;
   // Al asignar puntos aparecen primero el responsable y el equipo de la minuta.
   const primero = new Set([minuta.owner.id, ...minuta.miembros.map((m) => m.id)]);
   const asignables = [...personas.filter((p) => primero.has(p.id)), ...personas.filter((p) => !primero.has(p.id))];
@@ -292,10 +318,10 @@ export default function MinutaDetalle() {
       <Card><CardContent className="p-0">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <h2 className="font-semibold">Puntos</h2>
-          <span className="text-xs text-muted-foreground">Toca un punto para ver tareas y evidencia</span>
+          <span className="text-xs text-muted-foreground">El círculo cierra el punto con evidencia</span>
         </div>
         {minuta.items.length > 0 && (
-          <ul>{minuta.items.map((p) => <FilaPunto key={p.id} minuta={minuta} p={p} hoy={hoy} onAbrir={() => setAbiertoId(p.id)} />)}</ul>
+          <ul>{minuta.items.map((p) => <FilaPunto key={p.id} minuta={minuta} p={p} hoy={hoy} onAbrir={(vista) => setAbierto({ id: p.id, vista })} />)}</ul>
         )}
         <label className="flex items-center gap-2 border-t px-4 py-3 text-muted-foreground focus-within:bg-muted/40 focus-within:text-primary">
           {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -311,13 +337,14 @@ export default function MinutaDetalle() {
 
       <EditarMinuta minuta={minuta} personas={personas} abierto={editando} onOpenChange={setEditando} onGuardada={setMinuta} />
 
-      {abierto && (
+      {abierto && puntoAbierto && (
         <PuntoDialog
           minuta={minuta}
-          punto={abierto}
+          punto={puntoAbierto}
+          vista={abierto.vista}
           personas={asignables}
           abierto
-          onOpenChange={(v) => { if (!v) setAbiertoId(null); }}
+          onOpenChange={(v) => { if (!v) setAbierto(null); }}
           onActualizada={setMinuta}
         />
       )}

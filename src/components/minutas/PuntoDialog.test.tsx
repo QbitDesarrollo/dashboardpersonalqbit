@@ -29,9 +29,9 @@ const base: Punto = {
 };
 const minutaCon = (p: Partial<Punto>) => ({ id: 'm3', numero: 3, codigo: 'M-03', brand_id: 'b1', brand_nombre: 'Dinatek', project_id: 'p1', items: [{ ...base, ...p }] }) as unknown as Minuta;
 
-function abrir(p: Partial<Punto> = {}, onActualizada = vi.fn()) {
+function abrir(p: Partial<Punto> = {}, onActualizada = vi.fn(), vista: 'evidencia' | 'tareas' | 'gestionar' = 'evidencia') {
   const minuta = minutaCon(p);
-  render(<PuntoDialog minuta={minuta} punto={minuta.items[0]} personas={[]} abierto onOpenChange={() => {}} onActualizada={onActualizada} />);
+  render(<PuntoDialog minuta={minuta} punto={minuta.items[0]} personas={[]} vista={vista} abierto onOpenChange={() => {}} onActualizada={onActualizada} />);
   return onActualizada;
 }
 
@@ -42,7 +42,6 @@ describe('PuntoDialog · cierre con evidencia', () => {
     const actualizada = minutaCon({ estado: 'completado' });
     vi.mocked(minutasApi.accionPunto).mockResolvedValue(actualizada);
     const onActualizada = abrir({ evidencias: [{ id: 'e1', tipo: 'enlace', nombre: 'Home en staging', url: 'https://x.com', drive_file_id: null, origen_task_id: null }] });
-    fireEvent.click(screen.getByRole('tab', { name: /Evidencia/ }));
     const completar = screen.getByRole('button', { name: 'Marcar como completado' });
     expect(completar).toBeDisabled();
     fireEvent.change(screen.getByLabelText('¿Qué se hizo?'), { target: { value: 'Se puso un video de 12 s en el home.' } });
@@ -59,7 +58,6 @@ describe('PuntoDialog · evidencias', () => {
   it('adjunta un enlace como evidencia', async () => {
     vi.mocked(minutasApi.agregarEvidencia).mockResolvedValue(minutaCon({}));
     const onActualizada = abrir();
-    fireEvent.click(screen.getByRole('tab', { name: /Evidencia/ }));
     fireEvent.change(screen.getByLabelText('Nombre del enlace'), { target: { value: 'Home en staging' } });
     fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://staging.example.com/home' } });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar enlace' }));
@@ -72,7 +70,6 @@ describe('PuntoDialog · evidencias', () => {
   it('quita una evidencia de la lista', async () => {
     vi.mocked(minutasApi.quitarEvidencia).mockResolvedValue(minutaCon({}));
     abrir({ evidencias: [{ id: 'e1', tipo: 'drive', nombre: 'Video planta v2.mp4', url: 'https://drive.google.com/x', drive_file_id: 'x', origen_task_id: null }] });
-    fireEvent.click(screen.getByRole('tab', { name: /Evidencia/ }));
     expect(screen.getByRole('link', { name: /Video planta v2.mp4/ })).toHaveAttribute('href', 'https://drive.google.com/x');
     fireEvent.click(screen.getByRole('button', { name: 'Quitar Video planta v2.mp4' }));
     await waitFor(() => expect(minutasApi.quitarEvidencia).toHaveBeenCalledWith('e1'));
@@ -85,7 +82,6 @@ describe('PuntoDialog · evidencia desde Drive', () => {
   it('agrega un archivo de Drive sin adjuntarlo a ninguna tarea', async () => {
     vi.mocked(minutasApi.agregarEvidencia).mockResolvedValue(minutaCon({}));
     abrir();
-    fireEvent.click(screen.getByRole('tab', { name: /Evidencia/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Elegir de Drive' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Elegir archivo falso' }));
     await waitFor(() => expect(minutasApi.agregarEvidencia).toHaveBeenCalledWith('i1', {
@@ -105,7 +101,6 @@ describe('PuntoDialog · punto completado', () => {
   it('muestra qué se hizo y permite aprobarlo en reunión', async () => {
     vi.mocked(minutasApi.accionPunto).mockResolvedValue(minutaCon({ estado: 'aprobado' }));
     abrir(completado);
-    fireEvent.click(screen.getByRole('tab', { name: /Evidencia/ }));
     expect(screen.getByText('Se puso un video de 12 s en el home.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Aprobado en reunión' }));
     await waitFor(() => expect(minutasApi.accionPunto).toHaveBeenCalledWith('i1', 'aprobar', {}));
@@ -114,18 +109,17 @@ describe('PuntoDialog · punto completado', () => {
   it('permite reabrirlo', async () => {
     vi.mocked(minutasApi.accionPunto).mockResolvedValue(minutaCon({ estado: 'en_curso' }));
     abrir(completado);
-    fireEvent.click(screen.getByRole('tab', { name: /Evidencia/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Reabrir' }));
     await waitFor(() => expect(minutasApi.accionPunto).toHaveBeenCalledWith('i1', 'reabrir', {}));
   });
 });
 
-describe('PuntoDialog · detalle', () => {
+describe('PuntoDialog · gestionar', () => {
   beforeEach(() => { vi.mocked(minutasApi.editarPunto).mockReset(); vi.mocked(minutasApi.accionPunto).mockReset(); });
 
   it('guarda los cambios del punto', async () => {
     vi.mocked(minutasApi.editarPunto).mockResolvedValue(minutaCon({}));
-    abrir();
+    abrir({}, vi.fn(), 'gestionar');
     fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Con imagen de respaldo.' } });
     fireEvent.change(screen.getByLabelText('Responsable'), { target: { value: 'cliente' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
@@ -137,7 +131,7 @@ describe('PuntoDialog · detalle', () => {
 
   it('descarta el punto solo con un motivo', async () => {
     vi.mocked(minutasApi.accionPunto).mockResolvedValue(minutaCon({ estado: 'descartado' }));
-    abrir();
+    abrir({}, vi.fn(), 'gestionar');
     fireEvent.click(screen.getByRole('button', { name: 'Descartar punto' }));
     const confirmar = screen.getByRole('button', { name: 'Confirmar descarte' });
     expect(confirmar).toBeDisabled();
@@ -156,8 +150,7 @@ describe('PuntoDialog · tareas', () => {
 
   it('lista las tareas vinculadas y permite desvincular', async () => {
     vi.mocked(minutasApi.desvincularTarea).mockResolvedValue(minutaCon({}));
-    abrir({ tareas: [{ id: 't1', titulo_tarea: 'Editar el video de planta', estado: 'en_proceso', fecha_entrega: '2026-09-26', responsable: { id: 'u1', nombre: 'Majo Vera' } }] });
-    fireEvent.click(screen.getByRole('tab', { name: /Tareas/ }));
+    abrir({ tareas: [{ id: 't1', titulo_tarea: 'Editar el video de planta', estado: 'en_proceso', fecha_entrega: '2026-09-26', responsable: { id: 'u1', nombre: 'Majo Vera' } }] }, vi.fn(), 'tareas');
     expect(screen.getByText('Editar el video de planta')).toBeInTheDocument();
     expect(screen.getByText(/En proceso/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Desvincular Editar el video de planta' }));
@@ -167,8 +160,7 @@ describe('PuntoDialog · tareas', () => {
   it('busca una tarea de la misma marca y la vincula', async () => {
     vi.mocked(apiClient.getTasks).mockResolvedValue({ tasks: [{ id: 't9', titulo_tarea: 'Maquetar el menú principal', estado: 'backlog' }], total: 1 });
     vi.mocked(minutasApi.vincularTarea).mockResolvedValue(minutaCon({}));
-    abrir();
-    fireEvent.click(screen.getByRole('tab', { name: /Tareas/ }));
+    abrir({}, vi.fn(), 'tareas');
     fireEvent.change(screen.getByLabelText('Buscar una tarea de Dinatek'), { target: { value: 'menú' } });
     await waitFor(() => expect(apiClient.getTasks).toHaveBeenCalledWith({ brand_id: 'b1', search: 'menú', limit: 8 }));
     fireEvent.click(await screen.findByRole('button', { name: 'Vincular Maquetar el menú principal' }));
@@ -180,13 +172,20 @@ describe('PuntoDialog · nueva tarea', () => {
   beforeEach(() => { navigate.mockReset(); });
 
   it('abre el formulario de tarea de siempre, prellenado con el punto', () => {
-    abrir({ descripcion: 'Botón fijo abajo.', fecha_compromiso: '2026-10-03' });
-    fireEvent.click(screen.getByRole('tab', { name: /Tareas/ }));
+    abrir({ descripcion: 'Botón fijo abajo.', fecha_compromiso: '2026-10-03' }, vi.fn(), 'tareas');
     fireEvent.click(screen.getByRole('button', { name: 'Nueva tarea' }));
     expect(navigate).toHaveBeenCalledWith(urlNuevaTareaDesdePunto({
       brandId: 'b1', projectId: 'p1', titulo: 'Video en el home',
       detalle: 'Botón fijo abajo.\n\nOrigen: Dinatek M-03, punto 3.2.',
       fechaEntrega: '2026-10-03', minutaItemId: 'i1', minutaId: 'm3',
     }));
+  });
+});
+
+describe('PuntoDialog · sin pestañas', () => {
+  it('muestra una sola vista, sin barra de pestañas', () => {
+    abrir({}, vi.fn(), 'tareas');
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nueva tarea' })).toBeInTheDocument();
   });
 });

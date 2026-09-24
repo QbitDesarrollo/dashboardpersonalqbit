@@ -13,7 +13,7 @@ vi.mock('@/lib/minutasApi', () => ({ obtenerMinuta: vi.fn(), agregarPunto: vi.fn
 vi.mock('@/lib/minutaPdf', () => ({ exportarMinutaPdf: vi.fn() }));
 vi.mock('@/lib/apiClient', () => ({ getProfiles: vi.fn(async () => []), getProjects: vi.fn(async () => [{ id: 'p1', nombre: 'Rediseño del sitio web Dinatek' }]) }));
 vi.mock('@/components/minutas/PuntoDialog', () => ({
-  PuntoDialog: ({ punto, abierto }: { punto: Punto; abierto: boolean }) => (abierto ? <div role="dialog">Diálogo de {punto.titulo}</div> : null),
+  PuntoDialog: ({ punto, abierto, vista }: { punto: Punto; abierto: boolean; vista: string }) => (abierto ? <div role="dialog">{vista}: {punto.titulo}</div> : null),
 }));
 vi.mock('@/lib/minutas', async (orig) => ({ ...(await orig<typeof import('@/lib/minutas')>()), hoyEcuador: () => '2026-09-24' }));
 
@@ -47,17 +47,35 @@ describe('MinutaDetalle', () => {
     vi.mocked(minutasApi.editarMinuta).mockReset();
   });
 
-  it('muestra la minuta con sus puntos y abre el punto al tocarlo', async () => {
+  it('muestra la minuta y cada punto con su descripción completa, para leer de corrido', async () => {
     renderDetalle();
     expect(await screen.findByRole('heading', { name: 'Revisión de avance: home y catálogo' })).toBeInTheDocument();
     expect(screen.getByText(/Dinatek · M-03 · 22 sep 2026/)).toBeInTheDocument();
     expect(screen.getByText('Acuerdo: lanzamiento el 26 de noviembre.')).toBeInTheDocument();
-    const fila = screen.getByRole('button', { name: /3\.1 Filtro por marca/ });
-    expect(fila).toHaveTextContent('En curso');
-    expect(fila).toHaveTextContent('Vencido hace 5 días');
-    expect(screen.getByRole('button', { name: /3\.2 Fichas técnicas/ })).toHaveTextContent('Esperando al cliente');
-    fireEvent.click(fila);
-    expect(screen.getByRole('dialog')).toHaveTextContent('Diálogo de Filtro por marca');
+    const punto = screen.getByRole('listitem', { name: 'Punto 3.1' });
+    expect(punto).toHaveTextContent('Filtro por marca');
+    expect(punto).toHaveTextContent('Sobre todo en celular');
+    expect(punto).toHaveTextContent('En curso');
+    expect(punto).toHaveTextContent('Vencido hace 5 días');
+    expect(screen.getByRole('listitem', { name: 'Punto 3.2' })).toHaveTextContent('Esperando al cliente');
+  });
+
+  it('cada acción del punto abre solo lo suyo', async () => {
+    renderDetalle();
+    fireEvent.click(await screen.findByRole('button', { name: 'Cerrar el punto 3.1' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('evidencia: Filtro por marca');
+    fireEvent.click(screen.getByRole('button', { name: 'Tareas del punto 3.1' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('tareas: Filtro por marca');
+    fireEvent.click(screen.getByRole('button', { name: 'Evidencias del punto 3.1' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('evidencia: Filtro por marca');
+    fireEvent.click(screen.getByRole('button', { name: 'Gestionar el punto 3.1' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('gestionar: Filtro por marca');
+  });
+
+  it('un punto del cliente no tiene tareas', async () => {
+    renderDetalle();
+    await screen.findByRole('listitem', { name: 'Punto 3.2' });
+    expect(screen.queryByRole('button', { name: 'Tareas del punto 3.2' })).not.toBeInTheDocument();
   });
 
   it('agrega un punto con Enter', async () => {
@@ -67,7 +85,7 @@ describe('MinutaDetalle', () => {
     fireEvent.change(campo, { target: { value: 'Botón de WhatsApp' } });
     fireEvent.keyDown(campo, { key: 'Enter' });
     await waitFor(() => expect(minutasApi.agregarPunto).toHaveBeenCalledWith('m3', { titulo: 'Botón de WhatsApp' }));
-    expect(await screen.findByRole('button', { name: /3\.3 Botón de WhatsApp/ })).toBeInTheDocument();
+    expect(await screen.findByRole('listitem', { name: 'Punto 3.3' })).toHaveTextContent('Botón de WhatsApp');
   });
 
   it('publica una minuta en borrador', async () => {

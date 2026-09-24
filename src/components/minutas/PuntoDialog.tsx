@@ -18,16 +18,19 @@ import { Switch } from '@/components/ui/switch';
 import { SELECT } from './EditorPuntos';
 import { cn } from '@/lib/utils';
 
+export type VistaPunto = 'evidencia' | 'tareas' | 'gestionar';
+
 interface Props {
   minuta: Minuta;
   punto: Punto;
+  /** Qué parte del punto se abre: cada acción de la lista abre solo lo suyo. */
+  vista: VistaPunto;
   personas: { id: string; nombre: string }[];
   abierto: boolean;
   onOpenChange: (abierto: boolean) => void;
   onActualizada: (minuta: Minuta) => void;
 }
 
-type Pestana = 'detalle' | 'tareas' | 'evidencia';
 
 // Mismas etiquetas que Proyectos para los estados de tarea.
 const ESTADO_TAREA: Record<string, string> = {
@@ -42,8 +45,9 @@ function fechaLocal(iso: string): string {
 }
 
 
-export function PuntoDialog({ minuta, punto, personas, abierto, onOpenChange, onActualizada }: Props) {
-  const [pestana, setPestana] = useState<Pestana>('detalle');
+const TITULO_VISTA: Record<VistaPunto, string> = { evidencia: 'Evidencia', tareas: 'Tareas', gestionar: 'Gestionar' };
+
+export function PuntoDialog({ minuta, punto, personas, vista, abierto, onOpenChange, onActualizada }: Props) {
   const [resolucion, setResolucion] = useState(punto.resolucion ?? '');
   const [enviando, setEnviando] = useState(false);
   const [enlaceNombre, setEnlaceNombre] = useState('');
@@ -156,41 +160,21 @@ export function PuntoDialog({ minuta, punto, personas, abierto, onOpenChange, on
       </ul>
     );
 
-  const pestanas: { clave: Pestana; texto: string }[] = [
-    { clave: 'detalle', texto: 'Detalle' },
-    ...(punto.responsable_cliente ? [] : [{ clave: 'tareas' as const, texto: `Tareas${punto.tareas.length ? ` (${punto.tareas.length})` : ''}` }]),
-    { clave: 'evidencia', texto: punto.responsable_cliente ? 'Recepción' : `Evidencia${punto.evidencias.length ? ` (${punto.evidencias.length})` : ''}` },
-  ];
 
   return (
     <Dialog open={abierto} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl w-[95vw] max-h-[92vh] overflow-y-auto p-0 gap-0">
         <DialogHeader className="px-5 pt-5 pb-3 space-y-2 text-left">
           <DialogDescription className="font-mono text-xs uppercase tracking-wide">
-            M-{String(minuta.numero).padStart(2, '0')} · Punto {minuta.numero}.{punto.numero}
+            {minuta.codigo} · Punto {minuta.numero}.{punto.numero} · {TITULO_VISTA[vista]}
           </DialogDescription>
           <DialogTitle className="text-xl leading-snug">{punto.titulo}</DialogTitle>
           <span className={cn('inline-flex w-fit rounded-full px-2.5 py-0.5 text-xs font-medium', TONO[estado.tono])}>{estado.texto}</span>
         </DialogHeader>
 
-        <div role="tablist" className="flex gap-1 border-b px-3">
-          {pestanas.map((t) => (
-            <button
-              key={t.clave}
-              role="tab"
-              type="button"
-              aria-selected={pestana === t.clave}
-              onClick={() => setPestana(t.clave)}
-              className={cn('border-b-2 px-2.5 py-2.5 text-sm font-medium transition-colors',
-                pestana === t.clave ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}
-            >
-              {t.texto}
-            </button>
-          ))}
-        </div>
 
         <div className="p-5 space-y-4">
-          {pestana === 'detalle' && (
+          {vista === 'gestionar' && (
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="pd-titulo">Título</Label>
@@ -244,7 +228,7 @@ export function PuntoDialog({ minuta, punto, personas, abierto, onOpenChange, on
             </div>
           )}
 
-          {pestana === 'tareas' && (
+          {vista === 'tareas' && (
             <div className="space-y-4">
               {punto.tareas.length === 0 ? (
                 <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
@@ -316,7 +300,7 @@ export function PuntoDialog({ minuta, punto, personas, abierto, onOpenChange, on
             </div>
           )}
 
-          {pestana === 'evidencia' && (cerrado ? (
+          {vista === 'evidencia' && (cerrado ? (
             <div className="space-y-4">
               <section className="space-y-1">
                 <h3 className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">{punto.responsable_cliente ? 'Qué llegó' : 'Qué se hizo'}</h3>
