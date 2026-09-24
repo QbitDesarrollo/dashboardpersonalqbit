@@ -9,6 +9,7 @@ import { createNotification } from '../utils/notifications.js';
 import { sendEmail, taskAssignmentEmail, taskHandoffEmail } from '../services/email.js';
 import { processCommentMentions } from '../utils/mentions.js';
 import { autoSyncTaskToCalendar } from '../utils/googleCalendarSync.js';
+import { sinHtmlVacio } from '../utils/html.js';
 
 const createTaskSchema = z.object({
   titulo_tarea: z.string().min(1, 'Título requerido').max(500),
@@ -499,7 +500,7 @@ tasksRouter.post('/tasks', requireAuth, async (req: AuthRequest, res) => {
     await query(
       `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, department_id, project_id, folder_id, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        id, body.check_done ? 1 : 0, body.brand_id, body.desk_id || null, body.titulo_tarea, body.detalle || null,
+        id, body.check_done ? 1 : 0, body.brand_id, body.desk_id || null, body.titulo_tarea, sinHtmlVacio(body.detalle) || null,
         body.cantidad_entregables ?? 1, primaryResponsable, body.departamento || null, body.department_id || null, body.project_id || null,
         body.folder_id || null,
         body.prioridad || 'media', body.estado || 'backlog', body.fecha_inicio || null, body.fecha_entrega,
@@ -639,6 +640,8 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
     if (body.fecha_entrega !== undefined && body.fecha_cliente === undefined && oldRow?.client_board_id && !oldRow?.fecha_cliente) {
       body.fecha_cliente = body.fecha_entrega;
     }
+
+    if (body.detalle !== undefined) body.detalle = sinHtmlVacio(body.detalle);
 
     const fields: string[] = [];
     const values: any[] = [];

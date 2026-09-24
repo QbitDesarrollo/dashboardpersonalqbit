@@ -4,6 +4,7 @@ import { query, queryOne, uuid } from '../db/mysql.js';
 import { getUserRole } from '../utils/roles.js';
 import { createNotification } from '../utils/notifications.js';
 import { sendEmail, incidenciaNuevaEmail, incidenciaComentarioEmail, incidenciaEstadoEmail } from '../services/email.js';
+import { sinHtmlVacio } from '../utils/html.js';
 
 export const incidenciasRouter = Router();
 
@@ -185,7 +186,7 @@ incidenciasRouter.post('/incidencias', requireAuth, async (req: AuthRequest, res
     await query(
       `INSERT INTO incidencias (id, titulo, descripcion, tipo, prioridad, estado, modulo, creado_por_id)
        VALUES (?, ?, ?, ?, ?, 'ABIERTO', ?, ?)`,
-      [id, titulo.trim().slice(0, 200), typeof descripcion === 'string' ? descripcion : null, t, p, modulo || null, req.userId]
+      [id, titulo.trim().slice(0, 200), typeof descripcion === 'string' ? sinHtmlVacio(descripcion) : null, t, p, modulo || null, req.userId]
     );
 
     logActividad(id, req.userId!, `Creó la incidencia (${t}, prioridad ${p})`);

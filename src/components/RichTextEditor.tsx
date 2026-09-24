@@ -146,7 +146,8 @@ export function RichTextEditor({
     content,
     editable,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      // An empty editor still renders "<p></p>"; report it as empty so blank details stay blank.
+      onChange(editor.isEmpty ? '' : editor.getHTML());
     },
     editorProps: {
       handlePaste: (view, event) => {
@@ -202,13 +203,13 @@ export function RichTextEditor({
 
   useEffect(() => {
     if (editor && !editor.isFocused && content !== editor.getHTML()) {
-      editor.commands.setContent(content || '', false);
+      editor.commands.setContent(content || '', { emitUpdate: false });
     }
   }, [content, editor]);
 
   useEffect(() => {
     if (editor) {
-      editor.setEditable(editable);
+      editor.setEditable(editable, false);
     }
   }, [editable, editor]);
 
@@ -533,7 +534,7 @@ export function RichTextViewer({ content }: { content: string }) {
 
   useEffect(() => {
     if (editor && !editor.isFocused && content !== editor.getHTML()) {
-      editor.commands.setContent(content || '', false);
+      editor.commands.setContent(content || '', { emitUpdate: false });
     }
   }, [content, editor]);
 
