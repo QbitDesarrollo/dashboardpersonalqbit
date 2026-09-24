@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useTareaDesdeMinuta } from '@/hooks/useTareaDesdeMinuta';
 import * as api from '@/lib/apiClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
@@ -99,7 +98,6 @@ import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 import { RichTextViewer } from '@/components/RichTextEditor';
 import { DepartmentBadge, useDepartments } from '@/components/tasks/DepartmentSelect';
 import { TaskFormDialog } from '@/components/tasks/form/TaskFormDialog';
-import type { TareaFormValues } from '@/lib/tareaForm';
 import { HandoffDialog } from '@/components/tasks/HandoffDialog';
 
 interface Task {
@@ -209,7 +207,6 @@ export default function Tasks() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskReads, setTaskReads] = useState<{ user_id: string; read_at: string; nombre: string; avatar_url: string | null }[]>([]);
   const [tareaEditando, setTareaEditando] = useState<Task | null>(null);
-  const [prellenado, setPrellenado] = useState<Partial<TareaFormValues> | undefined>(undefined);
   const [page, setPage] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
   const [savedFilters, setSavedFilters] = useState<{ id: string; name: string; filter_config: Record<string, unknown> }[]>([]);
@@ -670,16 +667,8 @@ export default function Tasks() {
 
   const abrirNuevaTarea = () => {
     setTareaEditando(null);
-    setPrellenado(undefined);
     setDialogOpen(true);
   };
-
-  // "Nueva tarea" desde un punto de minuta: formulario prellenado por URL.
-  const tareaDesdeMinuta = useTareaDesdeMinuta((form) => {
-    setTareaEditando(null);
-    setPrellenado(form);
-    setDialogOpen(true);
-  });
 
   const openEditDialog = (task: Task) => {
     setTareaEditando(task);
@@ -2496,18 +2485,14 @@ export default function Tasks() {
         </DialogContent>
       </Dialog>
 
-      {/* Formulario de tarea (crear / editar) — compartido con Minutas */}
+      {/* Formulario de tarea (crear / editar), compartido con Minutas */}
       <TaskFormDialog
         open={dialogOpen}
-        onOpenChange={(open) => { setDialogOpen(open); if (!open) tareaDesdeMinuta.cancelar(); }}
+        onOpenChange={setDialogOpen}
         tarea={tareaEditando}
-        prellenado={prellenado}
         mesaPorDefecto={filterDesk !== 'all' ? filterDesk : (pinnedDeskId || '')}
         puedeEditarArchivos={tareaEditando ? canEditTask(tareaEditando) : true}
-        onGuardada={({ id, creada }) => {
-          fetchData();
-          if (creada) tareaDesdeMinuta.alCrearTarea(id);
-        }}
+        onGuardada={() => fetchData()}
       />
 
       {/* Bulk Actions bar — aparece al seleccionar tareas */}

@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PuntoDialog } from './PuntoDialog';
-import { urlNuevaTareaDesdePunto } from '@/lib/tareaDesdePunto';
+import { prellenadoDesdePunto } from '@/lib/tareaDesdePunto';
 import * as minutasApi from '@/lib/minutasApi';
 import * as apiClient from '@/lib/apiClient';
+import { toast } from 'sonner';
 import type { Minuta, Punto } from '@/lib/minutasApi';
 
 vi.mock('@/lib/minutasApi', () => ({
@@ -11,6 +12,7 @@ vi.mock('@/lib/minutasApi', () => ({
   vincularTarea: vi.fn(), desvincularTarea: vi.fn(),
 }));
 vi.mock('@/lib/apiClient', () => ({ getTasks: vi.fn(), uploadEditorImage: vi.fn() }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const navigate = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 vi.mock('@/components/drive/DriveBrowser', () => ({
@@ -19,6 +21,19 @@ vi.mock('@/components/drive/DriveBrowser', () => ({
       Elegir archivo falso
     </button>
   ),
+}));
+
+let formularioTarea: { prellenado?: unknown } = {};
+vi.mock('@/components/tasks/form/TaskFormDialog', () => ({
+  TaskFormDialog: (props: { open: boolean; prellenado?: { titulo_tarea?: string }; onOpenChange: (o: boolean) => void; onGuardada?: (r: { id: string; creada: boolean }) => void }) => {
+    formularioTarea = props;
+    return props.open ? (
+      <div role="dialog" aria-label="Nueva Tarea">
+        <p>{props.prellenado?.titulo_tarea}</p>
+        <button type="button" onClick={() => { props.onGuardada?.({ id: 't-nueva', creada: true }); props.onOpenChange(false); }}>Guardar tarea falsa</button>
+      </div>
+    ) : null;
+  },
 }));
 
 const base: Punto = {
@@ -167,16 +182,32 @@ describe('PuntoDialog · tareas', () => {
 });
 
 describe('PuntoDialog · nueva tarea', () => {
-  beforeEach(() => { navigate.mockReset(); });
+  beforeEach(() => { navigate.mockReset(); vi.mocked(minutasApi.vincularTarea).mockReset(); });
 
-  it('abre el formulario de tarea de siempre, prellenado con el punto', () => {
-    abrir({ descripcion: 'Botón fijo abajo.', fecha_compromiso: '2026-10-03' }, vi.fn(), 'tareas');
+  it('crea la tarea en un modal prellenado con el punto y la vincula sin salir de la minuta', async () => {
+    const vinculada = minutaCon({ tareas: [{ id: 't-nueva', titulo_tarea: 'Video en el home', estado: 'backlog', fecha_entrega: '2026-10-03', responsable: null }] });
+    vi.mocked(minutasApi.vincularTarea).mockResolvedValue(vinculada);
+    const onActualizada = abrir({ descripcion: 'Botón fijo abajo.', fecha_compromiso: '2026-10-03' }, vi.fn(), 'tareas');
     fireEvent.click(screen.getByRole('button', { name: 'Nueva tarea' }));
-    expect(navigate).toHaveBeenCalledWith(urlNuevaTareaDesdePunto({
-      brandId: 'b1', projectId: 'p1', titulo: 'Video en el home',
-      detalle: 'Botón fijo abajo.\n\nOrigen: Dinatek M-03, punto 3.2.',
-      fechaEntrega: '2026-10-03', minutaItemId: 'i1', minutaId: 'm3',
-    }));
+
+    expect(screen.getByRole('dialog', { name: 'Nueva Tarea' })).toHaveTextContent('Video en el home');
+    expect(formularioTarea.prellenado).toEqual(prellenadoDesdePunto(minutaCon({}), { ...base, descripcion: 'Botón fijo abajo.', fecha_compromiso: '2026-10-03' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar tarea falsa' }));
+
+    await waitFor(() => expect(minutasApi.vincularTarea).toHaveBeenCalledWith('i1', 't-nueva'));
+    await waitFor(() => expect(onActualizada).toHaveBeenCalledWith(vinculada));
+    expect(screen.queryByRole('dialog', { name: 'Nueva Tarea' })).not.toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('si no se pudo vincular, lo dice para vincularla a mano', async () => {
+    vi.mocked(minutasApi.vincularTarea).mockRejectedValue(new Error('La tarea es de otra marca.'));
+    const onActualizada = abrir({}, vi.fn(), 'tareas');
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva tarea' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar tarea falsa' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('La tarea se creó, pero no se pudo vincular al punto. Búscala abajo para vincularla.'));
+    expect(onActualizada).not.toHaveBeenCalled();
   });
 });
 

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Plus, Search, SquareCheck, X } from 'lucide-react';
 import { desvincularTarea, vincularTarea, type Minuta, type Punto } from '@/lib/minutasApi';
 import { getTasks } from '@/lib/apiClient';
+import { toast } from 'sonner';
 import { etiquetaTarea } from '@/lib/minutas';
-import { urlNuevaTareaDesdePunto } from '@/lib/tareaDesdePunto';
+import { prellenadoDesdePunto } from '@/lib/tareaDesdePunto';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { TaskFormDialog } from '@/components/tasks/form/TaskFormDialog';
 import { usePuntoAcciones } from './usePuntoAcciones';
 
 interface Props {
@@ -17,12 +18,22 @@ interface Props {
 
 interface TareaEncontrada { id: string; titulo_tarea: string; estado: string }
 
-/** Tareas del punto: las vinculadas, crear una nueva o vincular una existente de la misma marca. */
+/** Tareas del punto: las vinculadas, crear nuevas aquí mismo o vincular una existente de la misma marca. */
 export function VistaTareas({ minuta, punto, onActualizada }: Props) {
   const { conError } = usePuntoAcciones(punto.id, onActualizada);
-  const navigate = useNavigate();
   const [busqueda, setBusqueda] = useState('');
+  const [creando, setCreando] = useState(false);
   const [encontradas, setEncontradas] = useState<TareaEncontrada[]>([]);
+
+  // The task already exists at this point; if linking fails it can still be linked from the search below.
+  const vincularNueva = async ({ id }: { id: string }) => {
+    try {
+      onActualizada(await vincularTarea(punto.id, id));
+      toast.success('Tarea vinculada al punto');
+    } catch {
+      toast.error('La tarea se creó, pero no se pudo vincular al punto. Búscala abajo para vincularla.');
+    }
+  };
 
   useEffect(() => {
     const texto = busqueda.trim();
@@ -68,18 +79,10 @@ export function VistaTareas({ minuta, punto, onActualizada }: Props) {
         </ul>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => navigate(urlNuevaTareaDesdePunto({
-          brandId: minuta.brand_id,
-          projectId: minuta.project_id,
-          titulo: punto.titulo,
-          detalle: [punto.descripcion, `Origen: ${minuta.brand_nombre} ${minuta.codigo}, punto ${minuta.numero}.${punto.numero}.`].filter(Boolean).join('\n\n'),
-          fechaEntrega: punto.fecha_compromiso,
-          minutaItemId: punto.id,
-          minutaId: minuta.id,
-        }))}>
+        <Button onClick={() => setCreando(true)}>
           <Plus className="h-4 w-4" />Nueva tarea
         </Button>
-        <span className="text-xs text-muted-foreground">Abre el formulario de tarea de siempre, prellenado. Al guardar vuelves aquí.</span>
+        <span className="text-xs text-muted-foreground">Se crea con el formulario de Tareas, ya prellenado, y queda vinculada a este punto.</span>
       </div>
       <div className="space-y-2">
         <div className="relative">
@@ -105,6 +108,12 @@ export function VistaTareas({ minuta, punto, onActualizada }: Props) {
           </button>
         ))}
       </div>
+      <TaskFormDialog
+        open={creando}
+        onOpenChange={setCreando}
+        prellenado={prellenadoDesdePunto(minuta, punto)}
+        onGuardada={vincularNueva}
+      />
     </div>
   );
 }

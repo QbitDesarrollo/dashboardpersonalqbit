@@ -1,54 +1,24 @@
+import type { TareaFormValues } from './tareaForm';
+
+const escapar = (texto: string) => texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const parrafo = (texto: string) => `<p>${escapar(texto).split('\n').join('<br>')}</p>`;
+
 /**
- * "Nueva tarea" desde un punto de minuta reutiliza el formulario de siempre de
- * la página Tareas: el punto arma esta URL y Tareas la lee, abre su formulario
- * prellenado y, al guardar, vincula la tarea al punto y vuelve a la minuta.
+ * Starting values of a task created from a minuta point. The detail is HTML because
+ * the task form edits it as rich text; it ends with where the task came from.
+ * The desk is left empty on purpose: the last one used may not serve this brand.
  */
-
-export interface DatosTareaDesdePunto {
-  brandId: string;
-  projectId: string | null;
-  titulo: string;
-  detalle: string;
-  fechaEntrega: string | null;
-  minutaItemId: string;
-  minutaId: string;
-}
-
-export interface PrefillNuevaTarea {
-  form: {
-    titulo_tarea: string;
-    detalle: string;
-    brand_id: string;
-    project_id: string;
-    fecha_entrega: string;
-    // La mesa se elige a mano: la última usada podría no atender a esta marca.
-    desk_id: string;
-  };
-  minutaItemId: string | null;
-  volver: string | null;
-}
-
-export function urlNuevaTareaDesdePunto(d: DatosTareaDesdePunto): string {
-  const qs = new URLSearchParams({ nueva: '1', brand_id: d.brandId, titulo: d.titulo, detalle: d.detalle, minuta_item: d.minutaItemId, volver: `/minutas/${d.minutaId}` });
-  if (d.projectId) qs.set('project_id', d.projectId);
-  if (d.fechaEntrega) qs.set('fecha_entrega', d.fechaEntrega);
-  return `/tareas?${qs.toString()}`;
-}
-
-export function leerPrefillNuevaTarea(qs: URLSearchParams): PrefillNuevaTarea | null {
-  if (qs.get('nueva') !== '1') return null;
-  const volver = qs.get('volver') ?? '';
+export function prellenadoDesdePunto(
+  minuta: { brand_id: string; brand_nombre: string; project_id: string | null; codigo: string; numero: number },
+  punto: { numero: number; titulo: string; descripcion: string | null; fecha_compromiso: string | null },
+): Partial<TareaFormValues> {
+  const origen = `Origen: ${minuta.brand_nombre} ${minuta.codigo}, punto ${minuta.numero}.${punto.numero}.`;
   return {
-    form: {
-      titulo_tarea: qs.get('titulo') ?? '',
-      detalle: qs.get('detalle') ?? '',
-      brand_id: qs.get('brand_id') ?? '',
-      project_id: qs.get('project_id') ?? '',
-      fecha_entrega: qs.get('fecha_entrega') ?? '',
-      desk_id: '',
-    },
-    minutaItemId: qs.get('minuta_item'),
-    // Solo se vuelve a una minuta: evita que el enlace se use para redirigir a otro sitio.
-    volver: /^\/minutas\/[\w-]+$/.test(volver) ? volver : null,
+    brand_id: minuta.brand_id,
+    project_id: minuta.project_id ?? '',
+    desk_id: '',
+    titulo_tarea: punto.titulo,
+    fecha_entrega: punto.fecha_compromiso ?? '',
+    detalle: [punto.descripcion, origen].filter(Boolean).map((t) => parrafo(t as string)).join(''),
   };
 }
