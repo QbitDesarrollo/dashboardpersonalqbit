@@ -4,7 +4,7 @@ import { agregarNota, type Minuta, type Punto } from '@/lib/minutasApi';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { usePuntoAcciones } from './usePuntoAcciones';
+import { usePuntoAcciones } from '../usePuntoAcciones';
 
 interface Props {
   punto: Punto;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, FileDown, FolderKanban, Link2, Loader2, Pencil, Plus, Presentation, SquareCheck, User } from 'lucide-react';
+import { ArrowLeft, CalendarDays, FileDown, FolderKanban, Link2, Loader2, Pencil, Plus, Presentation, SquareCheck, User } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
 import { agregarPunto, borrarMinuta, editarMinuta, obtenerMinuta, type Minuta, type Punto } from '@/lib/minutasApi';
@@ -19,15 +19,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { SELECT } from '@/components/minutas/EditorPuntos';
 import { SelectorEquipo } from '@/components/minutas/SelectorEquipo';
+import { IconoEstado } from '@/components/minutas/IconoEstado';
 import { PuntoDialog, type VistaPunto } from '@/components/minutas/PuntoDialog';
 import { TONO } from '@/components/minutas/tonos';
 import { cn } from '@/lib/utils';
-
-function IconoEstado({ p }: { p: Punto }) {
-  if (p.estado === 'completado' || p.estado === 'aprobado') return <CheckCircle2 className="h-5 w-5 text-primary" />;
-  if (p.estado === 'en_curso') return <CircleDashed className="h-5 w-5 text-blue-600" />;
-  return <Circle className={cn('h-5 w-5', p.responsable_cliente ? 'text-amber-500' : 'text-muted-foreground/60')} />;
-}
 
 function FilaPunto({ minuta, p, hoy, onAbrir }: { minuta: Minuta; p: Punto; hoy: string; onAbrir: (vista: VistaPunto) => void }) {
   const codigo = `${minuta.numero}.${p.numero}`;

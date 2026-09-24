@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import MinutaPresentar from './MinutaPresentar';
 import * as minutasApi from '@/lib/minutasApi';
@@ -19,7 +19,7 @@ const punto = (p: Partial<Punto>): Punto => ({
 const minuta: Minuta = {
   id: 'm3', brand_id: 'b1', brand_nombre: 'Dinatek', project_id: null, project_nombre: null,
   numero: 3, codigo: 'M-03', titulo: 'Revisión de avance: home y catálogo', fecha: '2026-09-22', estado: 'publicada',
-  owner: { id: 'u1', nombre: 'Even' }, miembros: [], resumen: null, progreso: { total: 3, cerrados: 1, enCurso: 1 },
+  owner: { id: 'u1', nombre: 'Even' }, miembros: [], resumen: 'Acuerdo: lanzamiento el 26 de noviembre.', progreso: { total: 3, cerrados: 1, enCurso: 1 },
   items: [
     punto({}),
     punto({ id: 'i2', numero: 2, titulo: 'Revisar costos del hosting', visible_cliente: false, estado: 'en_curso' }),
@@ -104,9 +104,46 @@ describe('MinutaPresentar', () => {
     fireEvent.change(screen.getByLabelText('Nota del cliente'), { target: { value: ' Las envía el lunes. ' } });
     fireEvent.click(guardar);
     expect(minutasApi.agregarNota).toHaveBeenCalledWith('i4', 'Las envía el lunes.');
-    expect(await screen.findByRole('listitem')).toHaveTextContent('Nota: Las envía el lunes.');
+    await waitFor(() => expect(within(screen.getByRole('article')).getByRole('listitem')).toHaveTextContent('Las envía el lunes.'));
     expect(screen.queryByLabelText('Nota del cliente')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Fichas técnicas' })).toBeInTheDocument();
+  });
+
+  it('siempre muestra el resumen de la minuta mientras se recorren los puntos', async () => {
+    renderPresentar();
+    const resumen = await screen.findByRole('region', { name: 'Resumen y acuerdos' });
+    expect(resumen).toHaveTextContent('Acuerdo: lanzamiento el 26 de noviembre.');
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+    expect(screen.getByRole('region', { name: 'Resumen y acuerdos' })).toHaveTextContent('Acuerdo: lanzamiento el 26 de noviembre.');
+  });
+
+  it('el índice lista los puntos visibles y lleva a cualquiera', async () => {
+    renderPresentar();
+    const indice = await screen.findByRole('navigation', { name: 'Puntos de la minuta' });
+    const botones = within(indice).getAllByRole('button');
+    expect(botones.map((b) => b.textContent)).toEqual([expect.stringContaining('3.1'), expect.stringContaining('3.4')]);
+    expect(within(indice).getByRole('button', { name: /Video en el home/ })).toHaveAttribute('aria-current', 'step');
+    fireEvent.click(within(indice).getByRole('button', { name: /Fichas técnicas/ }));
+    expect(screen.getByRole('heading', { name: 'Fichas técnicas' })).toBeInTheDocument();
+    expect(within(indice).getByRole('button', { name: /Fichas técnicas/ })).toHaveAttribute('aria-current', 'step');
+  });
+
+  it('avanza y retrocede con las flechas, salvo mientras se escribe una nota', async () => {
+    renderPresentar();
+    await screen.findByRole('heading', { name: 'Video en el home' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(screen.getByRole('heading', { name: 'Fichas técnicas' })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(screen.getByRole('heading', { name: 'Video en el home' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar nota' }));
+    fireEvent.keyDown(screen.getByLabelText('Nota del cliente'), { key: 'ArrowRight' });
+    expect(screen.getByRole('heading', { name: 'Video en el home' })).toBeInTheDocument();
+  });
+
+  it('muestra cuántos puntos para el cliente ya están listos', async () => {
+    renderPresentar();
+    expect(await screen.findByText('1 de 2 listos')).toBeInTheDocument();
   });
 
   it('permite salir de la presentación a la minuta', async () => {
