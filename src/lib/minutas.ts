@@ -70,3 +70,8 @@ export function aPuntosNuevos(borrador: { titulo: string; descripcion: string; r
       fecha_compromiso: p.fecha || null,
     }));
 }
+
+/** Fecha de hoy (YYYY-MM-DD) en Guayaquil. En UTC, después de las 19:00 ya sería mañana. */
+export function hoyEcuador(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
+}

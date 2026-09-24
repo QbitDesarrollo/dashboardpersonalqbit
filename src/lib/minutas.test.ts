@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { estadoPunto, vencimiento, requisitosCierre, aPuntosNuevos } from './minutas';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { estadoPunto, vencimiento, requisitosCierre, aPuntosNuevos, hoyEcuador } from './minutas';
 
 describe('estadoPunto', () => {
   it.each([
@@ -63,5 +63,15 @@ describe('aPuntosNuevos', () => {
       { titulo: 'Fichas técnicas', descripcion: null, responsable_user_id: null, responsable_cliente: true, fecha_compromiso: null },
       { titulo: 'Botón de WhatsApp', descripcion: null, responsable_user_id: null, responsable_cliente: false, fecha_compromiso: null },
     ]);
+  });
+});
+
+describe('hoyEcuador', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('a las 20:00 de Guayaquil sigue siendo el mismo día aunque en UTC ya sea mañana', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-25T01:00:00Z')); // 24 sep, 20:00 en Guayaquil (UTC-5)
+    expect(hoyEcuador()).toBe('2026-09-24');
   });
 });
