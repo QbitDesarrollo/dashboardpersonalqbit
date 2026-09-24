@@ -160,6 +160,7 @@ interface Task {
   recurrence_parent_id?: string | null;
   subtask_count?: number;
   subtask_done_count?: number;
+  files_count?: number;
   cambios_cliente?: number;
   cambios_internos?: number;
   tiempo_por_persona?: { user_id: string; nombre: string; avatar_url: string | null; segundos: number }[];
@@ -1833,6 +1834,7 @@ export default function Tasks() {
                                   taskId={task.id}
                                   canEdit={canEditTask(task)}
                                   compact
+                                  conteoInicial={task.files_count != null ? Number(task.files_count) : undefined}
                                 />
                               </TableCell>
                             )}

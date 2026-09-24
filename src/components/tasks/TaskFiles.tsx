@@ -32,10 +32,13 @@ interface TaskFilesProps {
   taskId: string;
   canEdit: boolean;
   compact?: boolean;
+  /** File count already known from the task list: files are fetched only when the popover opens. */
+  conteoInicial?: number;
 }
 
-export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) {
+export function TaskFiles({ taskId, canEdit, compact = false, conteoInicial }: TaskFilesProps) {
   const [files, setFiles] = useState<TaskFile[]>([]);
+  const [cargados, setCargados] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -44,14 +47,17 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [driveRefreshKey, setDriveRefreshKey] = useState(0);
 
+  // In the Tasks table every row shows this; with the known count there is no request per row.
   useEffect(() => {
-    fetchFiles();
+    setCargados(false);
+    if (conteoInicial === undefined) fetchFiles();
   }, [taskId]);
 
   const fetchFiles = async () => {
     try {
       const data = await api.getFiles(taskId);
       setFiles(Array.isArray(data) ? data : []);
+      setCargados(true);
     } catch (error) {
       console.error('Error fetching files:', error);
     }
@@ -175,20 +181,21 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
   );
 
   if (compact) {
+    const cantidad = cargados || conteoInicial === undefined ? files.length : conteoInicial;
     return (
       <>{drivePickerElement}
-      <Popover>
+      <Popover onOpenChange={(abierto) => { if (abierto && !cargados) fetchFiles(); }}>
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
             className={cn(
               "h-8 gap-1 px-2",
-              files.length > 0 && "text-primary"
+              cantidad > 0 && "text-primary"
             )}
           >
             <Paperclip className="h-4 w-4" />
-            {files.length > 0 && <span className="text-xs">{files.length}</span>}
+            {cantidad > 0 && <span className="text-xs">{cantidad}</span>}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-3" align="start">
