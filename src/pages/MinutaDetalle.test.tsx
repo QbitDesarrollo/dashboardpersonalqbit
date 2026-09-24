@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+
+const navigate = vi.fn();
+vi.mock('react-router-dom', async (orig) => ({ ...(await orig<typeof import('react-router-dom')>()), useNavigate: () => navigate }));
 import MinutaDetalle from './MinutaDetalle';
 import * as minutasApi from '@/lib/minutasApi';
 import type { Minuta, Punto } from '@/lib/minutasApi';
 
 vi.mock('@/lib/minutasApi', () => ({ obtenerMinuta: vi.fn(), agregarPunto: vi.fn(), editarMinuta: vi.fn(), borrarMinuta: vi.fn() }));
-vi.mock('@/lib/apiClient', () => ({ getProfiles: vi.fn(async () => []) }));
+vi.mock('@/lib/apiClient', () => ({ getProfiles: vi.fn(async () => []), getProjects: vi.fn(async () => [{ id: 'p1', nombre: 'Rediseño del sitio web Dinatek' }]) }));
 vi.mock('@/components/minutas/PuntoDialog', () => ({
   PuntoDialog: ({ punto, abierto }: { punto: Punto; abierto: boolean }) => (abierto ? <div role="dialog">Diálogo de {punto.titulo}</div> : null),
 }));
@@ -71,5 +74,36 @@ describe('MinutaDetalle', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Publicar' }));
     await waitFor(() => expect(minutasApi.editarMinuta).toHaveBeenCalledWith('m3', { estado: 'publicada' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Publicar' })).not.toBeInTheDocument());
+  });
+});
+
+describe('MinutaDetalle · editar y borrar', () => {
+  beforeEach(() => {
+    vi.mocked(minutasApi.obtenerMinuta).mockReset().mockResolvedValue(minuta);
+    vi.mocked(minutasApi.editarMinuta).mockReset();
+    vi.mocked(minutasApi.borrarMinuta).mockReset();
+    navigate.mockReset();
+  });
+
+  it('edita el título y el resumen', async () => {
+    vi.mocked(minutasApi.editarMinuta).mockResolvedValue({ ...minuta, titulo: 'Revisión del home' });
+    renderDetalle();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+    fireEvent.change(screen.getByLabelText('Título de la minuta'), { target: { value: 'Revisión del home' } });
+    fireEvent.change(screen.getByLabelText('Resumen y acuerdos'), { target: { value: 'Lanzamiento el 26 de noviembre. Revisiones los lunes.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(minutasApi.editarMinuta).toHaveBeenCalledWith('m3', expect.objectContaining({
+      titulo: 'Revisión del home', resumen: 'Lanzamiento el 26 de noviembre. Revisiones los lunes.',
+    })));
+    expect(await screen.findByRole('heading', { name: 'Revisión del home' })).toBeInTheDocument();
+  });
+
+  it('borra la minuta tras confirmar y vuelve a la lista', async () => {
+    vi.mocked(minutasApi.borrarMinuta).mockResolvedValue({ ok: true });
+    renderDetalle();
+    fireEvent.click(await screen.findByRole('button', { name: 'Borrar minuta' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sí, borrar' }));
+    await waitFor(() => expect(minutasApi.borrarMinuta).toHaveBeenCalledWith('m3'));
+    expect(navigate).toHaveBeenCalledWith('/minutas');
   });
 });

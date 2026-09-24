@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, FolderKanban, Link2, Loader2, Plus, SquareCheck, User } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
-import { agregarPunto, editarMinuta, obtenerMinuta, type Minuta, type Punto } from '@/lib/minutasApi';
+import { agregarPunto, borrarMinuta, editarMinuta, obtenerMinuta, type Minuta, type Punto } from '@/lib/minutasApi';
 import { estadoPunto, fechaCorta, hoyEcuador, vencimiento } from '@/lib/minutas';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { SELECT } from '@/components/minutas/EditorPuntos';
 import { PuntoDialog } from '@/components/minutas/PuntoDialog';
 import { TONO } from '@/components/minutas/tonos';
 import { cn } from '@/lib/utils';
@@ -48,6 +57,103 @@ function FilaPunto({ minuta, p, hoy, onAbrir }: { minuta: Minuta; p: Punto; hoy:
   );
 }
 
+function EditarMinuta({ minuta, personas, abierto, onOpenChange, onGuardada }: {
+  minuta: Minuta;
+  personas: { id: string; nombre: string }[];
+  abierto: boolean;
+  onOpenChange: (v: boolean) => void;
+  onGuardada: (m: Minuta) => void;
+}) {
+  const [titulo, setTitulo] = useState(minuta.titulo);
+  const [fecha, setFecha] = useState(minuta.fecha);
+  const [projectId, setProjectId] = useState(minuta.project_id ?? '');
+  const [miembros, setMiembros] = useState(minuta.miembros.map((m) => m.id));
+  const [resumen, setResumen] = useState(minuta.resumen ?? '');
+  const [proyectos, setProyectos] = useState<{ id: string; nombre: string }[]>([]);
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    if (!abierto) return;
+    setTitulo(minuta.titulo); setFecha(minuta.fecha); setProjectId(minuta.project_id ?? '');
+    setMiembros(minuta.miembros.map((m) => m.id)); setResumen(minuta.resumen ?? '');
+    api.getProjects({ brand_id: minuta.brand_id }).then(setProyectos).catch(() => setProyectos([]));
+  }, [abierto, minuta]);
+
+  const guardar = async () => {
+    setGuardando(true);
+    try {
+      onGuardada(await editarMinuta(minuta.id, {
+        titulo: titulo.trim(), fecha, project_id: projectId || null, miembros, resumen: resumen.trim() || null,
+      }));
+      onOpenChange(false);
+      toast.success('Minuta actualizada');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <Dialog open={abierto} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Editar minuta {minuta.codigo}</DialogTitle>
+          <DialogDescription>{minuta.brand_nombre}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px]">
+            <div className="space-y-1.5">
+              <Label htmlFor="em-titulo">Título de la minuta</Label>
+              <Input id="em-titulo" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="em-fecha">Fecha</Label>
+              <Input id="em-fecha" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="em-proyecto">Proyecto</Label>
+            <select id="em-proyecto" className={SELECT} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">Sin proyecto</option>
+              {proyectos.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-sm font-medium">Equipo</span>
+            <div className="flex flex-wrap gap-1.5">
+              {personas.filter((p) => p.id !== minuta.owner.id).map((p) => {
+                const activo = miembros.includes(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={activo}
+                    onClick={() => setMiembros((m) => (activo ? m.filter((x) => x !== p.id) : [...m, p.id]))}
+                    className={cn('rounded-full border px-3 py-1 text-xs font-medium', activo ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted')}
+                  >
+                    {p.nombre}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="em-resumen">Resumen y acuerdos</Label>
+            <Textarea id="em-resumen" rows={4} value={resumen} onChange={(e) => setResumen(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button disabled={!titulo.trim() || !fecha || guardando} onClick={guardar}>
+            {guardando && <Loader2 className="h-4 w-4 animate-spin" />}Guardar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function MinutaDetalle() {
   const { id = '' } = useParams();
   const [minuta, setMinuta] = useState<Minuta | null>(null);
@@ -56,6 +162,8 @@ export default function MinutaDetalle() {
   const [abiertoId, setAbiertoId] = useState<string | null>(null);
   const [nuevo, setNuevo] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [editando, setEditando] = useState(false);
+  const navigate = useNavigate();
   const hoy = hoyEcuador();
 
   useEffect(() => {
@@ -86,6 +194,17 @@ export default function MinutaDetalle() {
       toast.success('Minuta publicada');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo publicar');
+    }
+  };
+
+  const borrar = async () => {
+    if (!minuta) return;
+    try {
+      await borrarMinuta(minuta.id);
+      toast.success(`Minuta ${minuta.codigo} borrada`);
+      navigate('/minutas');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo borrar');
     }
   };
 
@@ -122,6 +241,24 @@ export default function MinutaDetalle() {
           <div className="flex flex-wrap items-center gap-2">
             {minuta.estado === 'borrador' && <Badge variant="outline" className="text-muted-foreground">Borrador</Badge>}
             {minuta.estado === 'borrador' && <Button size="sm" onClick={publicar}>Publicar</Button>}
+            <Button size="sm" variant="outline" onClick={() => setEditando(true)}>Editar</Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="ghost" className="text-muted-foreground">Borrar minuta</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Borrar la minuta {minuta.codigo}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Se borran sus puntos y evidencias. Las tareas vinculadas siguen existiendo en Tiusdei, solo pierden el vínculo.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={borrar}>Sí, borrar</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
         <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
@@ -166,6 +303,8 @@ export default function MinutaDetalle() {
           />
         </label>
       </CardContent></Card>
+
+      <EditarMinuta minuta={minuta} personas={personas} abierto={editando} onOpenChange={setEditando} onGuardada={setMinuta} />
 
       {abierto && (
         <PuntoDialog
