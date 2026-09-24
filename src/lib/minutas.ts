@@ -75,3 +75,21 @@ export function aPuntosNuevos(borrador: { clave?: string; titulo: string; descri
 export function hoyEcuador(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' }).format(new Date());
 }
+
+const ESTADO_CLIENTE: Record<EstadoPunto, { texto: string; tono: Tono }> = {
+  pendiente: { texto: 'Por empezar', tono: 'slate' },
+  en_curso: { texto: 'En marcha', tono: 'blue' },
+  completado: { texto: 'Listo', tono: 'teal' },
+  aprobado: { texto: 'Aprobado', tono: 'green' },
+  descartado: { texto: 'Descartado', tono: 'slate' },
+};
+
+/** Cómo ve el estado el cliente en el enlace público: en su lenguaje, no en el del equipo. */
+export function estadoCliente(p: { estado: EstadoPunto; responsable_cliente: boolean }): { texto: string; tono: Tono } {
+  if (p.responsable_cliente && p.estado !== 'descartado') {
+    return p.estado === 'completado' || p.estado === 'aprobado'
+      ? { texto: 'Recibido', tono: 'green' }
+      : { texto: 'Pendiente de tu parte', tono: 'amber' };
+  }
+  return ESTADO_CLIENTE[p.estado];
+}

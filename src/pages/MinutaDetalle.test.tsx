@@ -9,7 +9,9 @@ import * as minutasApi from '@/lib/minutasApi';
 import * as minutaPdf from '@/lib/minutaPdf';
 import type { Minuta, Punto } from '@/lib/minutasApi';
 
-vi.mock('@/lib/minutasApi', () => ({ obtenerMinuta: vi.fn(), agregarPunto: vi.fn(), editarMinuta: vi.fn(), borrarMinuta: vi.fn() }));
+vi.mock('@/lib/minutasApi', () => ({
+  obtenerMinuta: vi.fn(), agregarPunto: vi.fn(), editarMinuta: vi.fn(), borrarMinuta: vi.fn(), activarEnlace: vi.fn(), desactivarEnlace: vi.fn(),
+}));
 vi.mock('@/lib/minutaPdf', () => ({ exportarMinutaPdf: vi.fn() }));
 vi.mock('@/lib/apiClient', () => ({ getProfiles: vi.fn(async () => []), getProjects: vi.fn(async () => [{ id: 'p1', nombre: 'Rediseño del sitio web Dinatek' }]) }));
 vi.mock('@/components/minutas/PuntoDialog', () => ({
@@ -28,6 +30,7 @@ const minuta: Minuta = {
   id: 'm3', brand_id: 'b1', brand_nombre: 'Dinatek', project_id: 'p1', project_nombre: 'Rediseño del sitio web Dinatek',
   numero: 3, codigo: 'M-03', titulo: 'Revisión de avance: home y catálogo', fecha: '2026-09-22', estado: 'borrador',
   owner: { id: 'u1', nombre: 'Even' }, miembros: [{ id: 'u2', nombre: 'Diego Ruiz' }], resumen: 'Acuerdo: lanzamiento el 26 de noviembre.',
+  enlace_publico: { activo: false, token: null },
   progreso: { total: 2, cerrados: 0, enCurso: 1 },
   items: [punto({}), punto({ id: 'i2', numero: 2, titulo: 'Fichas técnicas', responsable: null, responsable_cliente: true, estado: 'pendiente', fecha_compromiso: null, descripcion: null })],
 };
@@ -128,14 +131,38 @@ describe('MinutaDetalle · editar y borrar', () => {
   });
 });
 
-describe('MinutaDetalle · PDF', () => {
-  beforeEach(() => { vi.mocked(minutasApi.obtenerMinuta).mockReset().mockResolvedValue(minuta); vi.mocked(minutaPdf.exportarMinutaPdf).mockReset(); });
+describe('MinutaDetalle · PDF y enlace para el cliente', () => {
+  const writeText = vi.fn();
+  beforeEach(() => {
+    vi.mocked(minutasApi.obtenerMinuta).mockReset().mockResolvedValue(minuta);
+    vi.mocked(minutaPdf.exportarMinutaPdf).mockReset();
+    vi.mocked(minutasApi.activarEnlace).mockReset();
+    vi.mocked(minutasApi.desactivarEnlace).mockReset();
+    writeText.mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  });
 
-  it('exporta el PDF completo o solo lo visible para el cliente', async () => {
+  it('exporta un solo PDF, sin los puntos internos', async () => {
     renderDetalle();
     fireEvent.click(await screen.findByRole('button', { name: 'Exportar PDF' }));
-    fireEvent.click(screen.getByRole('button', { name: 'PDF para el cliente' }));
-    expect(minutaPdf.exportarMinutaPdf).toHaveBeenNthCalledWith(1, minuta, { soloVisibles: false });
-    expect(minutaPdf.exportarMinutaPdf).toHaveBeenNthCalledWith(2, minuta, { soloVisibles: true });
+    expect(minutaPdf.exportarMinutaPdf).toHaveBeenCalledWith(minuta, { soloVisibles: true });
+    expect(screen.queryByRole('button', { name: 'PDF para el cliente' })).not.toBeInTheDocument();
+  });
+
+  it('copia el enlace público para el cliente', async () => {
+    vi.mocked(minutasApi.activarEnlace).mockResolvedValue({ ...minuta, enlace_publico: { activo: true, token: 'mn_abc' } });
+    renderDetalle();
+    fireEvent.click(await screen.findByRole('button', { name: 'Copiar enlace para el cliente' }));
+    await waitFor(() => expect(minutasApi.activarEnlace).toHaveBeenCalledWith('m3'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/m/mn_abc`));
+    expect(await screen.findByRole('button', { name: 'Desactivar enlace' })).toBeInTheDocument();
+  });
+
+  it('desactiva el enlace', async () => {
+    vi.mocked(minutasApi.obtenerMinuta).mockResolvedValue({ ...minuta, enlace_publico: { activo: true, token: 'mn_abc' } });
+    vi.mocked(minutasApi.desactivarEnlace).mockResolvedValue({ ...minuta, enlace_publico: { activo: false, token: 'mn_abc' } });
+    renderDetalle();
+    fireEvent.click(await screen.findByRole('button', { name: 'Desactivar enlace' }));
+    await waitFor(() => expect(minutasApi.desactivarEnlace).toHaveBeenCalledWith('m3'));
   });
 });

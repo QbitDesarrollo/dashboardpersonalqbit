@@ -39,6 +39,8 @@ describe('minutasApi', () => {
     ['quitarEvidencia', ['e1'], 'DELETE', '/minuta-evidencias/e1', undefined],
     ['vincularTarea', ['i1', 't1'], 'POST', '/minuta-items/i1/tareas', { task_id: 't1' }],
     ['desvincularTarea', ['i1', 't1'], 'DELETE', '/minuta-items/i1/tareas/t1', undefined],
+    ['activarEnlace', ['m1'], 'POST', '/minutas/m1/enlace', undefined],
+    ['desactivarEnlace', ['m1'], 'DELETE', '/minutas/m1/enlace', undefined],
   ] as const)('%s usa el método y la ruta correctos', async (fn, args, method, ruta, body) => {
     fetchMock.mockReturnValue(respuesta(200, { ok: true }));
     await (api as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[fn](...args);
@@ -46,6 +48,13 @@ describe('minutasApi', () => {
     expect(String(url).endsWith(`/api/data${ruta}`)).toBe(true);
     expect(init.method).toBe(method);
     expect(init.body).toBe(body === undefined ? undefined : JSON.stringify(body));
+  });
+
+  it('lee la minuta pública por su token (ruta sin login)', async () => {
+    fetchMock.mockReturnValue(respuesta(200, { codigo: 'M-01', puntos: [] }));
+    const r = await api.obtenerMinutaPublica('mn_abc');
+    expect(String(fetchMock.mock.calls[0][0]).endsWith('/api/public/minutas/mn_abc')).toBe(true);
+    expect(r).toEqual({ codigo: 'M-01', puntos: [] });
   });
 
   it('propaga el mensaje de error del servidor', async () => {

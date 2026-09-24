@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { estadoPunto, vencimiento, requisitosCierre, aPuntosNuevos, hoyEcuador } from './minutas';
+import { estadoPunto, estadoCliente, vencimiento, requisitosCierre, aPuntosNuevos, hoyEcuador } from './minutas';
 
 describe('estadoPunto', () => {
   it.each([
@@ -73,5 +73,18 @@ describe('hoyEcuador', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-25T01:00:00Z')); // 24 sep, 20:00 en Guayaquil (UTC-5)
     expect(hoyEcuador()).toBe('2026-09-24');
+  });
+});
+
+describe('estadoCliente', () => {
+  it.each([
+    ['pendiente', false, 'Por empezar', 'slate'],
+    ['en_curso', false, 'En marcha', 'blue'],
+    ['completado', false, 'Listo', 'teal'],
+    ['aprobado', false, 'Aprobado', 'green'],
+    ['pendiente', true, 'Pendiente de tu parte', 'amber'],
+    ['completado', true, 'Recibido', 'green'],
+  ] as const)('%s (del cliente: %s) se le muestra al cliente como "%s"', (estado, responsable_cliente, texto, tono) => {
+    expect(estadoCliente({ estado, responsable_cliente })).toEqual({ texto, tono });
   });
 });

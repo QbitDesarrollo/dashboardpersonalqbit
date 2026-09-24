@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, FileDown, FolderKanban, Link2, Loader2, Pencil, Plus, SquareCheck, User } from 'lucide-react';
+import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, Copy, FileDown, FolderKanban, Link2, Loader2, Pencil, Plus, SquareCheck, User } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
-import { agregarPunto, borrarMinuta, editarMinuta, obtenerMinuta, type Minuta, type Punto } from '@/lib/minutasApi';
+import { activarEnlace, agregarPunto, borrarMinuta, desactivarEnlace, editarMinuta, obtenerMinuta, type Minuta, type Punto } from '@/lib/minutasApi';
 import { estadoPunto, fechaCorta, hoyEcuador, vencimiento } from '@/lib/minutas';
 import { exportarMinutaPdf } from '@/lib/minutaPdf';
 import { Button } from '@/components/ui/button';
@@ -224,6 +224,34 @@ export default function MinutaDetalle() {
     }
   };
 
+  // Enlace para el cliente: se activa la primera vez y después se reutiliza el mismo.
+  const copiarEnlace = async () => {
+    if (!minuta) return;
+    try {
+      const conEnlace = minuta.enlace_publico.activo && minuta.enlace_publico.token ? minuta : await activarEnlace(minuta.id);
+      setMinuta(conEnlace);
+      const url = `${window.location.origin}/m/${conEnlace.enlace_publico.token}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success('Enlace copiado. Pégalo en el chat con el cliente.');
+      } catch {
+        toast.info('Copia este enlace a mano', { description: url, duration: 15000 });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo crear el enlace');
+    }
+  };
+
+  const apagarEnlace = async () => {
+    if (!minuta) return;
+    try {
+      setMinuta(await desactivarEnlace(minuta.id));
+      toast.success('Enlace desactivado. Quien lo tenga ya no podrá abrirlo.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo desactivar el enlace');
+    }
+  };
+
   const borrar = async () => {
     if (!minuta) return;
     try {
@@ -269,10 +297,15 @@ export default function MinutaDetalle() {
             {minuta.estado === 'borrador' && <Badge variant="outline" className="text-muted-foreground">Borrador</Badge>}
             {minuta.estado === 'borrador' && <Button size="sm" onClick={publicar}>Publicar</Button>}
             <Button size="sm" variant="outline" onClick={() => setEditando(true)}>Editar</Button>
-            <Button size="sm" variant="outline" onClick={() => exportarMinutaPdf(minuta, { soloVisibles: false })}>
+            <Button size="sm" variant="outline" onClick={() => exportarMinutaPdf(minuta, { soloVisibles: true })}>
               <FileDown className="h-4 w-4" />Exportar PDF
             </Button>
-            <Button size="sm" variant="outline" onClick={() => exportarMinutaPdf(minuta, { soloVisibles: true })}>PDF para el cliente</Button>
+            <Button size="sm" variant="outline" onClick={copiarEnlace}>
+              <Copy className="h-4 w-4" />Copiar enlace para el cliente
+            </Button>
+            {minuta.enlace_publico.activo && (
+              <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={apagarEnlace}>Desactivar enlace</Button>
+            )}
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button size="sm" variant="ghost" className="text-muted-foreground">Borrar minuta</Button>
