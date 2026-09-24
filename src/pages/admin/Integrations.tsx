@@ -42,6 +42,7 @@ export default function Integrations() {
   const [items, setItems] = useState<{ id: string; type: string; name: string; brand_nombre: string; is_active: number }[]>([]);
   const [brands, setBrands] = useState<{ id: string; nombre: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ type: 'slack' as string, name: '', brand_id: '', webhook_url: '' });
   const [saving, setSaving] = useState(false);
@@ -64,6 +65,7 @@ export default function Integrations() {
         toast.error('Error al cargar');
       } finally {
         setLoading(false);
+        setPrimeraCarga(false);
       }
     };
     load();
@@ -180,7 +182,10 @@ export default function Integrations() {
     }
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

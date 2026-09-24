@@ -35,6 +35,7 @@ export default function PublicForms() {
   const [forms, setForms] = useState<{ id: string; name: string; slug: string; brand_nombre: string; submissions_count: number; is_active: number }[]>([]);
   const [brands, setBrands] = useState<{ id: string; nombre: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submissionsOpen, setSubmissionsOpen] = useState(false);
   const [selectedForm, setSelectedForm] = useState<{ id: string; name: string } | null>(null);
@@ -52,6 +53,7 @@ export default function PublicForms() {
         toast.error('Error al cargar');
       } finally {
         setLoading(false);
+        setPrimeraCarga(false);
       }
     };
     load();
@@ -105,7 +107,10 @@ export default function PublicForms() {
 
   const formUrl = (slug: string) => `${API_BASE}/form/${slug}`;
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

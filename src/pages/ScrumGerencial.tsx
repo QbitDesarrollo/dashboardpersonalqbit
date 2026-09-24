@@ -108,6 +108,7 @@ const formatDate = (d: string) => {
 export default function ScrumGerencial() {
   const [data, setData] = useState<SprintGerencial[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [brandFilter, setBrandFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('all');
@@ -126,6 +127,7 @@ export default function ScrumGerencial() {
       toast.error('Error al cargar vista gerencial');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -191,7 +193,10 @@ export default function ScrumGerencial() {
     };
   }, [filteredData]);
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

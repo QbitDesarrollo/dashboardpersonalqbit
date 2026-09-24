@@ -56,6 +56,7 @@ export default function Files() {
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -78,6 +79,7 @@ export default function Files() {
       toast.error('Error al cargar archivos');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -138,7 +140,10 @@ export default function Files() {
     f.tasks?.titulo_tarea?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

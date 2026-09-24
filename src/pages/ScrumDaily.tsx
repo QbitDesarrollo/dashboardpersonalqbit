@@ -126,6 +126,7 @@ export default function ScrumDaily() {
   const [activeSprint, setActiveSprint] = useState<string>('');
   const [stats, setStats] = useState<SprintStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [loadingStats, setLoadingStats] = useState(false);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [collapsedMembers, setCollapsedMembers] = useState<Set<string>>(new Set());
@@ -143,6 +144,7 @@ export default function ScrumDaily() {
         toast.error('Error al cargar sprints');
       } finally {
         setLoading(false);
+        setPrimeraCarga(false);
       }
     })();
   }, [pinnedBrandId]);
@@ -251,7 +253,10 @@ export default function ScrumDaily() {
     });
   }, [stats]);
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return <div className="flex items-center justify-center min-h-[300px]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 

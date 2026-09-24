@@ -38,6 +38,7 @@ export default function TasksCalendar() {
   const { pinnedBrandId, pinnedDeskId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const fetchTasks = async () => {
@@ -50,6 +51,7 @@ export default function TasksCalendar() {
       toast.error('Error al cargar tareas');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -89,7 +91,10 @@ export default function TasksCalendar() {
 
   const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

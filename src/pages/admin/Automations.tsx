@@ -52,6 +52,7 @@ export default function Automations() {
   const [items, setItems] = useState<{ id: string; name: string; brand_nombre: string; trigger_type: string; action_type: string; is_active: number; trigger_count: number }[]>([]);
   const [brands, setBrands] = useState<{ id: string; nombre: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
     name: '', brand_id: '', trigger_type: 'status_change', action_type: 'send_notification',
@@ -69,6 +70,7 @@ export default function Automations() {
         toast.error('Error al cargar');
       } finally {
         setLoading(false);
+        setPrimeraCarga(false);
       }
     };
     load();
@@ -111,7 +113,10 @@ export default function Automations() {
     }
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

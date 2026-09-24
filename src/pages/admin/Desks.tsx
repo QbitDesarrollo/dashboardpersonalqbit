@@ -56,6 +56,7 @@ export default function AdminDesks() {
   const [desks, setDesks] = useState<Desk[]>([]);
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -89,6 +90,7 @@ export default function AdminDesks() {
       toast.error('Error al cargar mesas');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -253,7 +255,10 @@ export default function AdminDesks() {
     setDialogOpen(true);
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

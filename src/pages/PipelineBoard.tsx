@@ -126,6 +126,7 @@ export default function PipelineBoard() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<{ id: string; nombre: string; avatar_url?: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // Handoff dialog state cuando se arrastra a una columna
@@ -148,6 +149,7 @@ export default function PipelineBoard() {
       toast.error('Error al cargar el pipeline');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -184,7 +186,10 @@ export default function PipelineBoard() {
     setHandoffToDept(toDeptId);
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex justify-center items-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -201,7 +206,7 @@ export default function PipelineBoard() {
         <div>
           <h1 className="text-2xl font-bold">Pipeline por departamento</h1>
           <p className="text-sm text-muted-foreground">
-            Arrastrá una tarea a otra columna para pasarla de etapa. Te va a pedir el responsable a cargo.
+            Arrastra una tarea a otra columna para pasarla de etapa. Te va a pedir el responsable a cargo.
           </p>
         </div>
       </div>

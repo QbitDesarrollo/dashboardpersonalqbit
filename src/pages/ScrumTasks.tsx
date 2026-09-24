@@ -117,6 +117,7 @@ export default function ScrumTasks() {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [features, setFeatures] = useState<Feature[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [legendOpen, setLegendOpen] = useState(false);
 
   const [filterSprint, setFilterSprint] = useState<string>('all');
@@ -150,6 +151,7 @@ export default function ScrumTasks() {
       toast.error('Error al cargar datos');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -282,7 +284,10 @@ export default function ScrumTasks() {
     }
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center min-h-[300px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

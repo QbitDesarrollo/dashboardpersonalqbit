@@ -162,6 +162,7 @@ export default function DailyMesas() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [deliverableTypes, setDeliverableTypes] = useState<DeliverableType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
 
   const [filterDesk, setFilterDesk] = useState<string>(pinnedDeskId || 'all');
   const [filterBrand, setFilterBrand] = useState<string>(pinnedBrandId || 'all');
@@ -215,6 +216,7 @@ export default function DailyMesas() {
       toast.error('Error al cargar datos');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -382,7 +384,10 @@ export default function DailyMesas() {
     toast.success('Excel descargado');
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

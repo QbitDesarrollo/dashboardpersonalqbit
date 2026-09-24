@@ -42,6 +42,7 @@ export default function TasksGantt() {
   const { pinnedBrandId, pinnedDeskId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [rangeMonths, setRangeMonths] = useState(3);
   const [today] = useState(new Date());
 
@@ -55,6 +56,7 @@ export default function TasksGantt() {
       toast.error('Error al cargar tareas');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -95,7 +97,10 @@ export default function TasksGantt() {
   const priorityColor = (p: string) =>
     p === 'alta' ? 'bg-priority-high' : p === 'media' ? 'bg-priority-medium' : 'bg-priority-low';
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

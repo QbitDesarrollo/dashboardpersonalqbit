@@ -37,6 +37,7 @@ function getIcon(mimeType: string) {
 export function DriveFileList({ taskId, canEdit, refreshKey }: DriveFileListProps) {
   const [files, setFiles] = useState<TaskDriveFile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
 
   const fetchFiles = async () => {
     try {
@@ -46,6 +47,7 @@ export function DriveFileList({ taskId, canEdit, refreshKey }: DriveFileListProp
       // silently fail
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -63,7 +65,10 @@ export function DriveFileList({ taskId, canEdit, refreshKey }: DriveFileListProp
     }
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex justify-center py-3">
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />

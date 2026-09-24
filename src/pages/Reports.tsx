@@ -48,6 +48,7 @@ export default function Reports() {
   const [filterBrand, setFilterBrand] = useState<string>('all');
   const [filterDesk, setFilterDesk] = useState<string>('all');
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [exporting, setExporting] = useState<'csv' | 'excel' | 'pdf' | null>(null);
 
   useEffect(() => {
@@ -67,6 +68,7 @@ export default function Reports() {
         toast.error('Error al cargar datos');
       } finally {
         setLoading(false);
+        setPrimeraCarga(false);
       }
     };
     load();
@@ -115,7 +117,10 @@ export default function Reports() {
     }
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

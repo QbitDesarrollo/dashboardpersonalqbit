@@ -50,6 +50,7 @@ export default function ScrumBacklog() {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [features, setFeatures] = useState<Feature[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [pointsEditingId, setPointsEditingId] = useState<string | null>(null);
   const [pointsValue, setPointsValue] = useState<string>('');
@@ -73,6 +74,7 @@ export default function ScrumBacklog() {
       toast.error('Error al cargar backlog');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -119,7 +121,10 @@ export default function ScrumBacklog() {
 
   const totalPoints = tasks.reduce((acc, t) => acc + (t.story_points ?? 0), 0);
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center min-h-[300px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

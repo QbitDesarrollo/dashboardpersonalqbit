@@ -35,6 +35,7 @@ const CHART_COLORS = [
 export default function TimeTracking() {
   const [data, setData] = useState<Awaited<ReturnType<typeof api.getTimeAnalytics>> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
 
   useEffect(() => {
     const load = async () => {
@@ -47,12 +48,16 @@ export default function TimeTracking() {
         toast.error('Error al cargar analytics');
       } finally {
         setLoading(false);
+        setPrimeraCarga(false);
       }
     };
     load();
   }, []);
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

@@ -113,6 +113,7 @@ export default function SprintPlanning() {
   const [selectedSprintId, setSelectedSprintId] = useState<string>(sprintParam || '');
   const [data, setData] = useState<PlanningData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [loadingPlanning, setLoadingPlanning] = useState(false);
 
   // Search & filter
@@ -150,6 +151,7 @@ export default function SprintPlanning() {
         toast.error('Error al cargar sprints');
       } finally {
         setLoading(false);
+        setPrimeraCarga(false);
       }
     })();
   }, [pinnedBrandId]);
@@ -259,7 +261,10 @@ export default function SprintPlanning() {
   const velocityDiff = data ? committedPoints - data.capacity.avgVelocity : 0;
   const overcommitted = data ? data.capacity.avgVelocity > 0 && committedPoints > data.capacity.avgVelocity * 1.2 : false;
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return <div className="flex items-center justify-center min-h-[300px]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 

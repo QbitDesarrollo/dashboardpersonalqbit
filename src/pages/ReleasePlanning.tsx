@@ -132,6 +132,7 @@ export default function ReleasePlanning() {
   const [allSprints, setAllSprints] = useState<{ id: string; name: string; status: string; start_date: string; end_date: string }[]>([]);
   const [brands, setBrands] = useState<{ id: string; nombre: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -168,6 +169,7 @@ export default function ReleasePlanning() {
       toast.error('Error al cargar releases');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -290,7 +292,10 @@ export default function ReleasePlanning() {
     setEditDialogOpen(true);
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return <div className="flex items-center justify-center min-h-[300px]"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
