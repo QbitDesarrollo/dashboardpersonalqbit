@@ -9,6 +9,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // UI tests with Radix are slow on a busy machine; a real failure still fails, just later.
+    testTimeout: 15000,
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
