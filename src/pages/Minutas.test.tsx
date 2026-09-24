@@ -62,4 +62,12 @@ describe('Minutas (lista)', () => {
     await waitFor(() => expect(minutasIa.estadoIa).toHaveBeenCalled());
     expect(screen.queryByText(/minutas con IA/)).not.toBeInTheDocument();
   });
+
+  it('sin marca elegida, el filtro de proyecto dice "Todos los proyectos" y está desactivado', async () => {
+    vi.mocked(minutasApi.listarMinutas).mockResolvedValue([] as never);
+    render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Minutas /></MemoryRouter>);
+    const proyecto = await screen.findByRole('combobox', { name: 'Proyecto' });
+    expect(proyecto).toBeDisabled();
+    expect(proyecto).toHaveDisplayValue('Todos los proyectos');
+  });
 });

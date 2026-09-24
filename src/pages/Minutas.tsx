@@ -106,8 +106,15 @@ export default function Minutas() {
           <option value="">Todas las marcas</option>
           {marcas.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
         </select>
-        <select aria-label="Proyecto" className={cn(SELECT, 'w-full sm:w-60')} value={projectId} onChange={(e) => setProjectId(e.target.value)} disabled={!brandId}>
-          <option value="">{brandId ? 'Todos los proyectos' : 'Elige una marca para filtrar por proyecto'}</option>
+        <select
+          aria-label="Proyecto"
+          className={cn(SELECT, 'w-full sm:w-60')}
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+          disabled={!brandId}
+          title={brandId ? undefined : 'Elige una marca para filtrar por proyecto'}
+        >
+          <option value="">Todos los proyectos</option>
           {proyectos.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
         <div className="relative flex-1 min-w-[200px]">
