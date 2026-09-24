@@ -7,14 +7,20 @@ interface UseTaskTimerProps {
   initialTime: number;
   isActive: boolean;
   startTime: string | null;
+  estimatedHours?: number | null;
+  /** Solo avisar (2h / horas estimadas) si la tarea es del usuario actual.
+   *  Sin esto, la lista disparaba avisos por timers de OTRAS personas. */
+  warnEnabled?: boolean;
+  taskTitle?: string;
 }
 
-export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTaskTimerProps) {
+export function useTaskTimer({ taskId, initialTime, isActive, startTime, estimatedHours, warnEnabled, taskTitle }: UseTaskTimerProps) {
   const [elapsedTime, setElapsedTime] = useState(initialTime);
   const [isRunning, setIsRunning] = useState(isActive);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<Date | null>(startTime ? new Date(startTime) : null);
   const warnThresholdRef = useRef(0); // Pieza 2: umbral de aviso de timer largo
+  const overWarnedRef = useRef(false); // aviso de horas estimadas superadas
 
   // Calculate elapsed time when timer was already running
   useEffect(() => {
@@ -92,7 +98,7 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
           await api.patchTask(otro.id, {
             timer_activo: false,
             timer_inicio: null,
-            tiempo_trabajado: (otro.tiempo_trabajado || 0) + timeToSum,
+            tiempo_trabajado_delta: timeToSum,
           });
         } catch (e) {
           console.error('[TIMER] No se pudo pausar el timer anterior:', e);
@@ -139,17 +145,20 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
       }
 
       // CAP ABSOLUTO: nunca sumar más de 10h en una sola sesión (sanity)
-      const TEN_HOURS = 10 * 3600;
+      const TEN_HOURS = 12 * 3600; // tope por sesión: jornada extendida
       if (additionalTime > TEN_HOURS) additionalTime = TEN_HOURS;
 
+      // DELTA atomico: el server hace tiempo_trabajado += delta. Antes se mandaba el
+      // TOTAL calculado con datos locales y al pausar desde otro dispositivo (datos
+      // viejos) se pisaba el tiempo real acumulado.
       const result: any = await api.patchTask(taskId, {
         timer_activo: false,
         timer_inicio: null,
-        tiempo_trabajado: initialTime + additionalTime,
+        tiempo_trabajado_delta: additionalTime,
       });
       if (result?.error) throw new Error(result.error);
 
-      // Actualizar elapsed local para reflejar cambio real
+      // Actualizar elapsed local (el refetch de onUpdate trae el total real del server)
       setElapsedTime(initialTime + additionalTime);
       setIsRunning(false);
       startTimeRef.current = null;
@@ -161,15 +170,28 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime }: UseTa
 
   // Pieza 2 (Timer control): avisar cada 2h "¿Sigues trabajando?" y pausar si dice que no.
   useEffect(() => {
-    if (!isRunning) { warnThresholdRef.current = 0; return; }
+    if (!isRunning || !warnEnabled) { warnThresholdRef.current = 0; return; }
     if (warnThresholdRef.current === 0) { warnThresholdRef.current = (Math.floor(elapsedTime / 7200) + 1) * 7200; return; }
     if (elapsedTime >= warnThresholdRef.current) {
       warnThresholdRef.current = elapsedTime + 7200;
       const horas = Math.floor(elapsedTime / 3600);
       // Aviso como modal bonito (TimerWarningDialog escucha este evento), no window.confirm
-      window.dispatchEvent(new CustomEvent('timer:warning', { detail: { horas, onPause: () => stopTimer() } }));
+      window.dispatchEvent(new CustomEvent('timer:warning', { detail: { horas, titulo: taskTitle || null, onPause: () => stopTimer() } }));
     }
-  }, [elapsedTime, isRunning, stopTimer]);
+  }, [elapsedTime, isRunning, warnEnabled, taskTitle, stopTimer]);
+
+  // F) Alerta cuando el tiempo trabajado supera las horas estimadas de la tarea.
+  useEffect(() => {
+    if (!isRunning || !warnEnabled || !estimatedHours || estimatedHours <= 0) { overWarnedRef.current = false; return; }
+    const limite = estimatedHours * 3600;
+    if (elapsedTime >= limite && !overWarnedRef.current) {
+      overWarnedRef.current = true;
+      const trabajadas = Math.round((elapsedTime / 3600) * 10) / 10;
+      window.dispatchEvent(new CustomEvent('timer:overestimate', {
+        detail: { estimadas: estimatedHours, trabajadas, titulo: taskTitle || null, onPause: () => stopTimer() },
+      }));
+    }
+  }, [elapsedTime, isRunning, warnEnabled, estimatedHours, taskTitle, stopTimer]);
 
   const resetTimer = useCallback(async () => {
     try {

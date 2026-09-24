@@ -15,7 +15,7 @@ try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch {}
 // Record activity snapshot (called every ~60s from client)
 activityTrackingRouter.post('/activity-tracking/snapshot', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { time_entry_id, keyboard_events = 0, mouse_events = 0, scroll_events = 0, click_events = 0 } = req.body;
+    const { time_entry_id, keyboard_events = 0, mouse_events = 0, scroll_events = 0, click_events = 0, tab_hidden = false } = req.body;
     if (!time_entry_id) return res.status(400).json({ error: 'time_entry_id requerido' });
 
     // Verify session belongs to user
@@ -28,15 +28,20 @@ activityTrackingRouter.post('/activity-tracking/snapshot', requireAuth, async (r
     const totalEvents = keyboard_events + mouse_events + scroll_events + click_events;
     // 30+ events/minute = 100% activity
     const activityPercent = Math.min(100, Math.round((totalEvents / 30) * 100));
-    const isIdle = activityPercent < 10 ? 1 : 0;
+    // Sin actividad en la pestana hay dos casos MUY distintos:
+    //  - pestana visible y nadie toca nada -> la persona se fue: IDLE (se descuenta)
+    //  - pestana oculta -> esta trabajando en otro programa (Illustrator, Premiere,
+    //    Figma): NO es idle. Antes esto descontaba horas enteras a los disenadores.
+    const tabHidden = tab_hidden === true || tab_hidden === 1 || tab_hidden === '1';
+    const isIdle = activityPercent < 10 && !tabHidden ? 1 : 0;
 
     const id = uuid();
     const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
 
     await query(
-      `INSERT INTO activity_snapshots (id, time_entry_id, user_id, keyboard_events, mouse_events, scroll_events, click_events, activity_percent, is_idle, snapshot_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, time_entry_id, req.userId, keyboard_events, mouse_events, scroll_events, click_events, activityPercent, isIdle, now]
+      `INSERT INTO activity_snapshots (id, time_entry_id, user_id, keyboard_events, mouse_events, scroll_events, click_events, activity_percent, is_idle, tab_hidden, snapshot_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, time_entry_id, req.userId, keyboard_events, mouse_events, scroll_events, click_events, activityPercent, isIdle, tabHidden ? 1 : 0, now]
     );
 
     // Update session's rolling activity level (average of last 10 snapshots)

@@ -1,4 +1,9 @@
-import { Play, Pause, RotateCcw, Timer } from 'lucide-react';
+import { useState } from 'react';
+import { Play, Pause, RotateCcw, Timer, AlertTriangle } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { useTaskTimer } from '@/hooks/useTaskTimer';
 import { cn } from '@/lib/utils';
@@ -11,6 +16,10 @@ interface TaskTimerProps {
   startTime: string | null;
   canEdit: boolean;
   compact?: boolean;
+  estimatedHours?: number | null;
+  /** true si la tarea es del usuario actual: habilita los avisos de timer largo/estimado */
+  warnEnabled?: boolean;
+  taskTitle?: string;
   onUpdate?: () => void;
 }
 
@@ -21,13 +30,21 @@ export function TaskTimer({
   startTime,
   canEdit,
   compact = false,
+  estimatedHours,
+  warnEnabled = false,
+  taskTitle,
   onUpdate
 }: TaskTimerProps) {
+  const [confirmReset, setConfirmReset] = useState(false);
   const { formattedTime, isRunning, startTimer, stopTimer, resetTimer } = useTaskTimer({
     taskId,
     initialTime,
     isActive,
     startTime,
+    // La alerta de estimado solo en la vista de detalle (no en la fila compacta) para no duplicar.
+    estimatedHours: compact ? undefined : estimatedHours,
+    warnEnabled,
+    taskTitle,
   });
   const handleStart = async () => {
     await startTimer();
@@ -73,9 +90,9 @@ export function TaskTimer({
 
   if (compact) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         <div className={cn(
-          "flex items-center gap-1 font-mono text-sm px-2 py-1 rounded",
+          "flex items-center gap-1 font-mono text-sm px-1.5 py-1 rounded",
           isRunning
             ? "bg-primary/20 text-primary animate-pulse"
             : "bg-muted text-muted-foreground"
@@ -142,11 +159,38 @@ export function TaskTimer({
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleReset}
+            onClick={() => setConfirmReset(true)}
             className="gap-1 text-muted-foreground hover:text-destructive"
+            title="Reiniciar el timer (borra el tiempo acumulado)"
           >
             <RotateCcw className="h-4 w-4" />
           </Button>
+
+          {/* Confirmacion: el reinicio BORRA el acumulado — se encontraron tareas
+              con horas perdidas por clics accidentales en este boton. */}
+          <AlertDialog open={confirmReset} onOpenChange={setConfirmReset}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                  ¿Reiniciar el timer a cero?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esto <strong>borra el tiempo acumulado de la tarea ({formattedTime})</strong> y no se puede deshacer.
+                  Si solo quieres detener el timer, usa <strong>Pausar</strong>.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => { setConfirmReset(false); handleReset(); }}
+                >
+                  Sí, borrar el tiempo
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       )}
     </div>

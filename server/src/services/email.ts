@@ -341,7 +341,7 @@ export async function chatMentionEmail(data: {
     greeting: `Hola ${data.recipientName},`,
     intro: `<strong>${escapeHtml(data.authorName)}</strong> te mencionó en el chat de la mesa <strong>"${escapeHtml(data.deskName)}"</strong>.`,
     quote: safeText,
-    cta: { text: 'Abrir chat', url: data.frontendUrl },
+    cta: { text: 'Abrir chat', url: `${data.frontendUrl}/?chat=${encodeURIComponent(data.deskName)}` },
   });
 
   return {
@@ -408,6 +408,27 @@ export async function incidenciaComentarioEmail(data: {
     cta: { text: 'Ver comentario', url: data.incidenciaUrl },
   });
   return { to: '', subject: `[Comentario] ${data.titulo}`, html, text };
+}
+
+export async function timerAutoPausedEmail(data: {
+  recipientName: string;
+  taskTitle: string;
+  tiempoGuardado: string;
+  taskUrl: string;
+}): Promise<EmailOptions> {
+  const { html, text } = await renderEmail({
+    accent: 'amber',
+    preheader: 'Tu timer se pausó automáticamente',
+    headline: 'Timer pausado automáticamente',
+    greeting: `Hola ${data.recipientName},`,
+    intro: `Tu timer en <strong>${escapeHtml(data.taskTitle)}</strong> se pausó porque cerraste Tiusdei. Tu tiempo quedó guardado (${escapeHtml(data.tiempoGuardado)}). Si sigues trabajando, reanúdalo con un clic.`,
+    details: [
+      { label: 'Tarea', value: escapeHtml(data.taskTitle) },
+      { label: 'Tiempo guardado', value: escapeHtml(data.tiempoGuardado), highlight: true },
+    ],
+    cta: { text: 'Reanudar timer', url: data.taskUrl },
+  });
+  return { to: '', subject: `⏸️ Timer pausado: ${data.taskTitle}`, html, text };
 }
 
 export async function incidenciaEstadoEmail(data: {

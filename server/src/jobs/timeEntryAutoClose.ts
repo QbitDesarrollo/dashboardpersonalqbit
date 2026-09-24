@@ -45,6 +45,17 @@ export async function runTimeEntryAutoClose(): Promise<void> {
       [CAP_SECONDS]
     );
 
+    // 2b. Apagar el timer legacy de esas tareas (quedaba corriendo "zombie"
+    // en la vista de la tarea aunque la sesion ya estaba cerrada)
+    const taskIds = [...new Set(stalled.map((e: any) => e.task_id).filter(Boolean))];
+    if (taskIds.length > 0) {
+      const ph = taskIds.map(() => '?').join(',');
+      await query(
+        `UPDATE tasks SET timer_activo = 0, timer_inicio = NULL WHERE id IN (${ph}) AND timer_activo = 1`,
+        taskIds
+      );
+    }
+
     // 3. Notificar a admins/ejecutivos si hay >0 cerradas
     if (stalled.length > 0) {
       const admins = await query<{ id: string }[]>(

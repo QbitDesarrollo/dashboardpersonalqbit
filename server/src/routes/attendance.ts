@@ -42,12 +42,26 @@ attendanceRouter.post('/attendance/check-out', requireAuth, async (req: AuthRequ
 
     const now = new Date();
     const checkIn = new Date(open.check_in);
-    const totalSeconds = Math.floor((now.getTime() - checkIn.getTime()) / 1000);
     const nowStr = now.toISOString().replace('T', ' ').replace('Z', '');
 
+    // Almuerzo: se descuenta del total de la jornada. Si se va sin marcar el
+    // regreso, el almuerzo se cierra al hacer check-out.
+    const full = await queryOne<any>('SELECT lunch_start, lunch_end FROM attendance WHERE id = ?', [open.id]);
+    let lunchSecs = 0;
+    let closeLunch = false;
+    if (full?.lunch_start) {
+      const ls = new Date(full.lunch_start).getTime();
+      const le = full.lunch_end ? new Date(full.lunch_end).getTime() : now.getTime();
+      lunchSecs = Math.max(0, Math.floor((le - ls) / 1000));
+      closeLunch = !full.lunch_end;
+    }
+    const totalSeconds = Math.max(0, Math.floor((now.getTime() - checkIn.getTime()) / 1000) - lunchSecs);
+
     await query(
-      `UPDATE attendance SET check_out = ?, total_seconds = ? WHERE id = ?`,
-      [nowStr, totalSeconds, open.id]
+      closeLunch
+        ? `UPDATE attendance SET check_out = ?, total_seconds = ?, lunch_end = ? WHERE id = ?`
+        : `UPDATE attendance SET check_out = ?, total_seconds = ? WHERE id = ?`,
+      closeLunch ? [nowStr, totalSeconds, nowStr, open.id] : [nowStr, totalSeconds, open.id]
     );
 
     const record = await queryOne<any>('SELECT * FROM attendance WHERE id = ?', [open.id]);
@@ -59,6 +73,92 @@ attendanceRouter.post('/attendance/check-out', requireAuth, async (req: AuthRequ
 });
 
 // Today's attendance
+// Marcar salida a almuerzo (requiere check-in abierto; un almuerzo por jornada)
+attendanceRouter.post('/attendance/lunch-start', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const open = await queryOne<any>(
+      `SELECT id, lunch_start FROM attendance WHERE user_id = ? AND DATE(check_in) = ? AND check_out IS NULL LIMIT 1`,
+      [req.userId, today]
+    );
+    if (!open) return res.status(404).json({ error: 'Necesitas estar en check-in para marcar tu almuerzo' });
+    if (open.lunch_start) return res.status(409).json({ error: 'Ya marcaste tu almuerzo hoy' });
+
+    const nowStr = new Date().toISOString().replace('T', ' ').replace('Z', '');
+    await query(`UPDATE attendance SET lunch_start = ? WHERE id = ?`, [nowStr, open.id]);
+
+    // Al salir a almorzar el timer se PAUSA SOLO: el almuerzo no cuenta como
+    // jornada, asi que no puede seguir corriendo mientras la persona come.
+    let timersPausados = 0;
+    const sesiones = await query<any[]>(
+      `SELECT te.id, te.task_id, te.start_time, COALESCE(te.idle_seconds, 0) AS idle_seconds, t.titulo_tarea
+       FROM time_entries te LEFT JOIN tasks t ON t.id = te.task_id
+       WHERE te.user_id = ? AND te.status = 'active'`,
+      [req.userId]
+    );
+    for (const ses of sesiones) {
+      const elapsed = Math.max(0, Math.floor((Date.now() - new Date(ses.start_time).getTime()) / 1000));
+      const capped = Math.min(10 * 3600, Math.max(0, elapsed - Number(ses.idle_seconds)));
+      await query(
+        `UPDATE time_entries SET status='completed', end_time=NOW(), duration_seconds=?,
+                description=CONCAT(IFNULL(description,''), ' [pausada por almuerzo]')
+         WHERE id=? AND status='active'`,
+        [capped, ses.id]
+      );
+      if (ses.task_id) {
+        await query(
+          'UPDATE tasks SET tiempo_trabajado = tiempo_trabajado + ?, timer_activo = 0, timer_inicio = NULL WHERE id = ?',
+          [capped, ses.task_id]
+        );
+      }
+      timersPausados++;
+    }
+    // Timers legacy sin sesion (tareas donde la persona es responsable)
+    const legacy = await query<any[]>(
+      `SELECT id, timer_inicio FROM tasks WHERE timer_activo = 1 AND responsable_user_id = ?`,
+      [req.userId]
+    );
+    for (const t of legacy) {
+      const elapsed = t.timer_inicio
+        ? Math.min(10 * 3600, Math.max(0, Math.floor((Date.now() - new Date(t.timer_inicio).getTime()) / 1000)))
+        : 0;
+      await query(
+        'UPDATE tasks SET tiempo_trabajado = tiempo_trabajado + ?, timer_activo = 0, timer_inicio = NULL WHERE id = ?',
+        [elapsed, t.id]
+      );
+      timersPausados++;
+    }
+
+    const record = await queryOne<any>('SELECT * FROM attendance WHERE id = ?', [open.id]);
+    res.json({ attendance: record, timers_pausados: timersPausados });
+  } catch (e) {
+    console.error('[ATTENDANCE] Error lunch-start:', e);
+    res.status(500).json({ error: 'Error al marcar almuerzo' });
+  }
+});
+
+// Marcar regreso del almuerzo
+attendanceRouter.post('/attendance/lunch-end', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const open = await queryOne<any>(
+      `SELECT id, lunch_start, lunch_end FROM attendance WHERE user_id = ? AND DATE(check_in) = ? AND check_out IS NULL LIMIT 1`,
+      [req.userId, today]
+    );
+    if (!open) return res.status(404).json({ error: 'No hay check-in abierto' });
+    if (!open.lunch_start) return res.status(400).json({ error: 'No has marcado salida a almuerzo' });
+    if (open.lunch_end) return res.status(409).json({ error: 'Ya marcaste tu regreso' });
+
+    const nowStr = new Date().toISOString().replace('T', ' ').replace('Z', '');
+    await query(`UPDATE attendance SET lunch_end = ? WHERE id = ?`, [nowStr, open.id]);
+    const record = await queryOne<any>('SELECT * FROM attendance WHERE id = ?', [open.id]);
+    res.json({ attendance: record });
+  } catch (e) {
+    console.error('[ATTENDANCE] Error lunch-end:', e);
+    res.status(500).json({ error: 'Error al marcar regreso' });
+  }
+});
+
 attendanceRouter.get('/attendance/today', requireAuth, async (req: AuthRequest, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);

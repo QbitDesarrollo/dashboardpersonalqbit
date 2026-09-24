@@ -7,6 +7,24 @@ import { hasRole } from '../utils/roles.js';
 
 export const timeSessionsRouter = Router();
 
+// Sesiones de tiempo de una tarea, de todas las personas (historial del detalle)
+timeSessionsRouter.get('/time-sessions/task/:taskId', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const taskId = String(req.params.taskId);
+    if (!(await canAccessTask(req.userId!, taskId))) return res.status(403).json({ error: 'Sin acceso a la tarea' });
+    const rows = await query<any[]>(
+      `SELECT te.id, te.user_id, p.nombre, p.avatar_url, te.start_time, te.end_time, te.duration_seconds, te.status
+       FROM time_entries te LEFT JOIN profiles p ON p.id = te.user_id
+       WHERE te.task_id = ? ORDER BY te.start_time DESC LIMIT 200`,
+      [taskId],
+    );
+    res.json({ sessions: rows });
+  } catch (e) {
+    console.error('[TIME-SESSIONS] task:', e);
+    res.status(500).json({ error: 'Error al cargar sesiones' });
+  }
+});
+
 // Get current user's active session
 timeSessionsRouter.get('/time-sessions/active', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -83,7 +101,9 @@ timeSessionsRouter.post('/time-sessions/:id/stop', requireAuth, async (req: Auth
     const now = new Date();
     const startTime = new Date(session.start_time);
     const totalSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
-    const effectiveSeconds = Math.max(0, totalSeconds - (session.idle_seconds || 0));
+    // Tope de 10h por sesion: sin esto, una sesion olvidada por dias quedaba con
+    // duraciones absurdas (72h+) y ensuciaba el Monitor y el tiempo por persona.
+    const effectiveSeconds = Math.min(12 * 3600, Math.max(0, totalSeconds - (session.idle_seconds || 0)));
     const nowStr = now.toISOString().replace('T', ' ').replace('Z', '');
 
     await query(
@@ -91,11 +111,10 @@ timeSessionsRouter.post('/time-sessions/:id/stop', requireAuth, async (req: Auth
       [nowStr, effectiveSeconds, id]
     );
 
-    // Update task accumulated time
-    await query(
-      `UPDATE tasks SET tiempo_trabajado = tiempo_trabajado + ?, timer_activo = 0, timer_inicio = NULL WHERE id = ?`,
-      [effectiveSeconds, session.task_id]
-    );
+    // OJO: aquí NO se suma a tasks.tiempo_trabajado. El flujo interactivo
+    // (TaskTimer) ya manda el delta legacy al pausar; sumar aquí también
+    // duplicaba el tiempo de la tarea (se detectaron 291 tareas en 2.0x).
+    // Los jobs de auto-pausa/cierre sí suman porque ahí no hay cliente.
 
     res.json({ success: true, duration_seconds: effectiveSeconds });
   } catch (e) {
@@ -196,5 +215,89 @@ timeSessionsRouter.delete('/time-sessions/:id', requireAuth, async (req: AuthReq
   } catch (e) {
     console.error('[TIME-SESSIONS] Error deleting:', e);
     res.status(500).json({ error: 'Error al eliminar' });
+  }
+});
+
+
+// ── Latido del timer: el frontend lo manda cada 60s mientras Tiusdei está abierto ──
+// Si deja de llegar (>5 min), el job heartbeatAutoPause pausa la sesión sola.
+timeSessionsRouter.post('/time-sessions/heartbeat', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    await query(
+      `UPDATE time_entries SET last_heartbeat = NOW() WHERE user_id = ? AND status = 'active'`,
+      [req.userId]
+    );
+    const row = await queryOne<any>(
+      `SELECT te.id, te.task_id, t.titulo_tarea FROM time_entries te
+       LEFT JOIN tasks t ON t.id = te.task_id
+       WHERE te.user_id = ? AND te.status = 'active' LIMIT 1`,
+      [req.userId]
+    );
+    if (!row) { res.json({ active: false }); return; }
+
+    // ¿Ya es hora de cierre (Ecuador)? El cliente muestra el modal de confirmación.
+    const enabledRow = await queryOne<{ value: string }>("SELECT value FROM site_settings WHERE `key` = 'timer_eod_enabled'");
+    const hourRow = await queryOne<{ value: string }>("SELECT value FROM site_settings WHERE `key` = 'timer_eod_hour'");
+    const eodHour = Math.max(0, Math.min(23, parseInt(hourRow?.value || '18')));
+    const closeHour = Math.min(23, eodHour + 2);
+    const ecuHour = new Date(Date.now() - 5 * 3600 * 1000).getUTCHours();
+    const eod = (!enabledRow || enabledRow.value !== '0') && ecuHour >= closeHour;
+
+    res.json({ active: true, session_id: row.id, task_id: row.task_id, titulo: row.titulo_tarea || null, eod });
+  } catch (e) {
+    console.error('[TIME-SESSIONS] heartbeat error:', e);
+    res.status(500).json({ error: 'Error en heartbeat' });
+  }
+});
+
+// ── Pausar MI sesión activa (server-side completo: sesión + tarea, sin math en el cliente) ──
+timeSessionsRouter.post('/time-sessions/pause-mine', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const session = await queryOne<any>(
+      `SELECT * FROM time_entries WHERE user_id = ? AND status = 'active' LIMIT 1`,
+      [req.userId]
+    );
+    if (!session) { res.json({ ok: false, motivo: 'sin sesión activa' }); return; }
+
+    const elapsed = Math.max(0, Math.floor((Date.now() - new Date(session.start_time).getTime()) / 1000));
+    const capped = Math.min(12 * 3600, Math.max(0, elapsed - (session.idle_seconds || 0)));
+
+    await query(
+      `UPDATE time_entries SET status='completed', end_time=NOW(), duration_seconds=? WHERE id=?`,
+      [capped, session.id]
+    );
+    await query(
+      'UPDATE tasks SET tiempo_trabajado = tiempo_trabajado + ?, timer_activo = 0, timer_inicio = NULL WHERE id = ?',
+      [capped, session.task_id]
+    );
+    res.json({ ok: true, duration_seconds: capped });
+  } catch (e) {
+    console.error('[TIME-SESSIONS] pause-mine error:', e);
+    res.status(500).json({ error: 'Error al pausar' });
+  }
+});
+
+// ── Sugerencia de reanudar: última sesión auto-pausada reciente (12h) sin sesión activa nueva ──
+timeSessionsRouter.get('/time-sessions/resume-suggestion', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const active = await queryOne<any>(
+      `SELECT id FROM time_entries WHERE user_id = ? AND status = 'active' LIMIT 1`,
+      [req.userId]
+    );
+    if (active) { res.json({}); return; }
+    const row = await queryOne<any>(
+      `SELECT te.task_id, t.titulo_tarea AS titulo, te.end_time, te.duration_seconds
+       FROM time_entries te
+       JOIN tasks t ON t.id = te.task_id
+       WHERE te.user_id = ? AND te.status = 'completed'
+         AND te.description LIKE '%auto-pausada: Tiusdei cerrado%'
+         AND te.end_time > DATE_SUB(NOW(), INTERVAL 12 HOUR)
+       ORDER BY te.end_time DESC LIMIT 1`,
+      [req.userId]
+    );
+    res.json(row || {});
+  } catch (e) {
+    console.error('[TIME-SESSIONS] resume-suggestion error:', e);
+    res.status(500).json({ error: 'Error' });
   }
 });
