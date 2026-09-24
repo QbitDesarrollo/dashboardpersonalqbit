@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode, Ref } from 'react';
-import { CalendarDays, Link2, Pencil, SquareCheck, User } from 'lucide-react';
+import { CalendarDays, CircleCheck, Link2, Pencil, SquareCheck, User } from 'lucide-react';
 import type { Minuta, Punto } from '@/lib/minutasApi';
-import { estadoPunto, vencimiento } from '@/lib/minutas';
+import { estadoPunto, listoParaCerrar, tareaLista, vencimiento } from '@/lib/minutas';
 import { cn } from '@/lib/utils';
 import { IconoEstado } from './IconoEstado';
 import type { VistaPunto } from './PuntoDialog';
@@ -18,7 +18,7 @@ export function FilaPunto({ minuta, p, hoy, onAbrir, arrastre }: {
   const estado = estadoPunto(p);
   const aviso = vencimiento(p.fecha_compromiso, p.estado, hoy);
   const cerrado = p.estado === 'completado' || p.estado === 'aprobado';
-  const listas = p.tareas.filter((t) => t.estado === 'entregado' || t.estado === 'aprobado').length;
+  const listas = p.tareas.filter(tareaLista).length;
   const chip = 'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium text-foreground/80 hover:bg-muted';
   return (
     <li
@@ -56,6 +56,17 @@ export function FilaPunto({ minuta, p, hoy, onAbrir, arrastre }: {
         )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 text-xs text-muted-foreground">
           <span className={cn('rounded-full px-2 py-0.5 font-medium', TONO[estado.tono])}>{estado.texto}</span>
+          {listoParaCerrar(p) && (
+            <button
+              type="button"
+              aria-label={`Listo para cerrar el punto ${codigo}`}
+              title="Todas sus tareas están listas: cuenta qué se hizo y adjunta la evidencia"
+              className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-200 dark:bg-amber-500/15 dark:text-amber-300"
+              onClick={() => onAbrir('evidencia')}
+            >
+              <CircleCheck className="h-3.5 w-3.5" />Listo para cerrar
+            </button>
+          )}
           {p.responsable_cliente
             ? <span>Cliente</span>
             : p.responsable && <span className="inline-flex items-center gap-1"><User className="h-3.5 w-3.5" />{p.responsable.nombre}</span>}

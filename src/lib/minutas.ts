@@ -20,6 +20,18 @@ export function estadoPunto(p: { estado: EstadoPunto; responsable_cliente: boole
   return ESTADO[p.estado];
 }
 
+/** A linked task counts as done once it was delivered or approved. */
+export const tareaLista = (t: { estado: string }) => t.estado === 'entregado' || t.estado === 'aprobado';
+
+/**
+ * Every linked task is done but the point is still open: someone should close it
+ * with what was done and the evidence. Points owed by the client have no tasks to wait for.
+ */
+export function listoParaCerrar(p: { estado: EstadoPunto; responsable_cliente: boolean; tareas: { estado: string }[] }): boolean {
+  if (p.responsable_cliente || (p.estado !== 'pendiente' && p.estado !== 'en_curso')) return false;
+  return p.tareas.length > 0 && p.tareas.every(tareaLista);
+}
+
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 function dias(desde: string, hasta: string): number {

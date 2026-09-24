@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { estadoPunto, estadoCliente, vencimiento, requisitosCierre, aPuntosNuevos, hoyEcuador, puntosDesdeIa } from './minutas';
+import { estadoPunto, estadoCliente, vencimiento, requisitosCierre, aPuntosNuevos, hoyEcuador, puntosDesdeIa, listoParaCerrar, type EstadoPunto } from './minutas';
 
 describe('estadoPunto', () => {
   it.each([
@@ -100,5 +100,28 @@ describe('puntosDesdeIa', () => {
       { titulo: 'Fichas técnicas', descripcion: '', responsable: 'cliente', fecha: '', cita: 'te las mando el lunes', citaFuente: 'cliente' },
     ]);
     expect(new Set(puntos.map((p) => p.clave)).size).toBe(2);
+  });
+});
+
+describe('listoParaCerrar', () => {
+  const tarea = (estado: string) => ({ id: estado, titulo_tarea: 'T', estado, fecha_entrega: null, responsable: null });
+  const punto = (p: Partial<{ estado: EstadoPunto; responsable_cliente: boolean; tareas: ReturnType<typeof tarea>[] }>) => ({
+    estado: 'en_curso' as EstadoPunto, responsable_cliente: false, tareas: [tarea('entregado')], ...p,
+  });
+
+  it('avisa cuando todas las tareas del punto están listas y el punto sigue abierto', () => {
+    expect(listoParaCerrar(punto({}))).toBe(true);
+    expect(listoParaCerrar(punto({ tareas: [tarea('entregado'), tarea('aprobado')] }))).toBe(true);
+    expect(listoParaCerrar(punto({ estado: 'pendiente' }))).toBe(true);
+  });
+
+  it('no avisa si falta alguna tarea o si el punto no tiene tareas', () => {
+    expect(listoParaCerrar(punto({ tareas: [tarea('entregado'), tarea('en_proceso')] }))).toBe(false);
+    expect(listoParaCerrar(punto({ tareas: [] }))).toBe(false);
+  });
+
+  it('no avisa en puntos ya cerrados, descartados o que debe el cliente', () => {
+    for (const estado of ['completado', 'aprobado', 'descartado'] as EstadoPunto[]) expect(listoParaCerrar(punto({ estado }))).toBe(false);
+    expect(listoParaCerrar(punto({ responsable_cliente: true }))).toBe(false);
   });
 });

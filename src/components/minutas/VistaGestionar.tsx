@@ -52,6 +52,13 @@ export function VistaGestionar({ punto, personas, onActualizada, onGuardado }: P
     onGuardado?.();
   };
 
+  // Work that moves without a linked task (a call, a meeting) is started by hand.
+  const marcarEnCurso = async () => {
+    if (!(await accion('iniciar'))) return;
+    toast.success('Punto en curso');
+    onGuardado?.();
+  };
+
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
@@ -85,6 +92,9 @@ export function VistaGestionar({ punto, personas, onActualizada, onGuardado }: P
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button disabled={!titulo.trim() || enviando} onClick={guardar}>Guardar cambios</Button>
+        {punto.estado === 'pendiente' && !punto.responsable_cliente && (
+          <Button variant="outline" disabled={enviando} onClick={marcarEnCurso}>Marcar en curso</Button>
+        )}
         {punto.estado === 'descartado' ? (
           <Button variant="outline" disabled={enviando} onClick={() => accion('restaurar')}>Restaurar</Button>
         ) : punto.estado !== 'aprobado' && (

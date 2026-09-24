@@ -165,6 +165,28 @@ describe('PuntoDialog · gestionar', () => {
     expect(screen.getByLabelText('Descripción')).toHaveValue('Con imagen de respaldo.');
   });
 
+  it('un punto pendiente se puede marcar en curso a mano: avisa y cierra', async () => {
+    vi.mocked(minutasApi.accionPunto).mockResolvedValue(minutaCon({ estado: 'en_curso' }));
+    vi.mocked(toast.success).mockClear();
+    const onOpenChange = vi.fn();
+    const onActualizada = abrir({ estado: 'pendiente' }, vi.fn(), 'gestionar', onOpenChange);
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar en curso' }));
+    await waitFor(() => expect(minutasApi.accionPunto).toHaveBeenCalledWith('i1', 'iniciar', {}));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toast.success).toHaveBeenCalledWith('Punto en curso');
+    expect(onActualizada).toHaveBeenCalled();
+  });
+
+  it('no ofrece marcar en curso si ya está en curso', () => {
+    abrir({ estado: 'en_curso' }, vi.fn(), 'gestionar');
+    expect(screen.queryByRole('button', { name: 'Marcar en curso' })).not.toBeInTheDocument();
+  });
+
+  it('en un punto que debe el cliente tampoco se ofrece', () => {
+    abrir({ estado: 'pendiente', responsable_cliente: true }, vi.fn(), 'gestionar');
+    expect(screen.queryByRole('button', { name: 'Marcar en curso' })).not.toBeInTheDocument();
+  });
+
   it('descarta el punto solo con un motivo', async () => {
     vi.mocked(minutasApi.accionPunto).mockResolvedValue(minutaCon({ estado: 'descartado' }));
     abrir({}, vi.fn(), 'gestionar');
