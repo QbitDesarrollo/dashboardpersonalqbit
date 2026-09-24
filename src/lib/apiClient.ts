@@ -213,12 +213,12 @@ export async function getBrands(deskId?: string) {
   return res.json();
 }
 
-export async function createBrand(data: { nombre: string; cliente_id?: string; activo?: boolean }) {
+export async function createBrand(data: { nombre: string; cliente_id?: string | null; activo?: boolean }) {
   const res = await request('/api/data/brands', { method: 'POST', body: JSON.stringify(data) });
   return res.json();
 }
 
-export async function patchBrand(id: string, data: { nombre?: string; cliente_id?: string; activo?: boolean }) {
+export async function patchBrand(id: string, data: { nombre?: string; cliente_id?: string | null; activo?: boolean }) {
   const res = await request(`/api/data/brands/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
   return res.json();
 }
@@ -543,7 +543,7 @@ export async function getDeliverables(options?: GetDeliverablesOptions): Promise
   return res.json();
 }
 
-export async function createDeliverable(data: { task_id: string; tipo_entregable_id?: string; version?: string; estado?: string }) {
+export async function createDeliverable(data: { task_id: string; tipo_entregable_id?: string | null; version?: string; estado?: string }) {
   const res = await request('/api/data/deliverables', { method: 'POST', body: JSON.stringify(data) });
   return res.json();
 }
@@ -1000,9 +1000,11 @@ export async function getDeskMessages(deskId: string, params?: { limit?: number;
     desk_id: string;
     user_id: string;
     mensaje: string;
+    image_url?: string | null;
     created_at: string;
     user: { nombre: string; avatar_url: string | null };
     read_by: { user_id: string; nombre: string; read_at: string }[];
+    reactions: { emoji: string; user_id: string; nombre: string }[];
   }[];
   has_more: boolean;
 }> {
@@ -1033,7 +1035,10 @@ export async function getDeskUnreadCounts(): Promise<{ counts: Record<string, nu
 }
 
 // ========== Site config (GET público; PATCH requiere admin) ==========
-export async function getSiteSettings(): Promise<Record<string, string | null>> {
+/** Key/value site settings; every value arrives as a string (or null). */
+export type SiteSettings = Record<string, string | null>;
+
+export async function getSiteSettings(): Promise<SiteSettings> {
   const res = await fetch(
     `${import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3003')}/api/config/site-settings`
   );

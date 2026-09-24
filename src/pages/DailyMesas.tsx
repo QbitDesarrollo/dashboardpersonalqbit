@@ -204,7 +204,7 @@ export default function DailyMesas() {
         api.getDesks(),
         api.getBrands(),
         api.getDeliverableTypes(),
-        api.getSiteSettings().catch(() => ({})),
+        api.getSiteSettings().catch((): api.SiteSettings => ({})),
       ]);
       setTasks((tasksRes.tasks || []) as Task[]);
       if (Array.isArray(desksData)) setDesks(desksData.filter((d: { activo?: unknown }) => d.activo !== 0 && d.activo !== false));

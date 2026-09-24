@@ -153,7 +153,7 @@ export default function ScrumDaily() {
     if (!sprintId) return;
     setLoadingStats(true);
     try {
-      const settings = await api.getSiteSettings().catch(() => ({}));
+      const settings = await api.getSiteSettings().catch((): api.SiteSettings => ({}));
       const deskId = pinnedDeskId || settings?.scrum_desk_id || undefined;
       const data = await api.getSprintStats(sprintId, deskId);
       setStats(data);

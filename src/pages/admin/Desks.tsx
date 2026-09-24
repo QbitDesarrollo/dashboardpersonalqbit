@@ -44,6 +44,8 @@ interface Profile {
   id: string;
   nombre: string;
   email: string;
+  /** Only on desk members: shown on the desk but not counted in its percentage. */
+  es_soporte?: boolean;
 }
 
 interface Brand {

@@ -171,12 +171,13 @@ export default function ClientBoardPublic() {
     const task = data?.tasks.find((t) => t.id === taskId);
     if (!task) return;
     const editor = !!data?.cliente_editor;
-    let nuevo: 'aprobado' | 'en_proceso' | 'backlog' | 'revision_cliente' | null = null;
+    type Destino = 'aprobado' | 'en_proceso' | 'backlog' | 'revision_cliente' | null;
+    let nuevo: Destino = null;
     if (editor) {
       // Tablero colaborativo: mover libre entre columnas (estilo Monday)
       if (task.estado_raw === 'entregado') return;
       // revision (Para tu revisión) NO es destino para el cliente: esa columna la llena la agencia
-      const MAP: Record<string, typeof nuevo> = { pendiente: 'backlog', en_proceso: 'en_proceso', aprobado: 'aprobado', entregado: 'aprobado', hechas: 'aprobado' };
+      const MAP: Record<string, Destino> = { pendiente: 'backlog', en_proceso: 'en_proceso', aprobado: 'aprobado', entregado: 'aprobado', hechas: 'aprobado' };
       nuevo = MAP[target] || null;
       if (!nuevo || nuevo === task.estado_raw) return;
     } else {

@@ -22,7 +22,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { cn } from 'lucide-react';
 import { ArrowLeft, Loader2, Plus, Edit, Layers } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -50,7 +49,7 @@ export default function ScrumFeatures() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingFeature, setEditingFeature] = useState<Feature | null>(null);
-  const [form, setForm] = useState({ name: '', description: '', brand_id: '', status: 'backlog' as const });
+  const [form, setForm] = useState<{ name: string; description: string; brand_id: string; status: 'backlog' | 'en_progreso' | 'completado' }>({ name: '', description: '', brand_id: '', status: 'backlog' });
 
   const fetchData = async () => {
     try {

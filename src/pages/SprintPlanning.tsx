@@ -161,7 +161,7 @@ export default function SprintPlanning() {
     if (!sid) return;
     setLoadingPlanning(true);
     try {
-      const settings = await api.getSiteSettings().catch(() => ({}));
+      const settings = await api.getSiteSettings().catch((): api.SiteSettings => ({}));
       const scrumDeskId = settings?.scrum_desk_id || undefined;
       const deskFilter = pinnedDeskId || scrumDeskId || undefined;
       const res = await api.getSprintPlanning(sid, deskFilter);

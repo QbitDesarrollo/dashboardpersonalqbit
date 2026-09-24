@@ -42,9 +42,7 @@ export function useCommentsSocket(taskId: string | null, onNewComment: (c: Comme
         reconnectionDelayMax: 5000,
         // Timeouts generosos para internet lento
         timeout: 20000,
-        // Ping cada 15s para detectar desconexión rápido
-        pingInterval: 15000,
-        pingTimeout: 10000,
+        // The heartbeat interval (pingInterval/pingTimeout) is set by the server; the client cannot change it.
       });
 
       socket.on('connect', () => {

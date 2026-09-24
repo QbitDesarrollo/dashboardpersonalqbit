@@ -57,8 +57,8 @@ interface Task {
   check_done: boolean;
   responsable_user_id?: string | null;
   brands?: { nombre: string };
-  profiles?: { nombre: string };
-  responsables?: { user_id: string; nombre: string }[];
+  profiles?: { nombre: string; avatar_url?: string | null };
+  responsables?: { user_id: string; nombre: string; avatar_url?: string | null }[];
   feature?: { name: string } | null;
   sprint?: { name: string } | null;
 }
@@ -130,7 +130,7 @@ export default function ScrumTasks() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const settings = await api.getSiteSettings().catch(() => ({}));
+      const settings = await api.getSiteSettings().catch((): api.SiteSettings => ({}));
       const scrumDeskId = settings?.scrum_desk_id || undefined;
       const opts: api.GetTasksOptions = { limit: 500, desk_id: scrumDeskId };
       if (filterSprint === 'backlog') {

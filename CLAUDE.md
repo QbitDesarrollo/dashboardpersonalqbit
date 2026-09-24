@@ -27,6 +27,7 @@
 - **Compartir, no copiar**: si un formulario o diálogo se necesita en otra pantalla, se importa el componente. Nada de pegamento por URL ni estado global para pasar datos entre pantallas. Ejemplo: `src/components/tasks/form/TaskFormDialog.tsx` crea/edita tareas en Tareas y en Minutas.
 - **Backend por dominio**: rutas delgadas en `server/src/routes/`, validación zod en `esquemas.ts`, reglas puras en `domain.ts` (con tests), SQL en `consultas.ts`, permisos en `permisos.ts`. Ejemplo: `server/src/minutas/`.
 - **Refactor seguro**: antes de mover código sin tests, se escriben tests de caracterización que fijen lo que hace hoy (ejemplo: `src/pages/Tasks.form.test.tsx`) y se comprueba que muerden rompiendo el código a propósito.
+- **Tipos**: el frontend está en 0 errores de TypeScript y `npm run build` corre `npm run typecheck` antes de `vite build`: un error de tipos frena el deploy. No se sube con errores ni se silencian con `any`/`@ts-ignore`; se corrige el tipo o el bug que esconde.
 - **TDD**: test que falla → código mínimo → refactor. Front: `npx vitest run` (Vitest + Testing Library con `fireEvent`). Back: `cd server && npx vitest run` contra la base `tiusdei_test` (credenciales en `server/.env.test`, jamás la de producción).
 
 ## Minutas

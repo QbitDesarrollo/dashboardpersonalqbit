@@ -201,7 +201,7 @@ export default function AdminConfig() {
       const [taskData, delData, settings, templates, desksData] = await Promise.all([
         api.getTaskTypes(),
         api.getDeliverableTypes(),
-        api.getSiteSettings().catch(() => ({})),
+        api.getSiteSettings().catch((): api.SiteSettings => ({})),
         api.getEmailTemplates().catch(() => []),
         api.getDesks().catch(() => []),
       ]);

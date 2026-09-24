@@ -200,7 +200,7 @@ export default function Scrum() {
     setExpandedSprintId(sprintId);
     setLoadingStats(true);
     try {
-      const settings = await api.getSiteSettings().catch(() => ({}));
+      const settings = await api.getSiteSettings().catch((): api.SiteSettings => ({}));
       const scrumDeskId = settings?.scrum_desk_id || undefined;
       const statsPromise = api.getSprintStats(sprintId, scrumDeskId);
       const capacityPromise = api.getSprintCapacity(sprintId, scrumDeskId).catch(() => null);
@@ -762,7 +762,7 @@ export default function Scrum() {
                       borderRadius: '8px',
                       fontSize: '12px',
                     }}
-                    formatter={(value: number, name: string) => [
+                    formatter={(value: number, name: string): [string, string] => [
                       `${value} pts`,
                       name === 'velocity' ? 'Velocidad' : 'Búfer (bloqueado)',
                     ]}

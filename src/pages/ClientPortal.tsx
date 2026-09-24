@@ -31,6 +31,7 @@ interface Brand {
 
 interface Task {
   id: string;
+  brand_id: string;
   titulo_tarea: string;
   estado: string;
   fecha_entrega: string;
@@ -41,6 +42,7 @@ interface Task {
 interface Deliverable {
   id: string;
   task_id: string;
+  brand_id?: string;
   version: string;
   estado: string;
   link_final: string | null;
@@ -94,9 +96,9 @@ export default function ClientPortal() {
   const fetchBrandData = async () => {
     try {
       const [tasksRes, delRes, filesData] = await Promise.all([api.getTasks({ limit: 500 }), api.getDeliverables({ limit: 500 }), api.getFiles()]);
-      const tasksList = (tasksRes.tasks || []).filter((t: { brand_id: string }) => t.brand_id === selectedBrand);
+      const tasksList = ((tasksRes.tasks || []) as Task[]).filter((t) => t.brand_id === selectedBrand);
       setTasks(tasksList);
-      const delList = (delRes.deliverables || []).filter((d: { brand_id?: string; estado: string }) => d.brand_id === selectedBrand && ['aprobado', 'final'].includes(d.estado));
+      const delList = ((delRes.deliverables || []) as Deliverable[]).filter((d) => d.brand_id === selectedBrand && ['aprobado', 'final'].includes(d.estado));
       setDeliverables(delList);
       const filesList = Array.isArray(filesData) ? filesData.filter((f: any) => f.task_id && tasksList.some((t: any) => t.id === f.task_id)) : [];
       setFiles(filesList);

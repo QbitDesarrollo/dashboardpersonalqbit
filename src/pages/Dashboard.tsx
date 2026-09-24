@@ -190,7 +190,7 @@ export default function Dashboard() {
   const { profile, isCliente, isAdmin, isEjecutivo, isEquipo, canViewAll } = useAuth();
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [profiles, setProfiles] = useState<{ id: string; nombre: string }[]>([]);
+  const [profiles, setProfiles] = useState<{ id: string; nombre: string; avatar_url?: string | null }[]>([]);
   const [brands, setBrands] = useState<{ id: string; nombre: string }[]>([]);
   const [desks, setDesks] = useState<{ id: string; nombre: string }[]>([]);
   const [filterBrand, setFilterBrand] = useState<string>('all');

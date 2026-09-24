@@ -210,7 +210,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       const [desksData, brandsData, settings] = await Promise.all([
         api.getDesks(),
         api.getBrands(),
-        api.getSiteSettings().catch(() => ({})),
+        api.getSiteSettings().catch((): api.SiteSettings => ({})),
       ]);
       if (Array.isArray(desksData)) setDesks(desksData.filter((d: { activo?: boolean }) => d.activo));
       if (Array.isArray(brandsData)) setBrands(brandsData.filter((b: { activo?: boolean }) => b.activo));

@@ -72,8 +72,8 @@ export default function Files() {
     try {
       const [filesData, tasksRes] = await Promise.all([api.getFiles(), api.getTasks({ limit: 200 })]);
       if (Array.isArray(filesData)) setFiles(filesData as FileRecord[]);
-      const tasksList = tasksRes.tasks || [];
-      setTasks(tasksList.map((t: { id: string; titulo_tarea: string }) => ({ id: t.id, titulo_tarea: t.titulo_tarea })));
+      const tasksList = (tasksRes.tasks || []) as { id: string; titulo_tarea: string }[];
+      setTasks(tasksList.map((t) => ({ id: t.id, titulo_tarea: t.titulo_tarea })));
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Error al cargar archivos');

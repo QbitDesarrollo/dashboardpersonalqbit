@@ -149,7 +149,7 @@ export default function ScrumBoard() {
         setLoading(true);
         const [sprintsRes, settings] = await Promise.all([
           api.getSprints() as Promise<Sprint[]>,
-          api.getSiteSettings().catch(() => ({})),
+          api.getSiteSettings().catch((): api.SiteSettings => ({})),
         ]);
         const scrumDeskId = settings?.scrum_desk_id || undefined;
         const tasksRes = await api.getTasks({ limit: 500, sprint_id: sprintId, desk_id: scrumDeskId });

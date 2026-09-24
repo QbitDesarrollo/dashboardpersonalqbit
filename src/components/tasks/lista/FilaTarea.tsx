@@ -118,7 +118,7 @@ export const FilaTarea = memo(function FilaTarea({
               </button>
             )}
             {task.recurrence_type && task.recurrence_type !== 'none' && (
-              <Repeat className="h-3.5 w-3.5 text-blue-500 shrink-0" title="Tarea recurrente" />
+              <span className="shrink-0" title="Tarea recurrente"><Repeat className="h-3.5 w-3.5 text-blue-500" /></span>
             )}
             {task.estimated_hours != null && task.estimated_hours > 0 && (
               <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0" title="Horas estimadas">

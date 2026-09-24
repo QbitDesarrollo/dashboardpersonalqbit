@@ -58,7 +58,7 @@ export default function ScrumBacklog() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const settings = await api.getSiteSettings().catch(() => ({}));
+      const settings = await api.getSiteSettings().catch((): api.SiteSettings => ({}));
       const scrumDeskId = settings?.scrum_desk_id || undefined;
       const deskFilter = pinnedDeskId || scrumDeskId || undefined;
       const [tasksRes, sprintsRes, featuresRes] = await Promise.all([
