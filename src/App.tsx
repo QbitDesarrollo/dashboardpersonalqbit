@@ -33,6 +33,7 @@ const Proyectos = lazy(() => import("./pages/Proyectos"));
 import Minutas from "./pages/Minutas";
 import MinutaNueva from "./pages/MinutaNueva";
 import MinutaDetalle from "./pages/MinutaDetalle";
+import MinutaPresentar from "./pages/MinutaPresentar";
 const TasksGantt = lazy(() => import("./pages/TasksGantt"));
 const TasksCalendar = lazy(() => import("./pages/TasksCalendar"));
 const TasksWorkload = lazy(() => import("./pages/TasksWorkload"));
@@ -168,6 +169,11 @@ const App = () => (
             <Route path="/minutas/:id" element={
               <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><MinutaDetalle /></AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/minutas/:id/presentar" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
+                <MinutaPresentar />
               </ProtectedRoute>
             } />
             <Route path="/tareas/gantt" element={

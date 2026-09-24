@@ -98,12 +98,10 @@ describe('PuntoDialog · punto completado', () => {
     evidencias: [{ id: 'e1', tipo: 'enlace', nombre: 'Home en staging', url: 'https://x.com', drive_file_id: null, origen_task_id: null }],
   };
 
-  it('muestra qué se hizo y permite aprobarlo en reunión', async () => {
-    vi.mocked(minutasApi.accionPunto).mockResolvedValue(minutaCon({ estado: 'aprobado' }));
+  it('muestra qué se hizo; aprobar ya no está en gestión, se hace en Presentar', () => {
     abrir(completado);
     expect(screen.getByText('Se puso un video de 12 s en el home.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Aprobado en reunión' }));
-    await waitFor(() => expect(minutasApi.accionPunto).toHaveBeenCalledWith('i1', 'aprobar', {}));
+    expect(screen.queryByRole('button', { name: 'Aprobado en reunión' })).not.toBeInTheDocument();
   });
 
   it('permite reabrirlo', async () => {

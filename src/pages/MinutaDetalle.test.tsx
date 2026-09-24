@@ -31,7 +31,10 @@ const minuta: Minuta = {
   numero: 3, codigo: 'M-03', titulo: 'Revisión de avance: home y catálogo', fecha: '2026-09-22', estado: 'borrador',
   owner: { id: 'u1', nombre: 'Even' }, miembros: [{ id: 'u2', nombre: 'Diego Ruiz' }], resumen: 'Acuerdo: lanzamiento el 26 de noviembre.',
   progreso: { total: 2, cerrados: 0, enCurso: 1 },
-  items: [punto({}), punto({ id: 'i2', numero: 2, titulo: 'Fichas técnicas', responsable: null, responsable_cliente: true, estado: 'pendiente', fecha_compromiso: null, descripcion: null })],
+  items: [punto({ notas: [
+    { id: 'n1', tipo: 'nota', texto: 'Le gusta, pero quiere ver la versión en azul.', created_at: '2026-09-24T15:00:00.000Z', autor: { id: 'u1', nombre: 'Even' } },
+    { id: 'n2', tipo: 'ajuste', texto: 'Que el filtro recuerde la última marca.', created_at: '2026-09-24T15:05:00.000Z', autor: { id: 'u1', nombre: 'Even' } },
+  ] }), punto({ id: 'i2', numero: 2, titulo: 'Fichas técnicas', responsable: null, responsable_cliente: true, estado: 'pendiente', fecha_compromiso: null, descripcion: null })],
 };
 
 function renderDetalle() {
@@ -72,6 +75,18 @@ describe('MinutaDetalle', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent('evidencia: Filtro por marca');
     fireEvent.click(screen.getByRole('button', { name: 'Gestionar el punto 3.1' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('gestionar: Filtro por marca');
+  });
+
+  it('muestra las notas del cliente y los ajustes pedidos en el punto', async () => {
+    renderDetalle();
+    const punto = await screen.findByRole('listitem', { name: 'Punto 3.1' });
+    expect(punto).toHaveTextContent('Nota del cliente: Le gusta, pero quiere ver la versión en azul.');
+    expect(punto).toHaveTextContent('Ajuste pedido: Que el filtro recuerde la última marca.');
+  });
+
+  it('abre el modo presentación', async () => {
+    renderDetalle();
+    expect(await screen.findByRole('link', { name: 'Presentar' })).toHaveAttribute('href', '/minutas/m3/presentar');
   });
 
   it('un punto del cliente no tiene tareas', async () => {

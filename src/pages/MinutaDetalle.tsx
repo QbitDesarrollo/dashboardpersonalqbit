@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, FileDown, FolderKanban, Link2, Loader2, Pencil, Plus, SquareCheck, User } from 'lucide-react';
+import { ArrowLeft, CalendarDays, CheckCircle2, Circle, CircleDashed, FileDown, FolderKanban, Link2, Loader2, Pencil, Plus, Presentation, SquareCheck, User } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
 import { agregarPunto, borrarMinuta, editarMinuta, obtenerMinuta, type Minuta, type Punto } from '@/lib/minutasApi';
@@ -50,6 +50,15 @@ function FilaPunto({ minuta, p, hoy, onAbrir }: { minuta: Minuta; p: Punto; hoy:
       <div className="min-w-0 space-y-1">
         <p className="font-medium leading-snug">{p.titulo}</p>
         {p.descripcion && <p className="whitespace-pre-line text-sm text-muted-foreground">{p.descripcion}</p>}
+        {p.notas.length > 0 && (
+          <ul className="space-y-1 border-l-2 border-amber-300 pl-3 text-sm">
+            {p.notas.map((n) => (
+              <li key={n.id}>
+                <span className="font-medium">{n.tipo === 'ajuste' ? 'Ajuste pedido' : 'Nota del cliente'}:</span> {n.texto}
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 text-xs text-muted-foreground">
           <span className={cn('rounded-full px-2 py-0.5 font-medium', TONO[estado.tono])}>{estado.texto}</span>
           {p.responsable_cliente
@@ -268,6 +277,7 @@ export default function MinutaDetalle() {
           <div className="flex flex-wrap items-center gap-2">
             {minuta.estado === 'borrador' && <Badge variant="outline" className="text-muted-foreground">Borrador</Badge>}
             {minuta.estado === 'borrador' && <Button size="sm" onClick={publicar}>Publicar</Button>}
+            <Button size="sm" asChild><Link to={`/minutas/${minuta.id}/presentar`}><Presentation className="h-4 w-4" />Presentar</Link></Button>
             <Button size="sm" variant="outline" onClick={() => setEditando(true)}>Editar</Button>
             <Button size="sm" variant="outline" onClick={() => exportarMinutaPdf(minuta, { soloVisibles: true })}>
               <FileDown className="h-4 w-4" />Exportar PDF

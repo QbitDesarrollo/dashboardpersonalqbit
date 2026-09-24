@@ -95,10 +95,7 @@ export function VistaEvidencia({ punto, onActualizada }: Props) {
             {punto.aprobado_en && ` · Aprobado el ${fechaLocal(punto.aprobado_en)}${punto.aprobado_via === 'reunion' ? ' en reunión' : ''}${punto.aprobado_por_nombre ? ` (${punto.aprobado_por_nombre})` : ''}`}
           </p>
           {punto.estado === 'completado' && !punto.responsable_cliente && (
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={enviando} onClick={() => accion('aprobar')}><CheckCircle2 className="h-4 w-4" />Aprobado en reunión</Button>
-              <Button variant="outline" disabled={enviando} onClick={() => accion('reabrir')}>Reabrir</Button>
-            </div>
+            <Button variant="outline" disabled={enviando} onClick={() => accion('reabrir')}>Reabrir</Button>
           )}
         </div>
       ) : (
