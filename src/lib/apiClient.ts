@@ -1026,6 +1026,8 @@ export async function patchSiteSettings(data: {
   scrum_desk_id?: string | null;
   daily_meetings_desk_ids?: string;
   daily_meetings_roles?: string;
+  ia_minutas_desk_ids?: string;
+  ia_minutas_limite_diario?: string;
   notification_sound_enabled?: string;
   notification_sound_type?: string;
   chat_enabled?: string;

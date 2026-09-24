@@ -17,3 +17,6 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => {},
   }),
 });
+
+// Radix (Switch, Checkbox) measures elements with ResizeObserver, which jsdom does not provide.
+globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };

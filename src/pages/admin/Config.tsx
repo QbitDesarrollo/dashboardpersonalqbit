@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Edit, Trash2, Loader2, FileBox, CheckSquare, Image, Mail, Upload, UserPlus, LayoutGrid, Video, Bell, Volume2, VolumeX, MessageCircle, FolderOpen, Sparkles } from 'lucide-react';
 import { playNotificationSound, SOUND_TYPES, SOUND_LABELS, type SoundType } from '@/lib/notificationSound';
+import { ConfigMinutasIa } from '@/components/admin/ConfigMinutasIa';
 
 interface ItemType {
   id: string;
@@ -575,6 +576,7 @@ export default function AdminConfig() {
             <TabsTrigger value="correos" className="text-xs sm:text-sm">Correos</TabsTrigger>
             <TabsTrigger value="scrum" className="text-xs sm:text-sm">Scrum</TabsTrigger>
             <TabsTrigger value="reuniones" className="text-xs sm:text-sm">Reuniones</TabsTrigger>
+            <TabsTrigger value="minutas-ia" className="text-xs sm:text-sm">Minutas IA</TabsTrigger>
             <TabsTrigger value="campos" className="text-xs sm:text-sm">Campos</TabsTrigger>
             <TabsTrigger value="notificaciones" className="text-xs sm:text-sm">Sonido</TabsTrigger>
             <TabsTrigger value="chat" className="text-xs sm:text-sm">Chat</TabsTrigger>
@@ -1167,6 +1169,16 @@ export default function AdminConfig() {
               </form>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="minutas-ia" className="mt-4">
+          {/* key: re-reads the saved values once settings load or change */}
+          <ConfigMinutasIa
+            key={`${siteSettings?.ia_minutas_desk_ids ?? ''}|${siteSettings?.ia_minutas_limite_diario ?? ''}`}
+            desks={desks}
+            ajustes={siteSettings ?? {}}
+            onGuardado={fetchData}
+          />
         </TabsContent>
 
         <TabsContent value="chat" className="mt-4">
