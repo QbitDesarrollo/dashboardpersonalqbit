@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import * as api from '@/lib/apiClient';
 import type { ErrorLog } from '@/lib/apiClient';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,26 +32,35 @@ export default function ErrorLogs() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [auto, setAuto] = useState(true);
   const [view, setView] = useState<'errores' | 'chat'>('errores');
+  // Search once typing pauses, and only let the latest request update the list.
+  const [qBuscada, setQBuscada] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setQBuscada(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  const ultimoPedido = useRef(0);
 
   const load = useCallback(async () => {
+    const pedido = ++ultimoPedido.current;
     try {
       const [r, st] = await Promise.all([
         api.getErrorLogs({
           resolved: tab === 'all' ? undefined : (tab === '1' ? 1 : 0),
           level: level === 'all' ? undefined : level,
-          q: q.trim() || undefined,
+          q: qBuscada || undefined,
           limit: 200,
         }),
         api.getErrorLogStats(),
       ]);
+      if (pedido !== ultimoPedido.current) return;
       setLogs(r.logs);
       setStats(st);
     } catch (e) {
-      toast.error('No se pudo cargar la consola de errores');
+      if (pedido === ultimoPedido.current) toast.error('No se pudo cargar la consola de errores');
     } finally {
-      setLoading(false);
+      if (pedido === ultimoPedido.current) setLoading(false);
     }
-  }, [tab, level, q]);
+  }, [tab, level, qBuscada]);
 
   useEffect(() => { setLoading(true); load(); }, [load]);
 
@@ -153,7 +162,7 @@ export default function ErrorLogs() {
       </div>
 
       {/* Lista */}
-      {loading ? (
+      {loading && logs.length === 0 ? (
         <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : logs.length === 0 ? (
         <Card><CardContent className="py-16 text-center text-sm text-muted-foreground">
