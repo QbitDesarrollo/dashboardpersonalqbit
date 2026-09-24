@@ -49,3 +49,24 @@ export function requisitosCierre(p: { responsable_cliente: boolean; resolucion: 
   if (p.responsable_cliente) return [evidencia];
   return [{ texto: 'Explicación de lo que se hizo', ok: p.resolucion.trim().length >= 10 }, evidencia];
 }
+
+export interface PuntoPayload {
+  titulo: string;
+  descripcion: string | null;
+  responsable_user_id: string | null;
+  responsable_cliente: boolean;
+  fecha_compromiso: string | null;
+}
+
+/** Del borrador del editor al payload de la API. `responsable` es '' | id de usuario | 'cliente'. */
+export function aPuntosNuevos(borrador: { titulo: string; descripcion: string; responsable: string; fecha: string }[]): PuntoPayload[] {
+  return borrador
+    .filter((p) => p.titulo.trim())
+    .map((p) => ({
+      titulo: p.titulo.trim(),
+      descripcion: p.descripcion.trim() || null,
+      responsable_user_id: p.responsable && p.responsable !== 'cliente' ? p.responsable : null,
+      responsable_cliente: p.responsable === 'cliente',
+      fecha_compromiso: p.fecha || null,
+    }));
+}

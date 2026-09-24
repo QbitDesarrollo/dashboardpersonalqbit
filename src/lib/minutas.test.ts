@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estadoPunto, vencimiento, requisitosCierre } from './minutas';
+import { estadoPunto, vencimiento, requisitosCierre, aPuntosNuevos } from './minutas';
 
 describe('estadoPunto', () => {
   it.each([
@@ -47,6 +47,21 @@ describe('requisitosCierre', () => {
   it('un punto del cliente solo pide evidencia', () => {
     expect(requisitosCierre({ responsable_cliente: true, resolucion: '', evidencias: 0 })).toEqual([
       { texto: 'Al menos una evidencia', ok: false },
+    ]);
+  });
+});
+
+describe('aPuntosNuevos', () => {
+  it('traduce el borrador al payload de la API', () => {
+    expect(aPuntosNuevos([
+      { clave: 'a', titulo: ' Filtro por marca ', descripcion: 'En celular', responsable: 'u1', fecha: '2026-10-06' },
+      { clave: 'b', titulo: 'Fichas técnicas', descripcion: '  ', responsable: 'cliente', fecha: '' },
+      { clave: 'c', titulo: 'Botón de WhatsApp', descripcion: '', responsable: '', fecha: '' },
+      { clave: 'd', titulo: '   ', descripcion: 'sin título', responsable: '', fecha: '' },
+    ])).toEqual([
+      { titulo: 'Filtro por marca', descripcion: 'En celular', responsable_user_id: 'u1', responsable_cliente: false, fecha_compromiso: '2026-10-06' },
+      { titulo: 'Fichas técnicas', descripcion: null, responsable_user_id: null, responsable_cliente: true, fecha_compromiso: null },
+      { titulo: 'Botón de WhatsApp', descripcion: null, responsable_user_id: null, responsable_cliente: false, fecha_compromiso: null },
     ]);
   });
 });
