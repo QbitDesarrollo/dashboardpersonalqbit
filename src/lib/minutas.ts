@@ -1,3 +1,4 @@
+import type { PuntoIa } from './minutasIaApi';
 export type EstadoPunto = 'pendiente' | 'en_curso' | 'completado' | 'aprobado' | 'descartado';
 export type Tono = 'slate' | 'blue' | 'teal' | 'green' | 'amber' | 'rose' | 'violet';
 
@@ -69,6 +70,20 @@ export function aPuntosNuevos(borrador: { clave?: string; titulo: string; descri
       responsable_cliente: p.responsable === 'cliente',
       fecha_compromiso: p.fecha || null,
     }));
+}
+
+/** Puntos que propuso la IA, listos para revisarlos en el editor. La cita no se guarda: solo sirve para verificar. */
+export function puntosDesdeIa(
+  puntos: PuntoIa[],
+): { clave: string; titulo: string; descripcion: string; responsable: string; fecha: string; cita: string }[] {
+  return puntos.map((p) => ({
+    clave: crypto.randomUUID(),
+    titulo: p.titulo,
+    descripcion: p.descripcion,
+    responsable: p.responsable_cliente ? 'cliente' : '',
+    fecha: p.fecha_compromiso ?? '',
+    cita: p.cita,
+  }));
 }
 
 /** Fecha de hoy (YYYY-MM-DD) en Guayaquil. En UTC, después de las 19:00 ya sería mañana. */

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { estadoPunto, estadoCliente, vencimiento, requisitosCierre, aPuntosNuevos, hoyEcuador } from './minutas';
+import { estadoPunto, estadoCliente, vencimiento, requisitosCierre, aPuntosNuevos, hoyEcuador, puntosDesdeIa } from './minutas';
 
 describe('estadoPunto', () => {
   it.each([
@@ -86,5 +86,19 @@ describe('estadoCliente', () => {
     ['completado', true, 'Recibido', 'green'],
   ] as const)('%s (del cliente: %s) se le muestra al cliente como "%s"', (estado, responsable_cliente, texto, tono) => {
     expect(estadoCliente({ estado, responsable_cliente })).toEqual({ texto, tono });
+  });
+});
+
+describe('puntosDesdeIa', () => {
+  it('convierte los puntos de la IA en puntos del editor, con el cliente como responsable y la cita para revisar', () => {
+    const puntos = puntosDesdeIa([
+      { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, fecha_compromiso: '2026-10-03', cita: 'que no suene', tareas_sugeridas: [] },
+      { titulo: 'Fichas técnicas', descripcion: '', responsable_cliente: true, fecha_compromiso: null, cita: 'te las mando el lunes', tareas_sugeridas: [] },
+    ]);
+    expect(puntos.map(({ clave: _, ...p }) => p)).toEqual([
+      { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable: '', fecha: '2026-10-03', cita: 'que no suene' },
+      { titulo: 'Fichas técnicas', descripcion: '', responsable: 'cliente', fecha: '', cita: 'te las mando el lunes' },
+    ]);
+    expect(new Set(puntos.map((p) => p.clave)).size).toBe(2);
   });
 });

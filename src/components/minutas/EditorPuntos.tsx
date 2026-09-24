@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
 /** Un punto mientras se escribe la minuta. `responsable`: '' (sin asignar), id de usuario o 'cliente'. */
-export interface PuntoBorrador { clave: string; titulo: string; descripcion: string; responsable: string; fecha: string }
+export interface PuntoBorrador { clave: string; titulo: string; descripcion: string; responsable: string; fecha: string; cita?: string }
 
 interface Props {
   puntos: PuntoBorrador[];
@@ -56,6 +56,11 @@ export function EditorPuntos({ puntos, onChange, personas }: Props) {
               value={p.descripcion}
               onChange={(e) => { cambiar(p.clave, 'descripcion', e.target.value); ajustarAlto(e.target); }}
             />
+            {p.cita && (
+              <p className="border-l-2 border-primary/40 pl-2 text-xs text-muted-foreground">
+                <span className="font-medium">Dicho en la reunión:</span> <span className="italic">«{p.cita}»</span>
+              </p>
+            )}
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_170px]">
               <select
                 aria-label={`Responsable del punto ${i + 1}`}

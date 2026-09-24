@@ -52,4 +52,12 @@ describe('EditorPuntos', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Quitar el punto 1' }));
     expect(estado().map((p: string[]) => p[0])).toEqual(['Botón de WhatsApp']);
   });
+  it('muestra la cita de la reunión que respalda un punto propuesto por la IA', () => {
+    render(<Harness inicial={[
+      { clave: 'a', titulo: 'Video en el home', descripcion: '', responsable: '', fecha: '', cita: 'que el video no suene' },
+      { clave: 'b', titulo: 'Filtro', descripcion: '', responsable: '', fecha: '' },
+    ]} />);
+    expect(screen.getByText('«que el video no suene»')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Dicho en la reunión:/)).toHaveLength(1);
+  });
 });

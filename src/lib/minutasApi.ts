@@ -96,7 +96,7 @@ export interface MinutaNueva {
 export type AccionPunto = 'iniciar' | 'completar' | 'aprobar' | 'reabrir' | 'descartar' | 'restaurar' | 'pedir_ajuste';
 
 /** Llama a la API y lanza un Error con el mensaje del servidor si la respuesta no es OK. */
-async function llamar<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+export async function llamar<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const res = await apiRequest(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
   const texto = await res.text();
   let datos: unknown = null;
