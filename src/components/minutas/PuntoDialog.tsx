@@ -36,7 +36,7 @@ export function PuntoDialog({ minuta, punto, personas, vista, abierto, onOpenCha
           <span className={cn('inline-flex w-fit rounded-full px-2.5 py-0.5 text-xs font-medium', TONO[estado.tono])}>{estado.texto}</span>
         </DialogHeader>
         <div className="p-5 space-y-4">
-          {vista === 'gestionar' && <VistaGestionar punto={punto} personas={personas} onActualizada={onActualizada} />}
+          {vista === 'gestionar' && <VistaGestionar punto={punto} personas={personas} onActualizada={onActualizada} onGuardado={() => onOpenChange(false)} />}
           {vista === 'tareas' && <VistaTareas minuta={minuta} punto={punto} onActualizada={onActualizada} />}
           {vista === 'evidencia' && <VistaEvidencia punto={punto} onActualizada={onActualizada} />}
         </div>

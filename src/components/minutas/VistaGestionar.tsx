@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { editarPunto, type Minuta, type Punto } from '@/lib/minutasApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,10 +13,12 @@ interface Props {
   punto: Punto;
   personas: { id: string; nombre: string }[];
   onActualizada: (minuta: Minuta) => void;
+  /** Called after the changes were saved, so the dialog can close. */
+  onGuardado?: () => void;
 }
 
 /** Editar el punto: título, descripción, responsable, fecha, visibilidad; descartar o restaurar. */
-export function VistaGestionar({ punto, personas, onActualizada }: Props) {
+export function VistaGestionar({ punto, personas, onActualizada, onGuardado }: Props) {
   const { enviando, conError, accion } = usePuntoAcciones(punto.id, onActualizada);
   const [titulo, setTitulo] = useState(punto.titulo);
   const [descripcion, setDescripcion] = useState(punto.descripcion ?? '');
@@ -35,14 +38,19 @@ export function VistaGestionar({ punto, personas, onActualizada }: Props) {
     setMotivo('');
   }, [punto]);
 
-  const guardar = () => conError(() => editarPunto(punto.id, {
-    titulo: titulo.trim(),
-    descripcion: descripcion.trim() || null,
-    responsable_user_id: responsable && responsable !== 'cliente' ? responsable : null,
-    responsable_cliente: responsable === 'cliente',
-    fecha_compromiso: fecha || null,
-    visible_cliente: visible,
-  }), 'No se pudieron guardar los cambios');
+  const guardar = async () => {
+    const ok = await conError(() => editarPunto(punto.id, {
+      titulo: titulo.trim(),
+      descripcion: descripcion.trim() || null,
+      responsable_user_id: responsable && responsable !== 'cliente' ? responsable : null,
+      responsable_cliente: responsable === 'cliente',
+      fecha_compromiso: fecha || null,
+      visible_cliente: visible,
+    }), 'No se pudieron guardar los cambios');
+    if (!ok) return;
+    toast.success('Cambios guardados');
+    onGuardado?.();
+  };
 
   return (
     <div className="space-y-4">

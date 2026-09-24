@@ -44,9 +44,9 @@ const base: Punto = {
 };
 const minutaCon = (p: Partial<Punto>) => ({ id: 'm3', numero: 3, codigo: 'M-03', brand_id: 'b1', brand_nombre: 'Dinatek', project_id: 'p1', items: [{ ...base, ...p }] }) as unknown as Minuta;
 
-function abrir(p: Partial<Punto> = {}, onActualizada = vi.fn(), vista: 'evidencia' | 'tareas' | 'gestionar' = 'evidencia') {
+function abrir(p: Partial<Punto> = {}, onActualizada = vi.fn(), vista: 'evidencia' | 'tareas' | 'gestionar' = 'evidencia', onOpenChange: (abierto: boolean) => void = () => {}) {
   const minuta = minutaCon(p);
-  render(<PuntoDialog minuta={minuta} punto={minuta.items[0]} personas={[]} vista={vista} abierto onOpenChange={() => {}} onActualizada={onActualizada} />);
+  render(<PuntoDialog minuta={minuta} punto={minuta.items[0]} personas={[]} vista={vista} abierto onOpenChange={onOpenChange} onActualizada={onActualizada} />);
   return onActualizada;
 }
 
@@ -140,6 +140,29 @@ describe('PuntoDialog · gestionar', () => {
       titulo: 'Video en el home', descripcion: 'Con imagen de respaldo.', responsable_user_id: null,
       responsable_cliente: true, fecha_compromiso: null, visible_cliente: true,
     }));
+  });
+
+  it('al guardar avisa que quedó y cierra el modal', async () => {
+    vi.mocked(minutasApi.editarPunto).mockResolvedValue(minutaCon({}));
+    vi.mocked(toast.success).mockClear();
+    const onOpenChange = vi.fn();
+    abrir({}, vi.fn(), 'gestionar', onOpenChange);
+    fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Con imagen de respaldo.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toast.success).toHaveBeenCalledWith('Cambios guardados');
+  });
+
+  it('si no se pudo guardar, avisa el error y deja el modal abierto con lo escrito', async () => {
+    vi.mocked(minutasApi.editarPunto).mockRejectedValue(new Error('Sin conexión'));
+    vi.mocked(toast.error).mockClear();
+    const onOpenChange = vi.fn();
+    abrir({}, vi.fn(), 'gestionar', onOpenChange);
+    fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Con imagen de respaldo.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Sin conexión'));
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Descripción')).toHaveValue('Con imagen de respaldo.');
   });
 
   it('descarta el punto solo con un motivo', async () => {
