@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["titulo", "resumen", "puntos"],
+  "properties": {
+    "titulo": { "type": "string" },
+    "resumen": { "type": "string" },
+    "puntos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["titulo", "descripcion", "responsable", "fecha", "cita", "tareas_sugeridas"],
+        "properties": {
+          "titulo": { "type": "string" },
+          "descripcion": { "type": "string" },
+          "responsable": { "type": "string", "enum": ["agencia", "cliente"] },
+          "fecha": { "type": ["string", "null"] },
+          "cita": { "type": "string" },
+          "tareas_sugeridas": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["titulo", "departamento"],
+              "properties": {
+                "titulo": { "type": "string" },
+                "departamento": {
+                  "type": "string",
+                  "enum": ["Audiovisual", "Contenido", "Creatividad", "Cuentas", "Desarrollo", "Diseño", "Marketing", "Planning", "Producción", "QA"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

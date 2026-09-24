@@ -1,0 +1,10 @@
+{
+  "name": "codex-runner",
+  "private": true,
+  "description": "Local HTTP runner that turns meeting transcripts into minuta drafts with Codex CLI",
+  "scripts": {
+    "start": "node index.mjs",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" }
+}

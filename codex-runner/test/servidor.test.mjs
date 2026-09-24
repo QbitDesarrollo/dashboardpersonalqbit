@@ -1,0 +1,93 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { crearServidor } from '../servidor.mjs';
+
+const TOKEN = 'x'.repeat(40);
+
+async function levantar(opciones = {}) {
+  const servidor = crearServidor({
+    token: TOKEN,
+    verificarSesion: async () => ({ listo: true, detalle: 'Logged in using ChatGPT' }),
+    generar: async ({ transcripcion, fecha }) => ({ titulo: `Minuta ${fecha}`, resumen: transcripcion.slice(0, 10), puntos: [] }),
+    log: { error: () => {} },
+    ...opciones,
+  });
+  await new Promise((r) => servidor.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${servidor.address().port}`;
+  const llamar = (ruta, { token = TOKEN, ...init } = {}) =>
+    fetch(`${base}${ruta}`, { ...init, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+  return { servidor, llamar };
+}
+
+const cuerpo = (datos) => ({ method: 'POST', body: JSON.stringify(datos) });
+
+test('rechaza pedidos sin token o con un token distinto', async (t) => {
+  const { servidor, llamar } = await levantar();
+  t.after(() => servidor.close());
+  assert.equal((await llamar('/salud', { token: null })).status, 401);
+  assert.equal((await llamar('/salud', { token: 'y'.repeat(40) })).status, 401);
+  assert.equal((await llamar('/salud', { token: TOKEN.slice(1) })).status, 401);
+});
+
+test('salud informa si Codex tiene la sesión iniciada', async (t) => {
+  const { servidor, llamar } = await levantar({ verificarSesion: async () => ({ listo: false, detalle: 'Not logged in' }) });
+  t.after(() => servidor.close());
+  const r = await llamar('/salud');
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { listo: false, detalle: 'Not logged in' });
+});
+
+test('genera la minuta con la transcripción y la fecha', async (t) => {
+  const { servidor, llamar } = await levantar();
+  t.after(() => servidor.close());
+  const r = await llamar('/minuta', cuerpo({ transcripcion: 'Hola, revisamos el home.', fecha: '2026-09-24' }));
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { titulo: 'Minuta 2026-09-24', resumen: 'Hola, revi', puntos: [] });
+});
+
+test('valida la transcripción y la fecha', async (t) => {
+  const { servidor, llamar } = await levantar({ maxCaracteres: 20 });
+  t.after(() => servidor.close());
+  const vacia = await llamar('/minuta', cuerpo({ transcripcion: '   ', fecha: '2026-09-24' }));
+  assert.equal(vacia.status, 400);
+  assert.deepEqual(await vacia.json(), { error: 'Falta la transcripción.' });
+  const sinFecha = await llamar('/minuta', cuerpo({ transcripcion: 'Hola', fecha: '24/09/2026' }));
+  assert.equal(sinFecha.status, 400);
+  assert.deepEqual(await sinFecha.json(), { error: 'La fecha debe tener el formato AAAA-MM-DD.' });
+  const larga = await llamar('/minuta', cuerpo({ transcripcion: 'a'.repeat(21), fecha: '2026-09-24' }));
+  assert.equal(larga.status, 413);
+  assert.deepEqual(await larga.json(), { error: 'La transcripción es demasiado larga.' });
+  const rota = await llamar('/minuta', { method: 'POST', body: '{no es json' });
+  assert.equal(rota.status, 400);
+});
+
+test('atiende una minuta a la vez', async (t) => {
+  let soltar;
+  const { servidor, llamar } = await levantar({ generar: () => new Promise((r) => { soltar = () => r({ titulo: 'x', resumen: '', puntos: [] }); }) });
+  t.after(() => servidor.close());
+  const primera = llamar('/minuta', cuerpo({ transcripcion: 'Uno', fecha: '2026-09-24' }));
+  await new Promise((r) => setTimeout(r, 50));
+  const segunda = await llamar('/minuta', cuerpo({ transcripcion: 'Dos', fecha: '2026-09-24' }));
+  assert.equal(segunda.status, 429);
+  assert.deepEqual(await segunda.json(), { error: 'Codex está ocupado con otra minuta. Intenta en un minuto.' });
+  soltar();
+  assert.equal((await primera).status, 200);
+  const tercera = llamar('/minuta', cuerpo({ transcripcion: 'Tres', fecha: '2026-09-24' }));
+  await new Promise((r) => setTimeout(r, 50));
+  soltar();
+  assert.equal((await tercera).status, 200);
+});
+
+test('si Codex falla responde 502 sin filtrar el detalle', async (t) => {
+  const { servidor, llamar } = await levantar({ generar: async () => { throw new Error('token /home/codex-ia/.codex/auth.json vencido'); } });
+  t.after(() => servidor.close());
+  const r = await llamar('/minuta', cuerpo({ transcripcion: 'Hola', fecha: '2026-09-24' }));
+  assert.equal(r.status, 502);
+  assert.deepEqual(await r.json(), { error: 'Codex no pudo generar la minuta.' });
+});
+
+test('responde 404 a cualquier otra ruta', async (t) => {
+  const { servidor, llamar } = await levantar();
+  t.after(() => servidor.close());
+  assert.equal((await llamar('/otra')).status, 404);
+});

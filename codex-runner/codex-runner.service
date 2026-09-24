@@ -1,0 +1,33 @@
+[Unit]
+Description=Codex runner for Tiusdei minutas (127.0.0.1:3090)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=codex-ia
+Group=codex-ia
+WorkingDirectory=/opt/codex-runner
+EnvironmentFile=/etc/codex-runner.env
+ExecStart=/usr/bin/node /opt/codex-runner/index.mjs
+Restart=on-failure
+RestartSec=5
+
+# Isolation: the runner only sees its own home, never the apps or their secrets.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindPaths=/home/codex-ia
+InaccessiblePaths=/var/www /root /etc/mysql /etc/letsencrypt
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target
