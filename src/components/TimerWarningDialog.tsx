@@ -41,7 +41,8 @@ export function TimerWarningDialog() {
   return (
     <AlertDialog open={!!state} onOpenChange={(o) => { if (!o) setState(null); }}>
       <AlertDialogContent>
-        <AlertDialogHeader>
+        {/* min-w-0: the dialog is a CSS grid; without it a long line widens the column past the border. */}
+        <AlertDialogHeader className="min-w-0">
           <AlertDialogTitle className="flex items-center gap-2">
             {isEstimado ? (
               <><AlertTriangle className="h-5 w-5 text-destructive" />Pasaste las horas estimadas</>
@@ -51,7 +52,7 @@ export function TimerWarningDialog() {
           </AlertDialogTitle>
           <AlertDialogDescription>
             {state?.titulo && (
-              <span className="block mb-1.5 font-medium text-foreground truncate">Tarea: {state.titulo}</span>
+              <span className="block mb-1.5 font-medium text-foreground break-words line-clamp-2" title={state.titulo}>Tarea: {state.titulo}</span>
             )}
             {isEstimado && state?.kind === 'estimado' ? (
               <>Esta tarea estaba estimada en <strong>{state.estimadas}h</strong> y ya llevas <strong>{state.trabajadas}h</strong> trabajadas.
