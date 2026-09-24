@@ -528,3 +528,47 @@ describe('pedir ajuste', () => {
     expect(r.body.items[0].notas).toEqual([expect.objectContaining({ tipo: 'ajuste', texto: 'Que el video no tenga sonido.' })]);
   });
 });
+
+describe('PUT /minutas/:id/orden', () => {
+  async function conTresPuntos() {
+    const m = await crearMinuta(even, { brand_id: marcaId, fecha: '2026-09-24', titulo: 'Orden', items: [{ titulo: 'Uno' }, { titulo: 'Dos' }, { titulo: 'Tres' }] });
+    return { id: m.id as string, ids: (m.items as any[]).map((i) => i.id as string) };
+  }
+
+  it('reordena los puntos y los renumera según su nueva posición', async () => {
+    const { id, ids: [uno, dos, tres] } = await conTresPuntos();
+    const r = await llamar(`${api.url}/minutas/${id}/orden`, even, 'PUT', { items: [tres, uno, dos] });
+    expect(r.status).toBe(200);
+    expect(r.body.items.map((i: any) => [i.numero, i.titulo])).toEqual([[1, 'Tres'], [2, 'Uno'], [3, 'Dos']]);
+    const detalle = await llamar(`${api.url}/minutas/${id}`, even);
+    expect(detalle.body.items.map((i: any) => i.titulo)).toEqual(['Tres', 'Uno', 'Dos']);
+  });
+
+  it('rechaza una lista que no tiene exactamente los puntos de la minuta', async () => {
+    const { id, ids: [uno, dos, tres] } = await conTresPuntos();
+    const otra = await conTresPuntos();
+    for (const items of [[uno, dos], [uno, dos, tres, otra.ids[0]], [uno, uno, dos], [uno, dos, otra.ids[0]]]) {
+      const r = await llamar(`${api.url}/minutas/${id}/orden`, even, 'PUT', { items });
+      expect(r).toEqual({ status: 400, body: { error: 'La lista de puntos no coincide con la minuta.' } });
+    }
+    const detalle = await llamar(`${api.url}/minutas/${id}`, even);
+    expect(detalle.body.items.map((i: any) => i.titulo)).toEqual(['Uno', 'Dos', 'Tres']);
+  });
+
+  it('un punto agregado después de reordenar queda al final', async () => {
+    const { id, ids: [uno, dos, tres] } = await conTresPuntos();
+    await llamar(`${api.url}/minutas/${id}/orden`, even, 'PUT', { items: [tres, uno, dos] });
+    const r = await llamar(`${api.url}/minutas/${id}/items`, even, 'POST', { titulo: 'Cuatro' });
+    expect(r.body.items.map((i: any) => [i.numero, i.titulo])).toEqual([[1, 'Tres'], [2, 'Uno'], [3, 'Dos'], [4, 'Cuatro']]);
+  });
+
+  it('no deja reordenar a un cliente', async () => {
+    const { id, ids } = await conTresPuntos();
+    const cliente = await crearUsuario('Cliente', 'cliente');
+    expect((await llamar(`${api.url}/minutas/${id}/orden`, cliente, 'PUT', { items: ids.reverse() })).status).toBe(403);
+  });
+
+  it('responde 404 si la minuta no existe', async () => {
+    expect((await llamar(`${api.url}/minutas/no-existe/orden`, even, 'PUT', { items: [] })).status).toBe(404);
+  });
+});
