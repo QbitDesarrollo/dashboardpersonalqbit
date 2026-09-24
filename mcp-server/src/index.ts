@@ -19,6 +19,7 @@ import express, { type Request, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import { registrarMinutas } from "./herramientas/minutas.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const API_URL = process.env.TIUSDEI_API_URL;
@@ -499,6 +500,8 @@ function buildServer(token: string): McpServer {
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
   );
+
+  registrarMinutas(server, (path, init) => callTiusdei(token, path, init));
 
   return server;
 }
