@@ -10,16 +10,21 @@ type Rol = 'admin' | 'ejecutivo' | 'equipo' | 'cliente';
 export interface Usuario { id: string; nombre: string; token: string }
 
 /** Levanta una app mínima con los routers indicados, montados en /api/data. */
-export async function levantarApp(...routers: express.Router[]): Promise<{ url: string; cerrar: () => Promise<void> }> {
+export function levantarApp(...routers: express.Router[]): Promise<{ url: string; cerrar: () => Promise<void> }> {
+  return levantarAppEn('/api/data', ...routers);
+}
+
+/** Igual que levantarApp, pero montando los routers en otra base (ej. /api para rutas públicas). */
+export async function levantarAppEn(base: string, ...routers: express.Router[]): Promise<{ url: string; cerrar: () => Promise<void> }> {
   const app = express();
   app.use(express.json());
-  for (const r of routers) app.use('/api/data', r);
+  for (const r of routers) app.use(base, r);
   const server: Server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   const { port } = server.address() as AddressInfo;
   return {
-    url: `http://127.0.0.1:${port}/api/data`,
+    url: `http://127.0.0.1:${port}${base}`,
     cerrar: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }

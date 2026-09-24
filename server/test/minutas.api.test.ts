@@ -471,3 +471,21 @@ describe('DELETE /minutas/:id', () => {
     expect(r).toEqual({ status: 403, body: { error: 'Solo el responsable de la minuta o un administrador puede borrarla.' } });
   });
 });
+
+describe('enlace público · gestión', () => {
+  it('activa el enlace y al activarlo de nuevo devuelve el mismo token', async () => {
+    const creada = await crearMinuta(even, { brand_id: marcaId });
+    const primero = await llamar(`${api.url}/minutas/${creada.id}/enlace`, even, 'POST');
+    expect(primero.status).toBe(200);
+    expect(primero.body.enlace_publico).toEqual({ activo: true, token: expect.stringMatching(/^mn_[0-9a-f]{40}$/) });
+    const segundo = await llamar(`${api.url}/minutas/${creada.id}/enlace`, even, 'POST');
+    expect(segundo.body.enlace_publico.token).toBe(primero.body.enlace_publico.token);
+  });
+
+  it('desactiva el enlace', async () => {
+    const creada = await crearMinuta(even, { brand_id: marcaId });
+    await llamar(`${api.url}/minutas/${creada.id}/enlace`, even, 'POST');
+    const r = await llamar(`${api.url}/minutas/${creada.id}/enlace`, even, 'DELETE');
+    expect(r.body.enlace_publico.activo).toBe(false);
+  });
+});

@@ -1,7 +1,9 @@
+import crypto from 'crypto';
 import { Router, type Response, type NextFunction } from 'express';
 import type { RowDataPacket } from 'mysql2';
 import type { PoolConnection } from 'mysql2/promise';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { pool, query, queryOne, uuid } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
@@ -114,7 +116,8 @@ async function cargarDetalle(id: string) {
   const m = await queryOne<any>(
     `SELECT m.id, m.brand_id, b.nombre AS brand_nombre, m.project_id, p.nombre AS project_nombre,
             m.numero, m.titulo, DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, m.resumen, m.enlaces, m.estado,
-            m.owner_user_id, o.nombre AS owner_nombre, o.avatar_url AS owner_avatar, m.created_at
+            m.owner_user_id, o.nombre AS owner_nombre, o.avatar_url AS owner_avatar, m.created_at,
+            m.share_token, m.share_activo
        FROM minutas m
        JOIN brands b ON b.id = m.brand_id
        LEFT JOIN projects p ON p.id = m.project_id
@@ -190,6 +193,7 @@ async function cargarDetalle(id: string) {
     estado: m.estado,
     owner: { id: m.owner_user_id, nombre: m.owner_nombre, avatar_url: m.owner_avatar },
     miembros,
+    enlace_publico: { activo: !!m.share_activo, token: m.share_token ?? null },
     progreso: progreso(items.map((i) => i.estado as EstadoPunto)),
     items: items.map((i) => ({
       id: i.id,
@@ -598,5 +602,97 @@ minutasRouter.delete('/minutas/:id', requireAuth, soloEquipoInterno, async (req:
   } catch (e) {
     console.error('[MINUTAS] borrar:', e);
     res.status(500).json({ error: 'Error al borrar la minuta' });
+  }
+});
+
+/** Enlace público de la minuta. Si ya tenía token se reutiliza: el link que se mandó sigue sirviendo. */
+minutasRouter.post('/minutas/:id/enlace', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id);
+    const minuta = await queryOne<{ share_token: string | null }>('SELECT share_token FROM minutas WHERE id = ?', [id]);
+    if (!minuta) return res.status(404).json({ error: 'Minuta no encontrada' });
+    const token = minuta.share_token ?? `mn_${crypto.randomBytes(20).toString('hex')}`;
+    await query('UPDATE minutas SET share_token = ?, share_activo = 1 WHERE id = ?', [token, id]);
+    res.json(await cargarDetalle(id));
+  } catch (e) {
+    console.error('[MINUTAS] activar enlace:', e);
+    res.status(500).json({ error: 'Error al activar el enlace' });
+  }
+});
+
+minutasRouter.delete('/minutas/:id/enlace', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id);
+    const minuta = await queryOne('SELECT id FROM minutas WHERE id = ?', [id]);
+    if (!minuta) return res.status(404).json({ error: 'Minuta no encontrada' });
+    await query('UPDATE minutas SET share_activo = 0 WHERE id = ?', [id]);
+    res.json(await cargarDetalle(id));
+  } catch (e) {
+    console.error('[MINUTAS] desactivar enlace:', e);
+    res.status(500).json({ error: 'Error al desactivar el enlace' });
+  }
+});
+
+/**
+ * Lado público: el cliente abre el enlace sin login y ve SOLO los puntos visibles
+ * y no descartados. Sin resumen, sin equipo, sin tareas. Montado en /api (sin requireAuth).
+ */
+export const minutasPublicRouter = Router();
+const limitePublico = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
+
+minutasPublicRouter.get('/public/minutas/:token', limitePublico, async (req, res) => {
+  try {
+    const token = String(req.params.token);
+    const noExiste = () => res.status(404).json({ error: 'Este enlace no existe o fue desactivado.' });
+    if (!token || token.length > 80) return noExiste();
+    const m = await queryOne<any>(
+      `SELECT m.id, m.numero, m.titulo, DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, b.nombre AS marca
+         FROM minutas m JOIN brands b ON b.id = m.brand_id
+        WHERE m.share_token = ? AND m.share_activo = 1`,
+      [token],
+    );
+    if (!m) return noExiste();
+    await sincronizarArranques(m.id);
+    const puntos = await query<any[]>(
+      `SELECT id, numero, titulo, descripcion, estado, responsable_cliente, resolucion,
+              DATE_FORMAT(fecha_compromiso, '%Y-%m-%d') AS fecha_compromiso
+         FROM minuta_items
+        WHERE minuta_id = ? AND visible_cliente = 1 AND estado <> 'descartado'
+        ORDER BY sort_order, numero`,
+      [m.id],
+    );
+    const cerrados = puntos.filter((p) => p.estado === 'completado' || p.estado === 'aprobado').map((p) => p.id);
+    const evidencias = cerrados.length
+      ? await query<any[]>(
+        `SELECT item_id, tipo, nombre, url FROM minuta_item_evidencias
+          WHERE item_id IN (${cerrados.map(() => '?').join(',')}) ORDER BY created_at`,
+        cerrados,
+      )
+      : [];
+    res.json({
+      marca: m.marca,
+      codigo: codigo(m.numero),
+      titulo: m.titulo,
+      fecha: m.fecha,
+      puntos: puntos.map((p) => {
+        const cerrado = cerrados.includes(p.id);
+        return {
+          numero: p.numero,
+          titulo: p.titulo,
+          descripcion: p.descripcion,
+          estado: p.estado,
+          responsable_cliente: !!p.responsable_cliente,
+          fecha_compromiso: p.fecha_compromiso,
+          // Lo hecho y su evidencia solo se muestran cuando el punto está cerrado.
+          resolucion: cerrado ? p.resolucion : null,
+          evidencias: cerrado
+            ? evidencias.filter((e) => e.item_id === p.id).map((e) => ({ tipo: e.tipo, nombre: e.nombre, url: e.url }))
+            : [],
+        };
+      }),
+    });
+  } catch (e) {
+    console.error('[MINUTAS] público:', e);
+    res.status(500).json({ error: 'Error al cargar la minuta' });
   }
 });
