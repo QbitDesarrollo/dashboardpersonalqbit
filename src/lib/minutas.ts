@@ -1,0 +1,51 @@
+export type EstadoPunto = 'pendiente' | 'en_curso' | 'completado' | 'aprobado' | 'descartado';
+export type Tono = 'slate' | 'blue' | 'teal' | 'green' | 'amber' | 'rose' | 'violet';
+
+const ESTADO: Record<EstadoPunto, { texto: string; tono: Tono }> = {
+  pendiente: { texto: 'Pendiente', tono: 'slate' },
+  en_curso: { texto: 'En curso', tono: 'blue' },
+  completado: { texto: 'Completado', tono: 'teal' },
+  aprobado: { texto: 'Aprobado por el cliente', tono: 'green' },
+  descartado: { texto: 'Descartado', tono: 'slate' },
+};
+
+/** Cómo se muestra el estado de un punto. Los puntos del cliente hablan de "esperar" y "recibir". */
+export function estadoPunto(p: { estado: EstadoPunto; responsable_cliente: boolean }): { texto: string; tono: Tono } {
+  if (p.responsable_cliente && p.estado !== 'descartado') {
+    return p.estado === 'completado' || p.estado === 'aprobado'
+      ? { texto: 'Recibido', tono: 'green' }
+      : { texto: 'Esperando al cliente', tono: 'amber' };
+  }
+  return ESTADO[p.estado];
+}
+
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+function dias(desde: string, hasta: string): number {
+  return Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86400000);
+}
+
+/** Texto corto de una fecha YYYY-MM-DD: "6 oct". */
+export function fechaCorta(fecha: string): string {
+  const [, m, d] = fecha.split('-').map(Number);
+  return `${d} ${MESES[m - 1]}`;
+}
+
+/** Aviso de la fecha de compromiso. Los puntos cerrados o sin fecha no muestran nada. */
+export function vencimiento(fecha: string | null, estado: EstadoPunto, hoy: string): { texto: string; tono: Tono } | null {
+  if (!fecha || estado === 'completado' || estado === 'aprobado' || estado === 'descartado') return null;
+  const faltan = dias(hoy, fecha);
+  if (faltan < 0) return { texto: `Vencido hace ${-faltan} ${faltan === -1 ? 'día' : 'días'}`, tono: 'rose' };
+  if (faltan === 0) return { texto: 'Vence hoy', tono: 'amber' };
+  return { texto: fechaCorta(fecha), tono: 'slate' };
+}
+
+/**
+ * Lo que falta para cerrar un punto, para guiar en pantalla.
+ * La regla real la valida el servidor (server/src/minutas/domain.ts).
+ */
+export function requisitosCierre(p: { responsable_cliente: boolean; resolucion: string; evidencias: number }): { texto: string; ok: boolean }[] {
+  const evidencia = { texto: 'Al menos una evidencia', ok: p.evidencias > 0 };
+  if (p.responsable_cliente) return [evidencia];
+  return [{ texto: 'Explicación de lo que se hizo', ok: p.resolucion.trim().length >= 10 }, evidencia];
+}
