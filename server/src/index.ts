@@ -57,6 +57,8 @@ import { agentRouter } from './routes/agent.js';
 import { clientBoardsRouter } from './routes/client-boards.js';
 import { projectsRouter } from './routes/projects.js';
 import { minutasRouter } from './routes/minutas.js';
+import { crearRouterMinutasIa } from './routes/minutas-ia.js';
+import { crearRunnerHttp } from './minutas/ia/runner.js';
 import { publicClientRouter } from './routes/public-client.js';
 import { initErrorCapture, errorLogMiddleware } from './utils/errorLog.js';
 import { setSocketIO } from './services/whatsapp.js';
@@ -210,6 +212,10 @@ app.use('/api/data', errorLogsRouter);
 app.use('/api/data', agentRouter);
 app.use('/api/data', clientBoardsRouter);
 app.use('/api/data', projectsRouter);
+app.use('/api/data', crearRouterMinutasIa(crearRunnerHttp({
+  url: process.env.CODEX_RUNNER_URL ?? '',
+  token: process.env.CODEX_RUNNER_TOKEN ?? '',
+})));
 app.use('/api/data', minutasRouter);
 app.use('/api/data', apiTokensRouter);
 app.use('/api', mcpRouter);

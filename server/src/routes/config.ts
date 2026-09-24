@@ -66,6 +66,9 @@ const siteSettingsPatchSchema = z.object({
   scrum_desk_id: z.string().max(36).nullable().optional(),
   daily_meetings_desk_ids: z.string().max(1000).optional(),
   daily_meetings_roles: z.string().max(200).optional(),
+  // Minutas con IA: mesas cuyos miembros pueden usarla y cuántas por persona al día.
+  ia_minutas_desk_ids: z.string().max(1000).optional(),
+  ia_minutas_limite_diario: z.string().regex(/^\d{1,3}$/).optional(),
   notification_sound_enabled: z.string().max(10).optional(),
   notification_sound_type: z.string().max(50).optional(),
   chat_enabled: z.string().max(10).optional(),
@@ -86,6 +89,7 @@ configRouter.patch('/site-settings', requireAuth, requireAdminOrEjecutivo, async
       'registration_enabled', 'registration_allowed_domains', 'registration_max_users',
       'can_delete_tasks_roles', 'scrum_desk_id',
       'daily_meetings_desk_ids', 'daily_meetings_roles',
+      'ia_minutas_desk_ids', 'ia_minutas_limite_diario',
       'notification_sound_enabled', 'notification_sound_type',
       'chat_enabled',
       'drive_enabled',

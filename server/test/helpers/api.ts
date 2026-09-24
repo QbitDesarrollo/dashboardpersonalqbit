@@ -30,6 +30,7 @@ export async function levantarAppEn(base: string, ...routers: express.Router[]):
 }
 
 const TABLAS_DE_PRUEBA = [
+  'minuta_ia_trabajos', 'desk_members', 'desks', 'site_settings',
   'minuta_item_notas', 'minuta_item_evidencias', 'minuta_items', 'minuta_miembros', 'minutas',
   'tasks', 'projects', 'brands', 'user_roles', 'profiles', 'users',
 ];
@@ -63,6 +64,17 @@ export async function crearMarca(nombre: string): Promise<string> {
   const id = uuid();
   await query('INSERT INTO brands (id, nombre) VALUES (?, ?)', [id, nombre]);
   return id;
+}
+
+export async function crearMesa(nombre: string, miembros: string[] = []): Promise<string> {
+  const id = uuid();
+  await query('INSERT INTO desks (id, nombre) VALUES (?, ?)', [id, nombre]);
+  for (const userId of miembros) await query('INSERT INTO desk_members (id, desk_id, user_id) VALUES (?, ?, ?)', [uuid(), id, userId]);
+  return id;
+}
+
+export async function fijarAjuste(key: string, value: string): Promise<void> {
+  await query('INSERT INTO site_settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)', [key, value]);
 }
 
 export async function crearProyecto(brandId: string, nombre: string): Promise<string> {
