@@ -489,3 +489,22 @@ describe('enlace público · gestión', () => {
     expect(r.body.enlace_publico.activo).toBe(false);
   });
 });
+
+describe('evidencia con imagen', () => {
+  it('acepta una imagen subida a Tiusdei', async () => {
+    const itemId = await puntoCon();
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/evidencias`, even, 'POST', {
+      tipo: 'imagen', nombre: 'captura-home.png', url: 'https://tiusdei.qbit.ec/uploads/editor/3f2a9c1e-7b1d-4c2a-9f10-8e5d2b7a1c44.png',
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.items[0].evidencias[0]).toMatchObject({ tipo: 'imagen', nombre: 'captura-home.png' });
+  });
+
+  it('rechaza una imagen que no se subió a Tiusdei', async () => {
+    const itemId = await puntoCon();
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/evidencias`, even, 'POST', {
+      tipo: 'imagen', nombre: 'pixel.png', url: 'https://tracker.example.com/pixel.png',
+    });
+    expect(r).toEqual({ status: 400, body: { error: 'La imagen debe subirse a Tiusdei.' } });
+  });
+});

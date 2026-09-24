@@ -66,9 +66,10 @@ const editarItemSchema = z.object({
   visible_cliente: z.boolean().optional(),
 });
 
-// Evidencia: enlace o archivo de Drive. No se suben archivos a Tiusdei (decisión de Steven, 23-sep).
+// Evidencia: enlace, archivo de Drive o imagen (captura). Archivos pesados no se suben a
+// Tiusdei (decisión de Steven, 23-sep); las imágenes usan la subida de capturas del editor.
 const evidenciaSchema = z.object({
-  tipo: z.enum(['enlace', 'drive']),
+  tipo: z.enum(['enlace', 'drive', 'imagen']),
   nombre: z.string().trim().min(1).max(500),
   url: z.string().max(1000).regex(/^https?:\/\/\S+$/i, 'La URL debe empezar con http:// o https://'),
   drive_file_id: z.string().max(255).nullish(),
@@ -79,6 +80,20 @@ const accionSchema = z.object({
   resolucion: z.string().max(10000).optional(),
   motivo: z.string().max(2000).optional(),
 });
+
+/**
+ * Una imagen de evidencia tiene que haberse subido a Tiusdei (/uploads/editor/...).
+ * Si no, la página pública mostraría imágenes de terceros (p. ej. píxeles de rastreo).
+ */
+function esImagenPropia(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const propio = new URL(process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec');
+    return u.host === propio.host && /^\/uploads\/editor\/[A-Za-z0-9-]+\.(png|jpg|gif|webp)$/.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
 
 /** Un punto nuevo. Si lo debe hacer el cliente, no lleva responsable del equipo. */
 async function insertarPunto(conn: PoolConnection, minutaId: string, numero: number, it: z.infer<typeof itemSchema>) {
@@ -450,6 +465,9 @@ minutasRouter.post('/minuta-items/:id/evidencias', requireAuth, soloEquipoIntern
     const item = await queryOne<{ minuta_id: string }>('SELECT minuta_id FROM minuta_items WHERE id = ?', [itemId]);
     if (!item) return res.status(404).json({ error: 'Punto no encontrado' });
     const e = parsed.data;
+    if (e.tipo === 'imagen' && !esImagenPropia(e.url)) {
+      return res.status(400).json({ error: 'La imagen debe subirse a Tiusdei.' });
+    }
     await query(
       `INSERT INTO minuta_item_evidencias (id, item_id, tipo, nombre, url, drive_file_id, subido_por)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
