@@ -36,3 +36,6 @@ server/.env.bak.*
 # Local backups made before edits and deploys
 *.bak
 *.bak.*
+
+# Test database credentials (local only)
+server/.env.test
