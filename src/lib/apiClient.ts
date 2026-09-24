@@ -18,6 +18,22 @@ export interface ApiRequestOptions extends RequestInit {
   signal?: AbortSignal;
 }
 
+/** Evento que avisa a la app que la sesión venció (AuthContext lo escucha y cierra la sesión). */
+export const SESION_EXPIRADA = 'tiusdei:sesion-expirada';
+let tokenAvisado: string | null = null;
+
+/** Solo para tests: permite volver a avisar. */
+export function reiniciarAvisoDeSesion() { tokenAvisado = null; }
+
+// Las sesiones duran 7 días. Cuando vencen, la API responde 401 a todo: se borra la sesión
+// y se avisa una sola vez por sesión, en vez de seguir disparando peticiones rechazadas.
+function revisarSesion(res: Response, path: string, token: string | null) {
+  if (res.status !== 401 || !token || path.startsWith('/api/auth/') || token === tokenAvisado) return;
+  tokenAvisado = token;
+  localStorage.removeItem('tiusdei_token');
+  window.dispatchEvent(new Event(SESION_EXPIRADA));
+}
+
 /** Request autenticado; opcionalmente cancelable con AbortController. */
 export async function apiRequest(path: string, options: ApiRequestOptions = {}): Promise<Response> {
   const token = getToken();
@@ -27,7 +43,9 @@ export async function apiRequest(path: string, options: ApiRequestOptions = {}):
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const { signal, ...rest } = options;
-  return fetch(`${API_URL}${path}`, { ...rest, headers, signal });
+  const res = await fetch(`${API_URL}${path}`, { ...rest, headers, signal });
+  revisarSesion(res, path, token);
+  return res;
 }
 
 async function request(path: string, options: ApiRequestOptions = {}): Promise<Response> {

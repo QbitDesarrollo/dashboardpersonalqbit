@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
 
 type AppRole = 'admin' | 'ejecutivo' | 'equipo' | 'cliente';
@@ -93,6 +94,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: e instanceof Error ? e : new Error('Error al registrarse') };
     }
   };
+
+  // La API avisa cuando la sesión venció: se cierra aquí y la ruta protegida lleva al login.
+  useEffect(() => {
+    const alVencer = () => {
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+      toast.info('Tu sesión venció. Vuelve a entrar.');
+    };
+    window.addEventListener(api.SESION_EXPIRADA, alVencer);
+    return () => window.removeEventListener(api.SESION_EXPIRADA, alVencer);
+  }, []);
 
   const signOut = async () => {
     localStorage.removeItem('tiusdei_token');
