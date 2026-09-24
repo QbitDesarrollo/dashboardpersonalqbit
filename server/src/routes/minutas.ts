@@ -89,11 +89,28 @@ async function insertarPunto(conn: PoolConnection, minutaId: string, numero: num
   );
 }
 
+/**
+ * Un punto pendiente pasa a en curso cuando arranca alguna de sus tareas.
+ * Las tareas cambian de estado en muchas pantallas (timer, Kanban, handoff...),
+ * así que en vez de engancharse a cada una se sincroniza al leer minutas.
+ * Es la acción `iniciar` del dominio: solo mueve puntos pendientes.
+ */
+async function sincronizarArranques(minutaId?: string): Promise<void> {
+  await query(
+    `UPDATE minuta_items i SET i.estado = 'en_curso'
+      WHERE i.estado = 'pendiente'
+        ${minutaId ? 'AND i.minuta_id = ?' : ''}
+        AND EXISTS (SELECT 1 FROM tasks t WHERE t.minuta_item_id = i.id AND t.estado <> 'backlog')`,
+    minutaId ? [minutaId] : [],
+  );
+}
+
 function codigo(numero: number): string {
   return `M-${String(numero).padStart(2, '0')}`;
 }
 
 async function cargarDetalle(id: string) {
+  await sincronizarArranques(id);
   const m = await queryOne<any>(
     `SELECT m.id, m.brand_id, b.nombre AS brand_nombre, m.project_id, p.nombre AS project_nombre,
             m.numero, m.titulo, DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, m.resumen, m.enlaces, m.estado,
@@ -125,8 +142,26 @@ async function cargarDetalle(id: string) {
     [id],
   );
   const evidenciasPorItem = new Map<string, any[]>();
+  const tareasPorItem = new Map<string, any[]>();
   if (items.length) {
     const ids = items.map((i) => i.id);
+    const tareas = await query<any[]>(
+      `SELECT t.id, t.minuta_item_id, t.titulo_tarea, t.estado, DATE_FORMAT(t.fecha_entrega, '%Y-%m-%d') AS fecha_entrega,
+              t.responsable_user_id, p.nombre AS responsable_nombre, p.avatar_url AS responsable_avatar
+         FROM tasks t
+         LEFT JOIN profiles p ON p.id = t.responsable_user_id
+        WHERE t.minuta_item_id IN (${ids.map(() => '?').join(',')})
+        ORDER BY t.created_at`,
+      ids,
+    );
+    for (const t of tareas) {
+      const lista = tareasPorItem.get(t.minuta_item_id) ?? [];
+      lista.push({
+        id: t.id, titulo_tarea: t.titulo_tarea, estado: t.estado, fecha_entrega: t.fecha_entrega,
+        responsable: t.responsable_user_id ? { id: t.responsable_user_id, nombre: t.responsable_nombre, avatar_url: t.responsable_avatar } : null,
+      });
+      tareasPorItem.set(t.minuta_item_id, lista);
+    }
     const evidencias = await query<any[]>(
       `SELECT id, item_id, tipo, nombre, url, drive_file_id, origen_task_id, created_at
          FROM minuta_item_evidencias
@@ -176,6 +211,7 @@ async function cargarDetalle(id: string) {
       aprobado_en: i.aprobado_en,
       motivo_descarte: i.motivo_descarte,
       evidencias: evidenciasPorItem.get(i.id) ?? [],
+      tareas: tareasPorItem.get(i.id) ?? [],
     })),
     created_at: m.created_at,
   };
@@ -183,6 +219,7 @@ async function cargarDetalle(id: string) {
 
 minutasRouter.get('/minutas', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
   try {
+    await sincronizarArranques();
     const conds: string[] = [];
     const params: unknown[] = [];
     if (typeof req.query.brand_id === 'string' && req.query.brand_id) { conds.push('m.brand_id = ?'); params.push(req.query.brand_id); }
@@ -462,5 +499,104 @@ minutasRouter.post('/minuta-items/:id/accion', requireAuth, soloEquipoInterno, a
   } catch (e) {
     console.error('[MINUTAS] acción:', e);
     res.status(500).json({ error: 'Error al actualizar el punto' });
+  }
+});
+
+minutasRouter.post('/minuta-items/:id/tareas', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
+  const parsed = z.object({ task_id: z.string().uuid() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'task_id inválido' });
+  try {
+    const itemId = String(req.params.id);
+    const item = await queryOne<{ minuta_id: string; brand_id: string }>(
+      'SELECT i.minuta_id, m.brand_id FROM minuta_items i JOIN minutas m ON m.id = i.minuta_id WHERE i.id = ?',
+      [itemId],
+    );
+    if (!item) return res.status(404).json({ error: 'Punto no encontrado' });
+    const tarea = await queryOne<{ brand_id: string }>('SELECT brand_id FROM tasks WHERE id = ?', [parsed.data.task_id]);
+    if (!tarea) return res.status(404).json({ error: 'Tarea no encontrada' });
+    if (tarea.brand_id !== item.brand_id) return res.status(400).json({ error: 'La tarea es de otra marca.' });
+    await query('UPDATE tasks SET minuta_item_id = ? WHERE id = ?', [itemId, parsed.data.task_id]);
+    res.json(await cargarDetalle(item.minuta_id));
+  } catch (e) {
+    console.error('[MINUTAS] vincular tarea:', e);
+    res.status(500).json({ error: 'Error al vincular la tarea' });
+  }
+});
+
+minutasRouter.delete('/minuta-items/:id/tareas/:taskId', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
+  try {
+    const itemId = String(req.params.id);
+    const item = await queryOne<{ minuta_id: string }>('SELECT minuta_id FROM minuta_items WHERE id = ?', [itemId]);
+    if (!item) return res.status(404).json({ error: 'Punto no encontrado' });
+    // La tarea sigue existiendo; solo deja de estar vinculada a este punto.
+    await query('UPDATE tasks SET minuta_item_id = NULL WHERE id = ? AND minuta_item_id = ?', [String(req.params.taskId), itemId]);
+    res.json(await cargarDetalle(item.minuta_id));
+  } catch (e) {
+    console.error('[MINUTAS] desvincular tarea:', e);
+    res.status(500).json({ error: 'Error al desvincular la tarea' });
+  }
+});
+
+minutasRouter.delete('/minuta-evidencias/:id', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
+  try {
+    const evidenciaId = String(req.params.id);
+    const ev = await queryOne<any>(
+      `SELECT e.item_id, i.minuta_id, i.estado,
+              (SELECT COUNT(*) FROM minuta_item_evidencias x WHERE x.item_id = e.item_id) AS total
+         FROM minuta_item_evidencias e JOIN minuta_items i ON i.id = e.item_id
+        WHERE e.id = ?`,
+      [evidenciaId],
+    );
+    if (!ev) return res.status(404).json({ error: 'Evidencia no encontrada' });
+    const cerrado = ev.estado === 'completado' || ev.estado === 'aprobado';
+    if (cerrado && Number(ev.total) <= 1) {
+      return res.status(422).json({ error: 'Un punto cerrado necesita al menos una evidencia. Reábrelo para cambiarla.' });
+    }
+    await query('DELETE FROM minuta_item_evidencias WHERE id = ?', [evidenciaId]);
+    res.json(await cargarDetalle(ev.minuta_id));
+  } catch (e) {
+    console.error('[MINUTAS] quitar evidencia:', e);
+    res.status(500).json({ error: 'Error al quitar la evidencia' });
+  }
+});
+
+minutasRouter.delete('/minuta-items/:id', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
+  try {
+    const itemId = String(req.params.id);
+    const item = await queryOne<any>(
+      `SELECT i.minuta_id, i.estado,
+              (SELECT COUNT(*) FROM tasks t WHERE t.minuta_item_id = i.id) AS tareas,
+              (SELECT COUNT(*) FROM minuta_item_evidencias e WHERE e.item_id = i.id) AS evidencias
+         FROM minuta_items i WHERE i.id = ?`,
+      [itemId],
+    );
+    if (!item) return res.status(404).json({ error: 'Punto no encontrado' });
+    // Borrar es para errores de tipeo. Lo que ya tuvo avance se descarta y queda en el historial.
+    if (item.estado !== 'pendiente' || Number(item.tareas) > 0 || Number(item.evidencias) > 0) {
+      return res.status(422).json({ error: 'Este punto ya tiene avance. Descártalo en vez de borrarlo.' });
+    }
+    await query('DELETE FROM minuta_items WHERE id = ?', [itemId]);
+    res.json(await cargarDetalle(item.minuta_id));
+  } catch (e) {
+    console.error('[MINUTAS] borrar punto:', e);
+    res.status(500).json({ error: 'Error al borrar el punto' });
+  }
+});
+
+minutasRouter.delete('/minutas/:id', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id);
+    const minuta = await queryOne<{ owner_user_id: string }>('SELECT owner_user_id FROM minutas WHERE id = ?', [id]);
+    if (!minuta) return res.status(404).json({ error: 'Minuta no encontrada' });
+    const esAdmin = await hasRole(req.userId!, ['admin', 'ejecutivo']);
+    if (minuta.owner_user_id !== req.userId && !esAdmin) {
+      return res.status(403).json({ error: 'Solo el responsable de la minuta o un administrador puede borrarla.' });
+    }
+    // Los puntos y evidencias se van en cascada; las tareas quedan, sin vínculo (FK ON DELETE SET NULL).
+    await query('DELETE FROM minutas WHERE id = ?', [id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[MINUTAS] borrar:', e);
+    res.status(500).json({ error: 'Error al borrar la minuta' });
   }
 });

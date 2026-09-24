@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { minutasRouter } from '../src/routes/minutas.js';
-import { levantarApp, limpiarBase, cerrarLimpieza, crearUsuario, crearMarca, crearProyecto, llamar, type Usuario } from './helpers/api.js';
+import {
+  levantarApp, limpiarBase, cerrarLimpieza, crearUsuario, crearMarca, crearProyecto, crearTarea, llamar, type Usuario,
+} from './helpers/api.js';
+import { query } from '../src/db/mysql.js';
 
 let api: { url: string; cerrar: () => Promise<void> };
 let even: Usuario;
@@ -337,9 +340,134 @@ describe('POST /minuta-items/:id/accion', () => {
     expect(r.body.items[0]).toMatchObject({ estado: 'pendiente', motivo_descarte: null });
   });
 
-  it('responde 422 con una acción desconocida', async () => {
+  it('responde 422 con una acción desconocida (el dominio la rechaza)', async () => {
     const itemId = await puntoCon();
     const r = await llamar(`${api.url}/minuta-items/${itemId}/accion`, even, 'POST', { accion: 'constructor' });
     expect(r).toEqual({ status: 422, body: { error: 'Acción desconocida.' } });
+  });
+});
+
+describe('POST /minuta-items/:id/tareas', () => {
+  it('vincula una tarea de la misma marca y el punto la muestra', async () => {
+    const itemId = await puntoCon();
+    const tareaId = await crearTarea(marcaId, 'Editar el video de planta');
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/tareas`, even, 'POST', { task_id: tareaId });
+    expect(r.status).toBe(200);
+    expect(r.body.items[0].tareas).toEqual([
+      expect.objectContaining({ id: tareaId, titulo_tarea: 'Editar el video de planta', estado: 'backlog' }),
+    ]);
+  });
+
+  it('rechaza una tarea de otra marca', async () => {
+    const itemId = await puntoCon();
+    const alba = await crearMarca('Alba del Bosque');
+    const ajena = await crearTarea(alba, 'Tarea de otro cliente');
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/tareas`, even, 'POST', { task_id: ajena });
+    expect(r).toEqual({ status: 400, body: { error: 'La tarea es de otra marca.' } });
+  });
+});
+
+describe('POST /minuta-items/:id/tareas · arranque automático', () => {
+  it('pasa el punto a en curso si la tarea vinculada ya está en proceso', async () => {
+    const itemId = await puntoCon();
+    const tareaId = await crearTarea(marcaId, 'Implementar el filtro', 'en_proceso');
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/tareas`, even, 'POST', { task_id: tareaId });
+    expect(r.body.items[0].estado).toBe('en_curso');
+  });
+
+  it('deja el punto pendiente si la tarea está en backlog', async () => {
+    const itemId = await puntoCon();
+    const tareaId = await crearTarea(marcaId, 'QA en móvil', 'backlog');
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/tareas`, even, 'POST', { task_id: tareaId });
+    expect(r.body.items[0].estado).toBe('pendiente');
+  });
+});
+
+describe('arranque automático cuando la tarea arranca después', () => {
+  it('el punto aparece en curso en el detalle y en la lista', async () => {
+    const creada = await crearMinuta(even, { brand_id: marcaId, items: [{ titulo: 'Filtro' }] });
+    const itemId = creada.items[0].id;
+    const tareaId = await crearTarea(marcaId, 'Implementar el filtro', 'backlog');
+    await llamar(`${api.url}/minuta-items/${itemId}/tareas`, even, 'POST', { task_id: tareaId });
+    // Alguien arranca el timer de la tarea desde otra pantalla de Tiusdei.
+    await query("UPDATE tasks SET estado = 'en_proceso' WHERE id = ?", [tareaId]);
+    const lista = await llamar(`${api.url}/minutas`, even);
+    const detalle = await llamar(`${api.url}/minutas/${creada.id}`, even);
+    expect(lista.body[0].progreso.enCurso).toBe(1);
+    expect(detalle.body.items[0].estado).toBe('en_curso');
+  });
+});
+
+describe('DELETE /minuta-items/:id/tareas/:taskId', () => {
+  it('desvincula la tarea sin borrarla', async () => {
+    const itemId = await puntoCon();
+    const tareaId = await crearTarea(marcaId, 'Editar el video de planta');
+    await llamar(`${api.url}/minuta-items/${itemId}/tareas`, even, 'POST', { task_id: tareaId });
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/tareas/${tareaId}`, even, 'DELETE');
+    expect(r.status).toBe(200);
+    expect(r.body.items[0].tareas).toEqual([]);
+    const [tarea] = await query<any[]>('SELECT id, minuta_item_id FROM tasks WHERE id = ?', [tareaId]);
+    expect(tarea).toEqual({ id: tareaId, minuta_item_id: null });
+  });
+});
+
+describe('DELETE /minuta-evidencias/:id', () => {
+  it('quita una evidencia de un punto abierto', async () => {
+    const itemId = await puntoCon();
+    await adjuntarEnlace(itemId);
+    const antes = await llamar(`${api.url}/minutas`, even);
+    const detalle = await llamar(`${api.url}/minutas/${antes.body[0].id}`, even);
+    const evidenciaId = detalle.body.items[0].evidencias[0].id;
+    const r = await llamar(`${api.url}/minuta-evidencias/${evidenciaId}`, even, 'DELETE');
+    expect(r.status).toBe(200);
+    expect(r.body.items[0].evidencias).toEqual([]);
+  });
+
+  it('no deja quitar la última evidencia de un punto cerrado', async () => {
+    const itemId = await puntoCon();
+    await adjuntarEnlace(itemId);
+    const cerrado = await llamar(`${api.url}/minuta-items/${itemId}/accion`, even, 'POST', {
+      accion: 'completar', resolucion: 'Video de 12 s en el home.',
+    });
+    const evidenciaId = cerrado.body.items[0].evidencias[0].id;
+    const r = await llamar(`${api.url}/minuta-evidencias/${evidenciaId}`, even, 'DELETE');
+    expect(r).toEqual({ status: 422, body: { error: 'Un punto cerrado necesita al menos una evidencia. Reábrelo para cambiarla.' } });
+  });
+});
+
+describe('DELETE /minuta-items/:id', () => {
+  it('borra un punto pendiente sin avance y no renumera los demás', async () => {
+    const creada = await crearMinuta(even, { brand_id: marcaId, items: [{ titulo: 'Uno' }, { titulo: 'Dos' }, { titulo: 'Tres' }] });
+    const r = await llamar(`${api.url}/minuta-items/${creada.items[1].id}`, even, 'DELETE');
+    expect(r.status).toBe(200);
+    expect(r.body.items.map((i: any) => [i.numero, i.titulo])).toEqual([[1, 'Uno'], [3, 'Tres']]);
+  });
+
+  it('no borra un punto que ya tiene tareas: hay que descartarlo', async () => {
+    const itemId = await puntoCon();
+    const tareaId = await crearTarea(marcaId, 'Editar el video');
+    await llamar(`${api.url}/minuta-items/${itemId}/tareas`, even, 'POST', { task_id: tareaId });
+    const r = await llamar(`${api.url}/minuta-items/${itemId}`, even, 'DELETE');
+    expect(r).toEqual({ status: 422, body: { error: 'Este punto ya tiene avance. Descártalo en vez de borrarlo.' } });
+  });
+});
+
+describe('DELETE /minutas/:id', () => {
+  it('el responsable la borra y las tareas vinculadas siguen existiendo', async () => {
+    const creada = await crearMinuta(even, { brand_id: marcaId, items: [{ titulo: 'Filtro' }] });
+    const tareaId = await crearTarea(marcaId, 'Implementar el filtro');
+    await llamar(`${api.url}/minuta-items/${creada.items[0].id}/tareas`, even, 'POST', { task_id: tareaId });
+    const r = await llamar(`${api.url}/minutas/${creada.id}`, even, 'DELETE');
+    expect(r).toEqual({ status: 200, body: { ok: true } });
+    expect((await llamar(`${api.url}/minutas/${creada.id}`, even)).status).toBe(404);
+    const [tarea] = await query<any[]>('SELECT minuta_item_id FROM tasks WHERE id = ?', [tareaId]);
+    expect(tarea.minuta_item_id).toBeNull();
+  });
+
+  it('alguien del equipo que no es el responsable no puede borrarla', async () => {
+    const carla = await crearUsuario('Carla Mora', 'equipo');
+    const creada = await crearMinuta(even, { brand_id: marcaId });
+    const r = await llamar(`${api.url}/minutas/${creada.id}`, carla, 'DELETE');
+    expect(r).toEqual({ status: 403, body: { error: 'Solo el responsable de la minuta o un administrador puede borrarla.' } });
   });
 });

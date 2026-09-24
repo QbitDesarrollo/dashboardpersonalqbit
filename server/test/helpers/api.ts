@@ -66,6 +66,12 @@ export async function crearProyecto(brandId: string, nombre: string): Promise<st
   return id;
 }
 
+export async function crearTarea(brandId: string, titulo: string, estado = 'backlog'): Promise<string> {
+  const id = uuid();
+  await query('INSERT INTO tasks (id, brand_id, titulo_tarea, estado) VALUES (?, ?, ?, ?)', [id, brandId, titulo, estado]);
+  return id;
+}
+
 /** fetch con el token del usuario y JSON. Devuelve status y body ya parseado. */
 export async function llamar(
   url: string,
