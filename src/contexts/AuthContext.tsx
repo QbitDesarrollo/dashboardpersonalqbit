@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
+import { debeRenovar } from '@/lib/sesion';
 
 type AppRole = 'admin' | 'ejecutivo' | 'equipo' | 'cliente';
 
@@ -94,6 +95,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: e instanceof Error ? e : new Error('Error al registrarse') };
     }
   };
+
+  // Renueva la sesión en silencio mientras se usa (al entrar y cada hora), para que no venza a media semana.
+  useEffect(() => {
+    if (!user) return;
+    const renovar = async () => {
+      if (!debeRenovar(localStorage.getItem('tiusdei_token'))) return;
+      try {
+        const r = await api.renovarSesion();
+        if (r.token) {
+          localStorage.setItem('tiusdei_token', r.token);
+          setSession({ access_token: r.token });
+        }
+      } catch { /* sin red: se intenta en la próxima vuelta */ }
+    };
+    renovar();
+    const cadaHora = window.setInterval(renovar, 3600_000);
+    return () => window.clearInterval(cadaHora);
+  }, [user?.id]);
 
   // La API avisa cuando la sesión venció: se cierra aquí y la ruta protegida lleva al login.
   useEffect(() => {

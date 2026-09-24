@@ -58,6 +58,12 @@ export async function login(email: string, password: string) {
   return res.json();
 }
 
+/** New 7-day token while the app is in use (refused 30 days after the last password login). */
+export async function renovarSesion(): Promise<{ token?: string; error?: string }> {
+  const res = await request('/api/auth/renovar', { method: 'POST' });
+  return res.json();
+}
+
 export async function register(email: string, password: string, nombre: string, rol = 'equipo') {
   const res = await request('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, nombre, rol }) });
   return res.json();
