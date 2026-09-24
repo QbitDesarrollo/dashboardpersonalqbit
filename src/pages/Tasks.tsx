@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTareaDesdeMinuta } from '@/hooks/useTareaDesdeMinuta';
 import * as api from '@/lib/apiClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
@@ -855,6 +856,8 @@ export default function Tasks() {
         // Close dialog and reset form after creation
         setDialogOpen(false);
         resetForm();
+        // Si la tarea nació desde un punto de minuta: vincularla y volver a la minuta.
+        if (insertedTask?.id) await tareaDesdeMinuta.alCrearTarea(insertedTask.id);
       }
 
       fetchData();
@@ -960,6 +963,13 @@ export default function Tasks() {
     setShowDrivePicker(false);
     setCustomFieldValues({});
   };
+
+  // "Nueva tarea" desde un punto de minuta: formulario prellenado por URL.
+  const tareaDesdeMinuta = useTareaDesdeMinuta((form) => {
+    resetForm();
+    setFormData((prev) => ({ ...prev, ...form }));
+    setDialogOpen(true);
+  });
 
   const openEditDialog = (task: Task) => {
     setSelectedTask(task);
@@ -1523,7 +1533,7 @@ export default function Tasks() {
             {(isAdmin || isEjecutivo || isEquipo) && (
           <Dialog open={dialogOpen} onOpenChange={(open) => {
             setDialogOpen(open);
-            if (!open) resetForm();
+            if (!open) { resetForm(); tareaDesdeMinuta.cancelar(); }
           }}>
             <DialogTrigger asChild>
               <Button className="gradient-primary w-full sm:w-auto" onClick={() => resetForm()}>

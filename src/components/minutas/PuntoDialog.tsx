@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Circle, ExternalLink, HardDrive, Link2, Loader2, Search, SquareCheck, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { CheckCircle2, Circle, ExternalLink, HardDrive, Link2, Loader2, Plus, Search, SquareCheck, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { accionPunto, agregarEvidencia, desvincularTarea, editarPunto, quitarEvidencia, vincularTarea, type AccionPunto, type Minuta, type Punto } from '@/lib/minutasApi';
 import { getTasks } from '@/lib/apiClient';
 import { estadoPunto, requisitosCierre } from '@/lib/minutas';
 import { TONO } from './tonos';
+import { urlNuevaTareaDesdePunto } from '@/lib/tareaDesdePunto';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DriveBrowser } from '@/components/drive/DriveBrowser';
 import type { DriveFile } from '@/lib/apiClient';
@@ -54,6 +56,7 @@ export function PuntoDialog({ minuta, punto, personas, abierto, onOpenChange, on
   const [visible, setVisible] = useState(punto.visible_cliente);
   const [descartando, setDescartando] = useState(false);
   const [motivo, setMotivo] = useState('');
+  const navigate = useNavigate();
   const [busqueda, setBusqueda] = useState('');
   const [encontradas, setEncontradas] = useState<TareaEncontrada[]>([]);
 
@@ -272,6 +275,20 @@ export function PuntoDialog({ minuta, punto, personas, abierto, onOpenChange, on
                   ))}
                 </ul>
               )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => navigate(urlNuevaTareaDesdePunto({
+                  brandId: minuta.brand_id,
+                  projectId: minuta.project_id,
+                  titulo: punto.titulo,
+                  detalle: [punto.descripcion, `Origen: ${minuta.brand_nombre} ${minuta.codigo}, punto ${minuta.numero}.${punto.numero}.`].filter(Boolean).join('\n\n'),
+                  fechaEntrega: punto.fecha_compromiso,
+                  minutaItemId: punto.id,
+                  minutaId: minuta.id,
+                }))}>
+                  <Plus className="h-4 w-4" />Nueva tarea
+                </Button>
+                <span className="text-xs text-muted-foreground">Abre el formulario de tarea de siempre, prellenado. Al guardar vuelves aquí.</span>
+              </div>
               <div className="space-y-2">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

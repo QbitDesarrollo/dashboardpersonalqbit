@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PuntoDialog } from './PuntoDialog';
+import { urlNuevaTareaDesdePunto } from '@/lib/tareaDesdePunto';
 import * as minutasApi from '@/lib/minutasApi';
 import * as apiClient from '@/lib/apiClient';
 import type { Minuta, Punto } from '@/lib/minutasApi';
@@ -10,6 +11,8 @@ vi.mock('@/lib/minutasApi', () => ({
   vincularTarea: vi.fn(), desvincularTarea: vi.fn(),
 }));
 vi.mock('@/lib/apiClient', () => ({ getTasks: vi.fn() }));
+const navigate = vi.fn();
+vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 vi.mock('@/components/drive/DriveBrowser', () => ({
   DriveBrowser: ({ onSelect }: { onSelect: (f: unknown) => void }) => (
     <button type="button" onClick={() => onSelect({ id: 'f1', name: 'Video planta v2.mp4', webViewLink: 'https://drive.google.com/file/d/f1/view', mimeType: 'video/mp4', isFolder: false })}>
@@ -24,7 +27,7 @@ const base: Punto = {
   completado_en: null, aprobado_via: null, aprobado_por_nombre: null, aprobado_en: null, motivo_descarte: null,
   evidencias: [], tareas: [],
 };
-const minutaCon = (p: Partial<Punto>) => ({ id: 'm3', numero: 3, brand_id: 'b1', brand_nombre: 'Dinatek', items: [{ ...base, ...p }] }) as unknown as Minuta;
+const minutaCon = (p: Partial<Punto>) => ({ id: 'm3', numero: 3, codigo: 'M-03', brand_id: 'b1', brand_nombre: 'Dinatek', project_id: 'p1', items: [{ ...base, ...p }] }) as unknown as Minuta;
 
 function abrir(p: Partial<Punto> = {}, onActualizada = vi.fn()) {
   const minuta = minutaCon(p);
@@ -170,5 +173,20 @@ describe('PuntoDialog · tareas', () => {
     await waitFor(() => expect(apiClient.getTasks).toHaveBeenCalledWith({ brand_id: 'b1', search: 'menú', limit: 8 }));
     fireEvent.click(await screen.findByRole('button', { name: 'Vincular Maquetar el menú principal' }));
     await waitFor(() => expect(minutasApi.vincularTarea).toHaveBeenCalledWith('i1', 't9'));
+  });
+});
+
+describe('PuntoDialog · nueva tarea', () => {
+  beforeEach(() => { navigate.mockReset(); });
+
+  it('abre el formulario de tarea de siempre, prellenado con el punto', () => {
+    abrir({ descripcion: 'Botón fijo abajo.', fecha_compromiso: '2026-10-03' });
+    fireEvent.click(screen.getByRole('tab', { name: /Tareas/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva tarea' }));
+    expect(navigate).toHaveBeenCalledWith(urlNuevaTareaDesdePunto({
+      brandId: 'b1', projectId: 'p1', titulo: 'Video en el home',
+      detalle: 'Botón fijo abajo.\n\nOrigen: Dinatek M-03, punto 3.2.',
+      fechaEntrega: '2026-10-03', minutaItemId: 'i1', minutaId: 'm3',
+    }));
   });
 });
