@@ -90,7 +90,7 @@ export function AgentChat() {
           if (last && ['aplicado', 'fallido'].includes(last.estado)) {
             clearInterval(poll); setPromoting(false);
             if (last.estado === 'aplicado') toast.success('Promovido a producción ✓');
-            else toast.error('Promoción falló — se hizo rollback. Revisá el detalle.');
+            else toast.error('Promoción falló — se hizo rollback. Revisa el detalle.');
           }
         } catch { /* */ }
         if (Date.now() - start > 200000) { clearInterval(poll); setPromoting(false); }

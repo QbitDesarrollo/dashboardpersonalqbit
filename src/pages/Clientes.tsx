@@ -122,7 +122,7 @@ export default function Clientes() {
       </div>
 
       {loading ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-        : boards.length === 0 ? <Card><CardContent className="py-14 text-center text-sm text-muted-foreground">Todavía no hay tableros. Creá uno para tu primer cliente.</CardContent></Card>
+        : boards.length === 0 ? <Card><CardContent className="py-14 text-center text-sm text-muted-foreground">Todavía no hay tableros. Crea uno para tu primer cliente.</CardContent></Card>
         : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {boards.map((b) => (
@@ -156,7 +156,7 @@ export default function Clientes() {
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Nuevo tablero de cliente</DialogTitle><DialogDescription>Elegí la marca. Se genera un link único sin login para compartir.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Nuevo tablero de cliente</DialogTitle><DialogDescription>Elige la marca. Se genera un link único sin login para compartir.</DialogDescription></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5"><Label className="text-xs">Marca *</Label>
               <Select value={newBrand} onValueChange={setNewBrand}>

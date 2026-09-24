@@ -144,9 +144,25 @@ export function DriveBrowser({ mode = 'browse', taskId, onSelect, onClose }: Dri
         <div>
           <p className="font-medium text-foreground">Google Drive no conectado</p>
           <p className="text-sm text-muted-foreground mt-1">
-            Reconecta tu cuenta de Google desde tu perfil para acceder a Drive.
+            Conecta tu cuenta de Google para ver y adjuntar archivos de tu Drive.
           </p>
         </div>
+        {/* Antes el texto mandaba "a tu perfil", donde no habia ningun boton
+            (callejon sin salida, incidencia 707d77f2). Ahora se conecta aqui mismo. */}
+        <Button
+          type="button"
+          onClick={() => {
+            const base = import.meta.env.VITE_API_URL || window.location.origin;
+            window.location.href = `${base}/api/auth/google?mode=connect`;
+          }}
+          className="gap-2"
+        >
+          <Folder className="h-4 w-4" />
+          Conectar Google Drive
+        </Button>
+        <p className="text-xs text-muted-foreground max-w-[260px]">
+          Se abrira la ventana de Google. Al terminar vuelves aqui y tus archivos aparecen.
+        </p>
       </div>
     );
   }
