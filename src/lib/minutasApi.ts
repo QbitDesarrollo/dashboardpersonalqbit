@@ -5,7 +5,7 @@ export interface Persona { id: string; nombre: string; avatar_url?: string | nul
 
 export interface Evidencia {
   id: string;
-  tipo: 'enlace' | 'drive' | 'archivo';
+  tipo: 'enlace' | 'drive' | 'archivo' | 'imagen';
   nombre: string;
   url: string;
   drive_file_id: string | null;
@@ -143,7 +143,7 @@ export function borrarPunto(itemId: string): Promise<Minuta> {
 
 export function agregarEvidencia(
   itemId: string,
-  evidencia: { tipo: 'enlace' | 'drive'; nombre: string; url: string; drive_file_id?: string | null },
+  evidencia: { tipo: 'enlace' | 'drive' | 'imagen'; nombre: string; url: string; drive_file_id?: string | null },
 ): Promise<Minuta> {
   return llamar<Minuta>(`/api/data/minuta-items/${itemId}/evidencias`, 'POST', evidencia);
 }

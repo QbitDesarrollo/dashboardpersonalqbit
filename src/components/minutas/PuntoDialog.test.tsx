@@ -10,7 +10,7 @@ vi.mock('@/lib/minutasApi', () => ({
   accionPunto: vi.fn(), agregarEvidencia: vi.fn(), quitarEvidencia: vi.fn(), editarPunto: vi.fn(),
   vincularTarea: vi.fn(), desvincularTarea: vi.fn(),
 }));
-vi.mock('@/lib/apiClient', () => ({ getTasks: vi.fn() }));
+vi.mock('@/lib/apiClient', () => ({ getTasks: vi.fn(), uploadEditorImage: vi.fn() }));
 const navigate = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 vi.mock('@/components/drive/DriveBrowser', () => ({
@@ -187,5 +187,32 @@ describe('PuntoDialog · sin pestañas', () => {
     abrir({}, vi.fn(), 'tareas');
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nueva tarea' })).toBeInTheDocument();
+  });
+});
+
+describe('PuntoDialog · imágenes como evidencia', () => {
+  const url = 'https://tiusdei.qbit.ec/uploads/editor/3f2a9c1e.png';
+  const captura = () => new File(['png'], 'captura-home.png', { type: 'image/png' });
+  beforeEach(() => {
+    vi.mocked(apiClient.uploadEditorImage).mockReset().mockResolvedValue({ url });
+    vi.mocked(minutasApi.agregarEvidencia).mockReset().mockResolvedValue(minutaCon({}));
+  });
+
+  it('sube una imagen y la guarda como evidencia', async () => {
+    abrir();
+    fireEvent.change(screen.getByLabelText('Subir imagen'), { target: { files: [captura()] } });
+    await waitFor(() => expect(minutasApi.agregarEvidencia).toHaveBeenCalledWith('i1', { tipo: 'imagen', nombre: 'captura-home.png', url }));
+  });
+
+  it('pegar una captura con Ctrl+V también la agrega', async () => {
+    abrir();
+    fireEvent.paste(screen.getByRole('dialog'), { clipboardData: { files: [captura()], getData: () => '' } });
+    await waitFor(() => expect(apiClient.uploadEditorImage).toHaveBeenCalled());
+    await waitFor(() => expect(minutasApi.agregarEvidencia).toHaveBeenCalledWith('i1', expect.objectContaining({ tipo: 'imagen' })));
+  });
+
+  it('muestra las imágenes como miniatura', () => {
+    abrir({ evidencias: [{ id: 'e1', tipo: 'imagen', nombre: 'captura-home.png', url, drive_file_id: null, origen_task_id: null }] });
+    expect(screen.getByRole('img', { name: 'captura-home.png' })).toHaveAttribute('src', url);
   });
 });

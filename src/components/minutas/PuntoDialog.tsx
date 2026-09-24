@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Circle, ExternalLink, HardDrive, Link2, Loader2, Plus, Search, SquareCheck, X } from 'lucide-react';
+import { CheckCircle2, Circle, ExternalLink, HardDrive, ImagePlus, Link2, Loader2, Plus, Search, SquareCheck, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { accionPunto, agregarEvidencia, desvincularTarea, editarPunto, quitarEvidencia, vincularTarea, type AccionPunto, type Minuta, type Punto } from '@/lib/minutasApi';
-import { getTasks } from '@/lib/apiClient';
+import { getTasks, uploadEditorImage } from '@/lib/apiClient';
 import { estadoPunto, requisitosCierre } from '@/lib/minutas';
 import { TONO } from './tonos';
 import { urlNuevaTareaDesdePunto } from '@/lib/tareaDesdePunto';
@@ -116,6 +116,25 @@ export function PuntoDialog({ minuta, punto, personas, vista, abierto, onOpenCha
     if (ok) { setEnlaceNombre(''); setEnlaceUrl(''); }
   };
 
+  // Capturas: se suben con la misma subida de imágenes del editor (el servidor verifica que sean imágenes reales).
+  const MAX_IMAGEN = 8 * 1024 * 1024;
+  const subirImagenes = async (archivos: File[]) => {
+    for (const f of archivos) {
+      if (!f.type.startsWith('image/')) { toast.error(`${f.name || 'El archivo'} no es una imagen`); continue; }
+      if (f.size > MAX_IMAGEN) { toast.error(`${f.name || 'La imagen'} pesa más de 8 MB`); continue; }
+      await conError(async () => {
+        const { url } = await uploadEditorImage(f);
+        return agregarEvidencia(punto.id, { tipo: 'imagen', nombre: f.name || 'captura.png', url });
+      }, 'No se pudo subir la imagen');
+    }
+  };
+
+  const pegar = (e: React.ClipboardEvent) => {
+    if (vista !== 'evidencia') return;
+    const imagenes = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'));
+    if (imagenes.length) { e.preventDefault(); subirImagenes(imagenes); }
+  };
+
   // Sin taskId, DriveBrowser solo devuelve el archivo elegido: no lo adjunta a ninguna tarea.
   const elegirDeDrive = async (file: DriveFile) => {
     setDriveAbierto(false);
@@ -141,7 +160,11 @@ export function PuntoDialog({ minuta, punto, personas, vista, abierto, onOpenCha
       <ul className="space-y-1.5">
         {punto.evidencias.map((ev) => (
           <li key={ev.id} className="flex items-center gap-2 rounded-lg border px-3 py-2">
-            {ev.tipo === 'drive' ? <HardDrive className="h-4 w-4 shrink-0 text-muted-foreground" /> : <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />}
+            {ev.tipo === 'imagen' ? (
+              <a href={ev.url} target="_blank" rel="noreferrer" className="shrink-0">
+                <img src={ev.url} alt={ev.nombre} className="h-10 w-14 rounded object-cover" />
+              </a>
+            ) : ev.tipo === 'drive' ? <HardDrive className="h-4 w-4 shrink-0 text-muted-foreground" /> : <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />}
             <a href={ev.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-sm font-medium hover:underline">
               {ev.nombre}<ExternalLink className="ml-1 inline h-3 w-3 text-muted-foreground" />
             </a>
@@ -163,7 +186,7 @@ export function PuntoDialog({ minuta, punto, personas, vista, abierto, onOpenCha
 
   return (
     <Dialog open={abierto} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl w-[95vw] max-h-[92vh] overflow-y-auto p-0 gap-0">
+      <DialogContent className="max-w-3xl w-[95vw] max-h-[92vh] overflow-y-auto p-0 gap-0" onPaste={pegar}>
         <DialogHeader className="px-5 pt-5 pb-3 space-y-2 text-left">
           <DialogDescription className="font-mono text-xs uppercase tracking-wide">
             {minuta.codigo} · Punto {minuta.numero}.{punto.numero} · {TITULO_VISTA[vista]}
@@ -349,9 +372,23 @@ export function PuntoDialog({ minuta, punto, personas, vista, abierto, onOpenCha
                     Agregar enlace
                   </Button>
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={() => setDriveAbierto(true)}>
-                  <HardDrive className="h-4 w-4" />Elegir de Drive
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setDriveAbierto(true)}>
+                    <HardDrive className="h-4 w-4" />Elegir de Drive
+                  </Button>
+                  <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+                    <ImagePlus className="h-4 w-4" />Subir imagen
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      aria-label="Subir imagen"
+                      className="sr-only"
+                      onChange={(e) => { subirImagenes(Array.from(e.target.files ?? [])); e.target.value = ''; }}
+                    />
+                  </label>
+                  <span className="text-xs text-muted-foreground">o pega una captura con Ctrl+V</span>
+                </div>
               </div>
               <ul className="space-y-1 text-sm">
                 {requisitos.map((r) => (
