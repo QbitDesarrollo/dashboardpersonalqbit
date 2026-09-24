@@ -92,12 +92,12 @@ describe('estadoCliente', () => {
 describe('puntosDesdeIa', () => {
   it('convierte los puntos de la IA en puntos del editor, con el cliente como responsable y la cita para revisar', () => {
     const puntos = puntosDesdeIa([
-      { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que no suene', tareas_sugeridas: [] },
-      { titulo: 'Fichas técnicas', descripcion: '', responsable_cliente: true, origen: 'cliente', fecha_compromiso: null, cita: 'te las mando el lunes', tareas_sugeridas: [] },
+      { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'ambos', fecha_compromiso: '2026-10-03', cita: 'que no suene', cita_fuente: 'reunion', tareas_sugeridas: [] },
+      { titulo: 'Fichas técnicas', descripcion: '', responsable_cliente: true, origen: 'ambos', fecha_compromiso: null, cita: 'te las mando el lunes', cita_fuente: 'cliente', tareas_sugeridas: [] },
     ]);
     expect(puntos.map(({ clave: _, ...p }) => p)).toEqual([
-      { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable: '', fecha: '2026-10-03', cita: 'que no suene', origen: 'reunion' },
-      { titulo: 'Fichas técnicas', descripcion: '', responsable: 'cliente', fecha: '', cita: 'te las mando el lunes', origen: 'cliente' },
+      { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable: '', fecha: '2026-10-03', cita: 'que no suene', citaFuente: 'reunion' },
+      { titulo: 'Fichas técnicas', descripcion: '', responsable: 'cliente', fecha: '', cita: 'te las mando el lunes', citaFuente: 'cliente' },
     ]);
     expect(new Set(puntos.map((p) => p.clave)).size).toBe(2);
   });

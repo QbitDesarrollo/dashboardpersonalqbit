@@ -6,8 +6,8 @@ import { Textarea } from '@/components/ui/textarea';
 /** Un punto mientras se escribe la minuta. `responsable`: '' (sin asignar), id de usuario o 'cliente'. */
 export interface PuntoBorrador {
   clave: string; titulo: string; descripcion: string; responsable: string; fecha: string;
-  /** Quote proposed by the AI to verify the point, and which source it came from. Not saved. */
-  cita?: string; origen?: 'reunion' | 'cliente' | 'ambos';
+  /** Quote proposed by the AI to verify the point and where the server found it. Not saved. */
+  cita?: string; citaFuente?: 'reunion' | 'cliente' | null;
 }
 
 interface Props {
@@ -62,7 +62,7 @@ export function EditorPuntos({ puntos, onChange, personas }: Props) {
             />
             {p.cita && (
               <p className="border-l-2 border-primary/40 pl-2 text-xs text-muted-foreground">
-                <span className="font-medium">{p.origen === 'cliente' ? 'Según lo que mandó el cliente:' : 'Dicho en la reunión:'}</span> <span className="italic">«{p.cita}»</span>
+                <span className="font-medium">{p.citaFuente === 'cliente' ? 'Según lo que mandó el cliente:' : 'Dicho en la reunión:'}</span> <span className="italic">«{p.cita}»</span>
               </p>
             )}
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_170px]">

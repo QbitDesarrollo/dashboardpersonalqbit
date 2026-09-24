@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { inicioDelDiaEcuador, limiteDiario, listaDeMesas, normalizarBorrador, tieneAcceso } from '../src/minutas/ia/dominio.js';
+import { inicioDelDiaEcuador, limiteDiario, listaDeMesas, normalizarBorrador, tieneAcceso, ubicarCita } from '../src/minutas/ia/dominio.js';
 
 describe('acceso por mesa', () => {
   it('lee la lista de mesas permitidas del ajuste', () => {
@@ -36,13 +36,28 @@ describe('inicioDelDiaEcuador', () => {
   });
 });
 
+const FUENTES = { transcripcion: 'Cliente: que no suene, porfa.', notas_cliente: '- Agregar incidencias\n- Cambiar el banner' };
+
+describe('ubicarCita', () => {
+  it('dice en qué fuente está la cita, sin importar mayúsculas, espacios ni puntuación al borde', () => {
+    expect(ubicarCita('que no suene', FUENTES)).toBe('reunion');
+    expect(ubicarCita('  Agregar   INCIDENCIAS. ', FUENTES)).toBe('cliente');
+    expect(ubicarCita('«cambiar el banner»', FUENTES)).toBe('cliente');
+  });
+
+  it('si la cita no está en ninguna fuente, no la reconoce', () => {
+    expect(ubicarCita('el cliente pidió un video', FUENTES)).toBeNull();
+    expect(ubicarCita('   ', FUENTES)).toBeNull();
+  });
+});
+
 describe('normalizarBorrador', () => {
   const punto = (p: Record<string, unknown> = {}) => ({
     titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable: 'agencia', fecha: null, cita: 'que no suene', tareas_sugeridas: [], ...p,
   });
 
   it('convierte la salida de la IA en un borrador de minuta', () => {
-    const b = normalizarBorrador({
+    const b = normalizarBorrador(FUENTES, {
       titulo: ' Revisión de avance ', resumen: 'Lanzamiento el 26.',
       puntos: [
         punto({ fecha: '2026-10-03', tareas_sugeridas: [{ titulo: 'Editar video', departamento: 'Audiovisual' }] }),
@@ -52,27 +67,35 @@ describe('normalizarBorrador', () => {
     expect(b).toEqual({
       titulo: 'Revisión de avance', resumen: 'Lanzamiento el 26.',
       puntos: [
-        { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que no suene',
+        { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que no suene', cita_fuente: 'reunion',
           tareas_sugeridas: [{ titulo: 'Editar video', departamento: 'Audiovisual' }] },
-        { titulo: 'Fichas técnicas', descripcion: 'Sin sonido.', responsable_cliente: true, origen: 'reunion', fecha_compromiso: null, cita: 'que no suene', tareas_sugeridas: [] },
+        { titulo: 'Fichas técnicas', descripcion: 'Sin sonido.', responsable_cliente: true, origen: 'reunion', fecha_compromiso: null, cita: 'que no suene', cita_fuente: 'reunion', tareas_sugeridas: [] },
       ],
     });
   });
 
   it('conserva de dónde salió cada punto; si falta o no es válido, lo da por dicho en la reunión', () => {
-    const b = normalizarBorrador({ titulo: 'X', resumen: '', puntos: [
+    const b = normalizarBorrador(FUENTES, { titulo: 'X', resumen: '', puntos: [
       punto({ origen: 'cliente' }), punto({ origen: 'ambos' }), punto({ origen: 'correo' }), punto({}),
     ] });
     expect(b.puntos.map((p) => p.origen)).toEqual(['cliente', 'ambos', 'reunion', 'reunion']);
   });
 
+  it('rotula la cita por dónde aparece de verdad y descarta la que no aparece en ninguna fuente', () => {
+    const b = normalizarBorrador(FUENTES, { titulo: 'X', resumen: '', puntos: [
+      punto({ origen: 'ambos', cita: 'Cambiar el banner' }),
+      punto({ origen: 'reunion', cita: 'el cliente dijo algo que no está' }),
+    ] });
+    expect(b.puntos.map((p) => [p.cita, p.cita_fuente])).toEqual([['Cambiar el banner', 'cliente'], ['', null]]);
+  });
+
   it('descarta fechas que no existen o no tienen formato y puntos sin título', () => {
-    const b = normalizarBorrador({ titulo: 'X', resumen: '', puntos: [punto({ fecha: '2026-02-30' }), punto({ fecha: 'el viernes' }), punto({ titulo: '  ' })] });
+    const b = normalizarBorrador(FUENTES, { titulo: 'X', resumen: '', puntos: [punto({ fecha: '2026-02-30' }), punto({ fecha: 'el viernes' }), punto({ titulo: '  ' })] });
     expect(b.puntos.map((p) => p.fecha_compromiso)).toEqual([null, null]);
   });
 
   it('recorta textos largos y no acepta más de 50 puntos ni 3 tareas por punto', () => {
-    const b = normalizarBorrador({
+    const b = normalizarBorrador(FUENTES, {
       titulo: 'T'.repeat(500), resumen: 'R', puntos: Array.from({ length: 60 }, (_, i) => punto({
         titulo: `Punto ${i}`, descripcion: 'd'.repeat(9000),
         tareas_sugeridas: Array.from({ length: 5 }, (_, j) => ({ titulo: `Tarea ${j}`, departamento: 'Diseño' })),
@@ -85,7 +108,7 @@ describe('normalizarBorrador', () => {
   });
 
   it('rechaza una salida que no tiene la forma esperada', () => {
-    expect(() => normalizarBorrador('texto suelto')).toThrow('La IA devolvió un formato inesperado.');
-    expect(() => normalizarBorrador({ titulo: 'X', resumen: 'Y', puntos: 'no' })).toThrow('La IA devolvió un formato inesperado.');
+    expect(() => normalizarBorrador(FUENTES, 'texto suelto')).toThrow('La IA devolvió un formato inesperado.');
+    expect(() => normalizarBorrador(FUENTES, { titulo: 'X', resumen: 'Y', puntos: 'no' })).toThrow('La IA devolvió un formato inesperado.');
   });
 });

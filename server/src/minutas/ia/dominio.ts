@@ -12,7 +12,9 @@ export interface PuntoIa {
   responsable_cliente: boolean;
   origen: OrigenPunto;
   fecha_compromiso: string | null;
+  /** Verbatim quote backing the point, checked against the sources ('' if it was not found). */
   cita: string;
+  cita_fuente: 'reunion' | 'cliente' | null;
   tareas_sugeridas: TareaSugerida[];
 }
 export interface BorradorIa { titulo: string; resumen: string; puntos: PuntoIa[] }
@@ -43,6 +45,23 @@ function fechaReal(valor: unknown): string | null {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === valor ? valor : null;
 }
 
+export interface FuentesIa { transcripcion: string; notas_cliente: string }
+
+const compactar = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+const BORDES = /^[\s«»"'“”‘’.,;:!?¡¿()[\]-]+|[\s«»"'“”‘’.,;:!?¡¿()[\]-]+$/g;
+
+/**
+ * Where a quote really appears: in the transcript, in the client's notes, or nowhere (made up).
+ * The model's own label is not trusted for this.
+ */
+export function ubicarCita(cita: string, fuentes: FuentesIa): 'reunion' | 'cliente' | null {
+  const buscada = compactar(cita).replace(BORDES, '');
+  if (!buscada) return null;
+  if (compactar(fuentes.transcripcion).includes(buscada)) return 'reunion';
+  if (compactar(fuentes.notas_cliente).includes(buscada)) return 'cliente';
+  return null;
+}
+
 const texto = (max: number) => z.string().transform((s) => s.trim().slice(0, max));
 
 const salidaSchema = z.object({
@@ -59,8 +78,11 @@ const salidaSchema = z.object({
   })),
 });
 
-/** Validates the model output and turns it into a draft. Never trust it as-is: trims, caps and drops invalid dates. */
-export function normalizarBorrador(salida: unknown): BorradorIa {
+/**
+ * Validates the model output and turns it into a draft. Never trust it as-is: trims, caps,
+ * drops invalid dates and keeps only quotes that really appear in the sources.
+ */
+export function normalizarBorrador(fuentes: FuentesIa, salida: unknown): BorradorIa {
   const r = salidaSchema.safeParse(salida);
   if (!r.success) throw new ErrorBorrador('La IA devolvió un formato inesperado.');
   return {
@@ -69,14 +91,18 @@ export function normalizarBorrador(salida: unknown): BorradorIa {
     puntos: r.data.puntos
       .filter((p) => p.titulo)
       .slice(0, 50)
-      .map((p) => ({
-        titulo: p.titulo,
-        descripcion: p.descripcion,
-        responsable_cliente: p.responsable === 'cliente',
-        origen: p.origen === 'cliente' || p.origen === 'ambos' ? p.origen : 'reunion',
-        fecha_compromiso: fechaReal(p.fecha),
-        cita: p.cita,
-        tareas_sugeridas: p.tareas_sugeridas.filter((t) => t.titulo).slice(0, 3),
-      })),
+      .map((p) => {
+        const cita_fuente = ubicarCita(p.cita, fuentes);
+        return {
+          titulo: p.titulo,
+          descripcion: p.descripcion,
+          responsable_cliente: p.responsable === 'cliente',
+          origen: p.origen === 'cliente' || p.origen === 'ambos' ? p.origen : 'reunion',
+          fecha_compromiso: fechaReal(p.fecha),
+          cita: cita_fuente ? p.cita : '',
+          cita_fuente,
+          tareas_sugeridas: p.tareas_sugeridas.filter((t) => t.titulo).slice(0, 3),
+        };
+      }),
   };
 }

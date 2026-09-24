@@ -11,7 +11,7 @@ let jonathan: Usuario;
 
 const SALIDA = {
   titulo: 'Revisión de avance', resumen: 'Lanzamiento el 26 de noviembre.',
-  puntos: [{ titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable: 'agencia', fecha: '2026-10-03', cita: 'que no suene', tareas_sugeridas: [] }],
+  puntos: [{ titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable: 'agencia', fecha: '2026-10-03', cita: 'que el video no suene', tareas_sugeridas: [] }],
 };
 const PEDIDO = { transcripcion: 'Even: revisamos el home. Cliente: que el video no suene.', fecha: '2026-09-24' };
 
@@ -61,7 +61,7 @@ describe('POST /minutas/ia/borradores', () => {
       id: r.body.id, estado: 'listo', error: null,
       borrador: {
         titulo: 'Revisión de avance', resumen: 'Lanzamiento el 26 de noviembre.',
-        puntos: [{ titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que no suene', tareas_sugeridas: [] }],
+        puntos: [{ titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que el video no suene', cita_fuente: 'reunion', tareas_sugeridas: [] }],
       },
     });
     expect(runner.generar).toHaveBeenCalledWith({ ...PEDIDO, notas_cliente: '', indicaciones: '' });

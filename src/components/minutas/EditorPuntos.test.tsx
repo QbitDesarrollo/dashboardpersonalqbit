@@ -63,7 +63,7 @@ describe('EditorPuntos', () => {
 
   it('si el punto salió de lo que mandó el cliente, la cita lo dice', () => {
     render(<Harness inicial={[
-      { clave: 'a', titulo: 'Agregar incidencias', descripcion: '', responsable: '', fecha: '', cita: 'Agregar incidencias', origen: 'cliente' },
+      { clave: 'a', titulo: 'Agregar incidencias', descripcion: '', responsable: '', fecha: '', cita: 'Agregar incidencias', citaFuente: 'cliente' },
     ]} />);
     expect(screen.getByText(/^Según lo que mandó el cliente:/)).toBeInTheDocument();
     expect(screen.queryByText(/^Dicho en la reunión:/)).not.toBeInTheDocument();

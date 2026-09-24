@@ -13,7 +13,9 @@ export interface PuntoIa {
   responsable_cliente: boolean;
   origen: OrigenPunto;
   fecha_compromiso: string | null;
+  /** Quote backing the point; the server checked where it appears ('' if nowhere). */
   cita: string;
+  cita_fuente: 'reunion' | 'cliente' | null;
   tareas_sugeridas: { titulo: string; departamento: string }[];
 }
 export interface BorradorIa { titulo: string; resumen: string; puntos: PuntoIa[] }

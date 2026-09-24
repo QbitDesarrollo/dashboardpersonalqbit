@@ -39,7 +39,7 @@ export function crearRouterMinutasIa(runner: RunnerIa) {
   // Runs in the background: the request answers 202 right away and the screen polls the job.
   const procesar = async (id: string, datos: DatosMinutaIa) => {
     try {
-      await terminarTrabajo(id, normalizarBorrador(await runner.generar(datos)));
+      await terminarTrabajo(id, normalizarBorrador(datos, await runner.generar(datos)));
     } catch (e) {
       const conocido = e instanceof ErrorRunner || e instanceof ErrorBorrador;
       if (!conocido) console.error('[MINUTAS-IA] Error inesperado:', e);

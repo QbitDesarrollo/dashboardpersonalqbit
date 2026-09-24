@@ -77,8 +77,8 @@ describe('MinutaNueva', () => {
     const BORRADOR: BorradorIa = {
       titulo: 'Revisión de avance: home', resumen: 'Lanzamiento el 26 de noviembre.',
       puntos: [
-        { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que no suene', tareas_sugeridas: [] },
-        { titulo: 'Fichas técnicas', descripcion: '', responsable_cliente: true, origen: 'ambos', fecha_compromiso: null, cita: 'te las mando el lunes', tareas_sugeridas: [] },
+        { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que no suene', cita_fuente: 'reunion', tareas_sugeridas: [] },
+        { titulo: 'Fichas técnicas', descripcion: '', responsable_cliente: true, origen: 'ambos', fecha_compromiso: null, cita: 'te las mando el lunes', cita_fuente: 'reunion', tareas_sugeridas: [] },
       ],
     };
     const renderNueva = () => render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><MinutaNueva /></MemoryRouter>);
