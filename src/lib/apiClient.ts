@@ -252,6 +252,23 @@ export async function createDeliverableType(data: { nombre: string }) {
   return res.json();
 }
 
+export async function patchDeliverableTypeMinutos(id: string, minutos_estimados: number | null) {
+  const res = await request(`/api/data/deliverable-types/${id}/minutos`, { method: 'PATCH', body: JSON.stringify({ minutos_estimados }) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al guardar');
+  return res.json();
+}
+export async function setProfileDepartment(id: string, department_id: string | null) {
+  const res = await request(`/api/data/profiles/${id}`, { method: 'PATCH', body: JSON.stringify({ department_id }) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al guardar');
+  return res.json();
+}
+export async function getTiempoPorMarca(mes: string, deskId?: string) {
+  const qs = new URLSearchParams({ mes }); if (deskId) qs.set('desk_id', deskId);
+  const res = await request(`/api/data/metrics/tiempo-por-marca?${qs.toString()}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al cargar');
+  return res.json();
+}
+
 export async function patchDeliverableType(id: string, data: { nombre?: string; activo?: boolean }) {
   const res = await request(`/api/data/deliverable-types/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
   return res.json();
@@ -306,6 +323,18 @@ export async function createTask(data: Record<string, unknown>) {
 
 export async function patchTask(id: string, data: Record<string, unknown>) {
   const res = await request(`/api/data/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  return res.json();
+}
+
+export async function seguirTarea(id: string) {
+  const res = await request(`/api/data/tasks/${id}/seguir`, { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function dejarDeSeguirTarea(id: string) {
+  const res = await request(`/api/data/tasks/${id}/seguir`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
@@ -696,6 +725,7 @@ export async function addTemplateTask(templateId: string, data: {
   detalle?: string;
   prioridad?: string;
   departamento?: string;
+  department_id?: string | null;
   cantidad_entregables?: number;
   story_points?: number;
   relative_start_days?: number;
@@ -1257,6 +1287,24 @@ export async function stopTimeSession(sessionId: string) {
   return res.json();
 }
 
+export async function timerHeartbeat() {
+  const res = await request('/api/data/time-sessions/heartbeat', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function pauseMyTimer() {
+  const res = await request('/api/data/time-sessions/pause-mine', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getTimerResumeSuggestion() {
+  const res = await request('/api/data/time-sessions/resume-suggestion');
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function pauseTimeSession(sessionId: string) {
   const res = await request(`/api/data/time-sessions/${sessionId}/pause`, { method: 'POST' });
   if (!res.ok) throw new Error(await res.text());
@@ -1277,13 +1325,45 @@ export async function getTimeSessions(params: Record<string, string> = {}) {
 }
 
 // ========== Activity Tracking ==========
-export async function postActivitySnapshot(timeEntryId: string, counts: { keyboard: number; mouse: number; scroll: number; click: number }) {
+export async function postActivitySnapshot(timeEntryId: string, counts: { keyboard: number; mouse: number; scroll: number; click: number }, tabHidden = false) {
   const res = await request('/api/data/activity-tracking/snapshot', {
     method: 'POST',
-    body: JSON.stringify({ time_entry_id: timeEntryId, keyboard_events: counts.keyboard, mouse_events: counts.mouse, scroll_events: counts.scroll, click_events: counts.click }),
+    body: JSON.stringify({ time_entry_id: timeEntryId, keyboard_events: counts.keyboard, mouse_events: counts.mouse, scroll_events: counts.scroll, click_events: counts.click, tab_hidden: tabHidden }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+// ── Carpetas de tareas ──
+export async function getTaskFolders(deskId: string) {
+  const res = await request(`/api/data/task-folders?desk_id=${encodeURIComponent(deskId)}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ id: string; desk_id: string; nombre: string; tareas: number }[]>;
+}
+export async function createTaskFolder(deskId: string, nombre: string) {
+  const res = await request('/api/data/task-folders', { method: 'POST', body: JSON.stringify({ desk_id: deskId, nombre }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+export async function renameTaskFolder(id: string, nombre: string) {
+  const res = await request(`/api/data/task-folders/${id}`, { method: 'PATCH', body: JSON.stringify({ nombre }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+export async function moveTaskFolder(id: string, parentId: string | null) {
+  const res = await request(`/api/data/task-folders/${id}`, { method: 'PATCH', body: JSON.stringify({ parent_folder_id: parentId }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+export async function deleteTaskFolder(id: string) {
+  const res = await request(`/api/data/task-folders/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+export async function saveFolderAsTemplate(id: string, name?: string) {
+  const res = await request(`/api/data/task-folders/${id}/save-template`, { method: 'POST', body: JSON.stringify({ name }) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ template_id: string; name: string; tareas: number }>;
 }
 
 export async function uploadScreenshot(timeEntryId: string, taskId: string, imageBase64: string) {
@@ -1311,6 +1391,18 @@ export async function checkIn(notes?: string) {
 
 export async function checkOut() {
   const res = await request('/api/data/attendance/check-out', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function lunchStart() {
+  const res = await request('/api/data/attendance/lunch-start', { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function lunchEnd() {
+  const res = await request('/api/data/attendance/lunch-end', { method: 'POST' });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -1823,6 +1915,8 @@ export async function taskHandoff(taskId: string, data: {
   motivo?: string;
   due_date?: string;
   create_new_task?: boolean;
+  motivo_reschedule?: string;
+  comentario_reschedule?: string;
 }) {
   const res = await request(`/api/data/tasks/${taskId}/handoff`, { method: 'POST', body: JSON.stringify(data) });
   if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
@@ -2152,4 +2246,40 @@ export async function assignTasksToProject(id: string, task_ids: string[]) {
   const res = await request(`/api/data/projects/${id}/assign-tasks`, { method: "POST", body: JSON.stringify({ task_ids }) });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+// Vista privada "Mi equipo" (desarrollo)
+export async function getDevTeamOverview() {
+  const res = await request('/api/data/dev-team/overview');
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al cargar la vista del equipo');
+  return res.json();
+}
+export async function updateDevTeamMember(id: string, body: { weekly_capacity_hours?: number; reserved_hours?: number }) {
+  const res = await request(`/api/data/dev-team/members/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al guardar');
+  return res.json();
+}
+export async function updateDevTeamConfig(body: { member_ids: string[] }) {
+  const res = await request('/api/data/dev-team/config', { method: 'PUT', body: JSON.stringify(body) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al guardar');
+  return res.json();
+}
+
+// Vista "Equipo por mesa" (admins y ejecutivos)
+export async function getDeskOverview(deskId: string) {
+  const res = await request(`/api/data/dev-team/desk-overview${deskId ? `?desk_id=${encodeURIComponent(deskId)}` : ''}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al cargar la vista de la mesa');
+  return res.json();
+}
+export async function updateDeskMember(id: string, body: { weekly_capacity_hours?: number; reserved_hours?: number }) {
+  const res = await request(`/api/data/dev-team/desk-members/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al guardar');
+  return res.json();
+}
+
+// Historial de una tarea: sesiones de tiempo de todas las personas
+export async function getTaskTimeSessions(taskId: string) {
+  const res = await request(`/api/data/time-sessions/task/${encodeURIComponent(taskId)}`);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al cargar sesiones');
+  return res.json() as Promise<{ sessions: unknown[] }>;
 }

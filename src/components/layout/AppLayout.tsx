@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { DEV_TEAM_OWNER_IDS } from '@/lib/devTeam';
 import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { cn } from '@/lib/utils';
 import * as api from '@/lib/apiClient';
@@ -79,6 +80,7 @@ import { GlobalSearch } from '@/components/GlobalSearch';
 import { ChatBubble } from '@/components/chat/ChatBubble';
 import { GeminiPanel } from '@/components/gemini/GeminiPanel';
 import { TimeSessionProvider, useTimeSession } from '@/contexts/TimeSessionContext';
+import { GlobalTimerGuard } from '@/components/GlobalTimerGuard';
 import { CheckInWidget } from '@/components/time-doctor/CheckInWidget';
 
 interface NavItem {
@@ -86,25 +88,30 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   roles?: ('admin' | 'ejecutivo' | 'equipo' | 'cliente')[];
+  onlyUserIds?: string[]; // visible solo para estos usuarios (además del rol)
 }
 
-// Mesa "Pycca - Loialty" — la sección MCP es solo para su equipo (+ admins).
-const PYCCA_DESK_ID = 'e8e49f2e-465c-44bd-86ef-e560c7876431';
+// La seccion MCP es solo para los admins y las mesas listadas aqui.
+// El nombre va como respaldo: si la mesa se recrea, su uuid cambia.
+const MCP_DESKS: { id: string; nombre: string }[] = [
+  { id: 'e8e49f2e-465c-44bd-86ef-e560c7876431', nombre: 'pycca' },
+  { id: 'f643ac78-df27-4613-8475-a328aabc9b8c', nombre: 'desarrollo' },
+];
 
 const navigation: NavItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { title: 'Mi equipo', href: '/mi-equipo', icon: <Users className="h-5 w-5" />, roles: ['admin'], onlyUserIds: DEV_TEAM_OWNER_IDS },
+  { title: 'Equipo por mesa', href: '/equipo-mesas', icon: <Users className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   { title: 'Tareas', href: '/tareas', icon: <CheckSquare className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Pipeline', href: '/tareas/pipeline', icon: <Workflow className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Proyectos', href: '/proyectos', icon: <FolderKanban className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Scrum', href: '/scrum', icon: <Target className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Daily Mesas', href: '/daily-mesas', icon: <Users className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
-  { title: 'Archivos', href: '/archivos', icon: <Files className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
-  { title: 'Plantillas', href: '/plantillas', icon: <LayoutTemplate className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
-  { title: 'Informes', href: '/informes', icon: <FileText className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Cumplimiento', href: '/informes/cumplimiento', icon: <TrendingUp className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
+  { title: 'Tiempo por marca', href: '/informes/tiempo-marcas', icon: <BarChart3 className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   { title: 'MCP', href: '/mcp', icon: <Plug className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Clientes', href: '/clientes', icon: <Users className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
-  { title: 'Incidencias', href: '/incidencias', icon: <Bug className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
+  { title: 'Incidencias', href: '/incidencias', icon: <Bug className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Novedades', href: '/novedades', icon: <Sparkles className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   // { title: 'Mi Dashboard', href: '/mi-dashboard', icon: <BarChart3 className="h-5 w-5" />, roles: ['admin', 'ejecutivo', 'equipo'] },
   { title: 'Portal Cliente', href: '/cliente', icon: <Briefcase className="h-5 w-5" />, roles: ['cliente'] },
@@ -147,9 +154,30 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [pinnedMenuOpen, setPinnedMenuOpen] = useState(true);
   const [brandsMenuOpen, setBrandsMenuOpen] = useState(false);
   const [desks, setDesks] = useState<Desk[]>([]);
+  // Orden personal de las mesas del sidebar (drag & drop, por usuario)
+  const [deskOrder, setDeskOrder] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('sidebar_mesas_order') || '[]'); } catch { return []; }
+  });
+  const dragDeskId = useRef<string | null>(null);
+  const orderedDesks = (() => {
+    if (deskOrder.length === 0) return desks;
+    const pos: Record<string, number> = {};
+    deskOrder.forEach((id, i) => { pos[id] = i; });
+    return [...desks].sort((a, b) => (pos[a.id] ?? 999) - (pos[b.id] ?? 999));
+  })();
+  const moveDesk = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    const ids = orderedDesks.map((d) => d.id);
+    const from = ids.indexOf(fromId); const to = ids.indexOf(toId);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    setDeskOrder(ids);
+    try { localStorage.setItem('sidebar_mesas_order', JSON.stringify(ids)); } catch {}
+  };
   const [brands, setBrands] = useState<Brand[]>([]);
   const [siteSettings, setSiteSettings] = useState<{ logo_url?: string | null; site_name?: string | null }>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const incidenciasUnread = notifications.filter((n) => !n.leida && (n.mensaje || '').toLowerCase().includes('incidencia')).length;
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const socketRef = useRef<ReturnType<typeof import('socket.io-client').io> | null>(null);
@@ -292,12 +320,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const filteredNav = navigation.filter(item => {
+    if (item.onlyUserIds && !(profile && item.onlyUserIds.includes(profile.id))) return false;
     if (item.href === '/mcp') {
-      // MCP: solo admins o miembros de la mesa Pycca
-      const inPycca = desks.some(
-        (d) => d.id === PYCCA_DESK_ID || (d.nombre || '').toLowerCase().includes('pycca'),
+      // MCP: solo admins o miembros de una mesa con acceso
+      const enMesaConMcp = desks.some((d) =>
+        MCP_DESKS.some(
+          (m) => d.id === m.id || (d.nombre || '').toLowerCase().includes(m.nombre),
+        ),
       );
-      return profile?.rol === 'admin' || inPycca;
+      return profile?.rol === 'admin' || enMesaConMcp;
     }
     if (!item.roles) return true;
     return profile && item.roles.includes(profile.rol);
@@ -324,6 +355,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     };
     const apply = () => {
       try {
+        // Si la persona eligio su tema con el boton, se respeta SIEMPRE
+        // (antes este auto lo pisaba cada 60s: "el modo oscuro dura 5 min").
+        if (localStorage.getItem('tiusdei_theme_manual')) return;
         const h = getGyeHour();
         setTheme(h >= 18 || h < 6 ? 'dark' : 'light');
       } catch {}
@@ -332,6 +366,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     const interval = setInterval(apply, 60000);
     return () => { clearTimeout(timeout); clearInterval(interval); };
   }, []);
+
+  // La barra superior de la app instalada (PWA) toma su color de este meta.
+  // Sin esto quedaba azul fija y desentonaba con la interfaz (incidencia 35424cf0).
+  useEffect(() => {
+    document.querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', resolvedTheme === 'dark' ? '#0b1120' : '#ffffff');
+  }, [resolvedTheme]);
 
   const getRoleBadge = (rol: string) => {
     const colors: Record<string, string> = {
@@ -345,7 +386,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <TimeSessionProvider>
-    <div className="min-h-screen bg-background flex flex-col lg:flex-row w-full overflow-x-hidden">
+    <div className="h-screen bg-background flex flex-col lg:flex-row w-full overflow-x-hidden">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div
@@ -402,6 +443,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 >
                   {item.icon}
                   {item.title}
+                  {/* Indicador de novedades de incidencias (pedido de Steven): cuenta
+                      las notificaciones de incidencias sin leer; se limpia al leerlas. */}
+                  {item.href === '/incidencias' && incidenciasUnread > 0 && (
+                    <span className="ml-auto min-w-[18px] text-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 py-0.5">
+                      {incidenciasUnread}
+                    </span>
+                  )}
                 </Link>
               ))}
             </nav>
@@ -456,15 +504,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   {/* Desk selection */}
                   <div className="space-y-1">
                     <span className="px-3 text-xs text-muted-foreground">Mesas</span>
-                    {desks.map((desk) => (
+                    {orderedDesks.map((desk) => (
                       <button
                         key={desk.id}
+                        draggable
+                        onDragStart={() => { dragDeskId.current = desk.id; }}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => { e.preventDefault(); if (dragDeskId.current) moveDesk(dragDeskId.current, desk.id); dragDeskId.current = null; }}
+                        title="Arrastra para reordenar tus mesas"
                         onClick={() => {
                           if (pinnedDeskId === desk.id) {
                             setPinnedDesk(null, null);
                           } else {
                             setPinnedDesk(desk.id, desk.nombre);
-                            navigate('/dashboard');
+                            navigate('/tareas');
                           }
                           setSidebarOpen(false);
                         }}
@@ -603,7 +656,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-h-screen min-w-0 w-full lg:w-auto">
+      <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 w-full lg:w-auto">
         {/* Header */}
         <header className="h-14 sm:h-16 shrink-0 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-30">
           <div className="h-full px-3 sm:px-4 flex items-center justify-between gap-2 min-w-0">
@@ -636,13 +689,27 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
             <div className="flex items-center gap-1 sm:gap-2">
               <GlobalSearch />
+              {profile?.rol === 'admin' && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => navigate('/admin/monitor')}
+                  title="Monitor de equipo"
+                >
+                  <MonitorCheck className="h-5 w-5" />
+                </Button>
+              )}
               {profile?.rol && ['admin', 'ejecutivo', 'equipo'].includes(profile.rol) && (
                 <CheckInWidget />
               )}
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                onClick={() => {
+                  const next = isDark ? 'light' : 'dark';
+                  try { localStorage.setItem('tiusdei_theme_manual', next); } catch {}
+                  setTheme(next);
+                }}
                 title={isDark ? 'Modo claro (normal)' : 'Modo oscuro'}
               >
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
@@ -687,6 +754,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                               } else if (notif.task_id) {
                                 navigate(`/tareas?task=${notif.task_id}`);
                                 setNotifOpen(false);
+                              } else if (notif.mensaje?.toLowerCase().includes('incidencia')) {
+                                navigate('/incidencias');
+                                setNotifOpen(false);
                               }
                             }}
                             className={cn(
@@ -725,6 +795,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-x-hidden overflow-y-auto min-h-0">
           {children}
         </main>
+        <GlobalTimerGuard />
       </div>
 
       {/* Floating chat bubble */}

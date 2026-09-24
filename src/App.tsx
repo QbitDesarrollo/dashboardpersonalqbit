@@ -3,6 +3,15 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { UpdateChecker } from "@/components/UpdateChecker";
 import { TimerWarningDialog } from "@/components/TimerWarningDialog";
+import { ImageLightbox } from "@/components/ImageLightbox";
+
+// El correo de mencion en chat llega con /?chat=<mesa>. El router redirige "/"
+// a /dashboard y pierde el query, asi que se captura aqui (antes del router) y
+// el chat lo consume desde sessionStorage.
+try {
+  const _chatParam = new URLSearchParams(window.location.search).get('chat');
+  if (_chatParam) sessionStorage.setItem('tiusdei_pending_chat', _chatParam);
+} catch { /* ignore */ }
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -61,6 +70,9 @@ const GoogleAuthSuccess = lazy(() => import("./pages/GoogleAuthSuccess"));
 const MiPerfil = lazy(() => import("./pages/MiPerfil"));
 const CustomDashboard = lazy(() => import("./pages/CustomDashboard"));
 const TeamMonitor = lazy(() => import("./pages/admin/TeamMonitor"));
+const EquipoDev = lazy(() => import("./pages/EquipoDev"));
+const EquipoMesa = lazy(() => import("./pages/EquipoMesa"));
+const TiempoMarcas = lazy(() => import("./pages/TiempoMarcas"));
 const AdminWhatsApp = lazy(() => import("./pages/admin/WhatsApp"));
 
 const queryClient = new QueryClient({
@@ -89,6 +101,7 @@ const App = () => (
       <Sonner />
       <UpdateChecker />
       <TimerWarningDialog />
+      <ImageLightbox />
       <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
@@ -169,13 +182,18 @@ const App = () => (
                 <AppLayout><Cumplimiento /></AppLayout>
               </ProtectedRoute>
             } />
+            <Route path="/informes/tiempo-marcas" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
+                <AppLayout><TiempoMarcas /></AppLayout>
+              </ProtectedRoute>
+            } />
             <Route path="/mcp" element={
               <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Mcp /></AppLayout>
               </ProtectedRoute>
             } />
             <Route path="/incidencias" element={
-              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo', 'equipo']}>
                 <AppLayout><Incidencias /></AppLayout>
               </ProtectedRoute>
             } />
@@ -262,6 +280,18 @@ const App = () => (
             <Route path="/clientes" element={
               <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
                 <AppLayout><Clientes /></AppLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/mi-equipo" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AppLayout><EquipoDev /></AppLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/equipo-mesas" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
+                <AppLayout><EquipoMesa /></AppLayout>
               </ProtectedRoute>
             } />
 

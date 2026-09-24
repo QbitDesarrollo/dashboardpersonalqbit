@@ -32,6 +32,9 @@ import { deliverablesRouter } from './routes/deliverables.js';
 import { filesRouter } from './routes/files-routes.js';
 import { activityRouter } from './routes/activity.js';
 import { templatesRouter } from './routes/templates.js';
+import { taskFoldersRouter } from './routes/task-folders.js';
+import { tiempoMarcasRouter } from './routes/tiempo-marcas.js';
+import { devTeamRouter } from './routes/dev-team.js';
 import { timeAnalyticsRouter } from './routes/time-analytics.js';
 import { searchRouter } from './routes/search.js';
 import { savedFiltersRouter } from './routes/saved-filters.js';
@@ -179,6 +182,9 @@ app.use('/api/data', deliverablesRouter);
 app.use('/api/data', filesRouter);
 app.use('/api/data', activityRouter);
 app.use('/api/data', templatesRouter);
+app.use('/api/data', taskFoldersRouter);
+app.use('/api/data', tiempoMarcasRouter);
+app.use('/api/data', devTeamRouter);
 app.use('/api/data', timeAnalyticsRouter);
 app.use('/api/data', metricsRouter);
 app.use('/api/data', incidenciasRouter);
@@ -227,6 +233,9 @@ import { runDeadlineWarning } from './jobs/deadlineWarning.js';
 import { runInactivityMonitor } from './jobs/inactivityMonitor.js';
 import { runTimeEntryAutoClose } from './jobs/timeEntryAutoClose.js';
 import { runEodTimerAlert } from './jobs/eodTimerAlert.js';
+import { runEodTimerClose } from './jobs/eodTimerClose.js';
+import { runHeartbeatAutoPause } from './jobs/heartbeatAutoPause.js';
+import { runRecordatorios } from './jobs/recordatorios.js';
 
 const httpServer = http.createServer(app);
 setupSocket(httpServer);
@@ -244,6 +253,10 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   setInterval(runInactivityMonitor, 60 * 1000);
   setInterval(runTimeEntryAutoClose, 30 * 60 * 1000); // cada 30 min
   setInterval(runEodTimerAlert, 30 * 60 * 1000); // Pieza 3 Timer: alerta cierre fin del día
+  setInterval(runEodTimerClose, 30 * 60 * 1000); // Cierre DURO de timers 2h después del aviso (incidencia ca963e24)
+  setInterval(runHeartbeatAutoPause, 2 * 60 * 1000); // Auto-pausa si Tiusdei se cerró (latido >5 min sin llegar)
+  setInterval(runRecordatorios, 10 * 60 * 1000); // Recordatorios sutiles: sin check-in / conectado sin tarea activa
+  setTimeout(() => runRecordatorios(), 2 * 60 * 1000);
   runEodTimerAlert();
   runTimeEntryAutoClose().catch(() => {}); // run once on boot
   console.log('[TIUSDEI API] WebSocket (comentarios en tiempo real) activo');
