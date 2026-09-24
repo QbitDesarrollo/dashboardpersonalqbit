@@ -30,7 +30,9 @@
 - **TDD**: test que falla → código mínimo → refactor. Front: `npx vitest run` (Vitest + Testing Library con `fireEvent`). Back: `cd server && npx vitest run` contra la base `tiusdei_test` (credenciales en `server/.env.test`, jamás la de producción).
 
 ## Minutas
-Reuniones con el cliente → puntos → tareas → evidencia. Cuelgan de la marca (proyecto opcional). Front: `src/pages/Minuta*.tsx` y `src/components/minutas/`; modo presentación en `/minutas/:id/presentar` (solo puntos visibles; el cliente aprueba, pide ajustes o deja notas). Back: `server/src/minutas/` y `server/src/routes/minuta*.ts`. Migraciones 035–038. No hay enlace público: todo se ve dentro de Tiusdei.
+Reuniones con el cliente → puntos → tareas → evidencia. Cuelgan de la marca (proyecto opcional). Front: `src/pages/Minuta*.tsx` y `src/components/minutas/`; modo presentación en `/minutas/:id/presentar` (solo puntos visibles; el cliente aprueba, pide ajustes o deja notas). Back: `server/src/minutas/` y `server/src/routes/minuta*.ts`. Migraciones 035–039. No hay enlace público: todo se ve dentro de Tiusdei.
+- **MCP**: `list_minutas`, `get_minuta` (con capturas de evidencia como imágenes; horas en hora de Ecuador), `create_minuta`, `link_task_to_minuta_point`. Herramientas en `mcp-server/src/herramientas/minutas.ts`, API en `server/src/routes/mcp-minutas.ts`, lógica compartida con la web en `server/src/minutas/servicio.ts`.
+- **Zona horaria**: servidor, Node y MySQL en UTC (no cambiar). Se muestra y se calcula "hoy" en `America/Guayaquil`; las fechas de reunión y compromiso son DATE sin hora.
 
 ## 🎯 Misión activa: el CONVERTIDOR DE CONTENIDOS
 Pedido de Juan José Vivas (6-jul-2026). **Lee el plan completo en [CONVERTIDOR-PLAN.md](./CONVERTIDOR-PLAN.md) antes de tocar código** — contiene el pedido textual de Juan, la arquitectura decidida (Convertidor en Tiusdei + IA de contratos en Nebula), el modelo de datos propuesto (tarifario, brand_entregables, canjes), las reglas de negocio, los 3 modelos de canje (recomendado: créditos mensuales) y el roadmap en 4 fases.
