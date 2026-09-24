@@ -59,7 +59,7 @@ export interface PuntoPayload {
 }
 
 /** Del borrador del editor al payload de la API. `responsable` es '' | id de usuario | 'cliente'. */
-export function aPuntosNuevos(borrador: { titulo: string; descripcion: string; responsable: string; fecha: string }[]): PuntoPayload[] {
+export function aPuntosNuevos(borrador: { clave?: string; titulo: string; descripcion: string; responsable: string; fecha: string }[]): PuntoPayload[] {
   return borrador
     .filter((p) => p.titulo.trim())
     .map((p) => ({
