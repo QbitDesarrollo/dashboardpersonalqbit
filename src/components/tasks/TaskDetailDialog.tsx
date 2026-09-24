@@ -5,11 +5,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Eye, Calendar, Loader2, Clock, Repeat, Link2 } from 'lucide-react';
+import { Eye, EyeOff, Calendar, Loader2, Clock, Repeat, Link2, RotateCcw, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { CustomFieldsSection } from './CustomFieldsSection';
 import { cn, getInitials } from '@/lib/utils';
 import { TaskTimer } from '@/components/tasks/TaskTimer';
+import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 import { TaskFiles } from '@/components/tasks/TaskFiles';
 import { DeliverableProgress } from '@/components/tasks/DeliverableProgress';
 import { CommentsPanel } from '@/components/tasks/CommentsPanel';
@@ -53,6 +54,11 @@ interface TaskData {
   recurrence_type?: string;
   recurrence_interval?: number | null;
   recurrence_end_date?: string | null;
+  cambios_cliente?: number;
+  cambios_internos?: number;
+  tiempo_por_persona?: { user_id: string; nombre: string; avatar_url: string | null; segundos: number }[];
+  seguidores?: { user_id: string; nombre: string; avatar_url: string | null }[];
+  me_sigue?: boolean;
 }
 
 const getPriorityColor = (prioridad: string) => {
@@ -144,7 +150,8 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
     if (!task) return false;
     if (isAdmin) return true;
     const isProtected = task.created_by_rol === 'admin' || task.created_by_rol === 'ejecutivo';
-    if (isEjecutivo) return !isProtected || task.created_by === profile?.id;
+    // Ejecutivo: edita cualquier tarea que puede ver (el backend valida el acceso por mesa).
+    if (isEjecutivo) return true;
     if (isEquipo) return !isProtected && isAssigned();
     return false;
   };
@@ -167,6 +174,17 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
   const refreshTask = () => {
     if (!taskId) return;
     api.getTask(taskId).then((data: any) => setTask(data)).catch(() => {});
+  };
+
+  const toggleSeguir = async () => {
+    if (!task?.id) return;
+    try {
+      if (task.me_sigue) await api.dejarDeSeguirTarea(task.id);
+      else await api.seguirTarea(task.id);
+      refreshTask();
+    } catch (e: any) {
+      toast.error('Error', { description: e?.message });
+    }
   };
 
   return (
@@ -321,6 +339,18 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                       </div>
                     </div>
                   )}
+                  {((task.cambios_cliente ?? 0) + (task.cambios_internos ?? 0)) > 0 && (
+                    <div>
+                      <span className="text-muted-foreground text-xs block">Cambios / vueltas</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
+                        <span className="font-medium">{(task.cambios_cliente ?? 0) + (task.cambios_internos ?? 0)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({task.cambios_internos ?? 0} internos · {task.cambios_cliente ?? 0} del cliente)
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   {task.recurrence_type && task.recurrence_type !== 'none' && (
                     <div>
                       <span className="text-muted-foreground text-xs block">Recurrencia</span>
@@ -378,8 +408,55 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
                     isActive={task.timer_activo}
                     startTime={task.timer_inicio}
                     canEdit={canOperate()}
+                    estimatedHours={task.estimated_hours}
+                    warnEnabled={isAssigned()}
+                    taskTitle={task.titulo_tarea}
                     onUpdate={refreshTask}
                   />
+                </div>
+
+                {/* E) Tiempo por persona */}
+                {task.tiempo_por_persona && task.tiempo_por_persona.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-2">Tiempo por persona</h4>
+                    <div className="space-y-1.5">
+                      {task.tiempo_por_persona.map((p) => (
+                        <div key={p.user_id} className="flex items-center gap-2 text-sm">
+                          <Avatar className="h-6 w-6">
+                            {p.avatar_url ? <AvatarImage src={p.avatar_url} alt={p.nombre} className="object-cover" /> : null}
+                            <AvatarFallback className="bg-primary/20 text-primary text-[9px] font-semibold">{getInitials(p.nombre || '?')}</AvatarFallback>
+                          </Avatar>
+                          <span className="flex-1 truncate">{p.nombre || '—'}</span>
+                          <span className="font-mono text-muted-foreground">{formatTimeDisplay(p.segundos)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* B) Seguidores */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5"><Users className="h-4 w-4" />Seguidores</h4>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={toggleSeguir}>
+                      {task.me_sigue ? <><EyeOff className="h-3.5 w-3.5" />Dejar de seguir</> : <><Eye className="h-3.5 w-3.5" />Seguir</>}
+                    </Button>
+                  </div>
+                  {task.seguidores && task.seguidores.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {task.seguidores.map((sg) => (
+                        <span key={sg.user_id} className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-full">
+                          <Avatar className="h-4 w-4">
+                            {sg.avatar_url ? <AvatarImage src={sg.avatar_url} alt={sg.nombre} className="object-cover" /> : null}
+                            <AvatarFallback className="bg-primary/20 text-primary text-[7px] font-semibold">{getInitials(sg.nombre || '?')}</AvatarFallback>
+                          </Avatar>
+                          {sg.nombre}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">Nadie sigue esta tarea todavía. Quien la pasa de etapa la sigue automáticamente.</p>
+                  )}
                 </div>
 
                 {/* Responsable Section */}

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import * as api from '@/lib/apiClient';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { X, Trash2, Archive, CheckSquare } from 'lucide-react';
+import { X, Trash2, Archive, CheckSquare, Pencil, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -12,10 +12,17 @@ interface Props {
   onComplete: () => void;
   users?: { id: string; nombre: string }[];
   sprints?: { id: string; name: string }[];
+  /** Carpetas de la mesa activa: "Mover a carpeta…" en lote */
+  folders?: { id: string; nombre: string }[];
+  /** Editar la tarea seleccionada (solo aplica cuando hay exactamente una) */
+  onEditOne?: (taskId: string) => void;
+  /** Abrir la ficha completa de la tarea seleccionada */
+  onOpenOne?: (taskId: string) => void;
 }
 
 const estados = [
   { value: 'backlog', label: 'Pendiente' },
+  { value: 'ajustes', label: 'Ajustes' },
   { value: 'en_proceso', label: 'En Proceso' },
   { value: 'en_revision', label: 'En Revisión' },
   { value: 'entregado', label: 'Entregado' },
@@ -28,7 +35,7 @@ const prioridades = [
   { value: 'baja', label: 'Baja' },
 ];
 
-export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }: Props) {
+export function BulkActions({ selectedIds, onClear, onComplete, users, sprints, folders, onEditOne, onOpenOne }: Props) {
   const { isAdmin, isEjecutivo } = useAuth();
   const [saving, setSaving] = useState(false);
   const count = selectedIds.size;
@@ -114,6 +121,19 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
         </Select>
       )}
 
+      {/* Mover a carpeta (solo admin/ejecutivo: organizar es del ejecutivo) */}
+      {(isAdmin || isEjecutivo) && folders && folders.length > 0 && (
+        <Select disabled={saving} onValueChange={(v) => handleBulkUpdate({ folder_id: v === '__none__' ? null : v })}>
+          <SelectTrigger className="h-8 w-full sm:w-[150px] text-xs">
+            <SelectValue placeholder="Carpeta…" />
+          </SelectTrigger>
+          <SelectContent>
+            {folders.map(fo => <SelectItem key={fo.id} value={fo.id}>{fo.nombre}</SelectItem>)}
+            <SelectItem value="__none__">Quitar de carpeta</SelectItem>
+          </SelectContent>
+        </Select>
+      )}
+
       {/* Sprints */}
       {sprints && sprints.length > 0 && (
         <Select disabled={saving} onValueChange={(v) => handleBulkUpdate({ sprint_id: v })}>
@@ -124,6 +144,38 @@ export function BulkActions({ selectedIds, onClear, onComplete, users, sprints }
             {sprints.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
+      )}
+
+      {/* Editar / Abrir: solo con UNA tarea seleccionada (incidencia bafba91d:
+          la barra no permitia editar, solo acciones masivas) */}
+      {count === 1 && (onEditOne || onOpenOne) && (
+        <>
+          <div className="hidden sm:block w-px h-6 bg-border mx-1" />
+          {onEditOne && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => { const id = Array.from(selectedIds)[0]; onClear(); onEditOne(id); }}
+              disabled={saving}
+            >
+              <Pencil className="w-3.5 h-3.5 text-amber-500" />
+              Editar
+            </Button>
+          )}
+          {onOpenOne && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => { const id = Array.from(selectedIds)[0]; onClear(); onOpenOne(id); }}
+              disabled={saving}
+            >
+              <Eye className="w-3.5 h-3.5 text-primary" />
+              Abrir
+            </Button>
+          )}
+        </>
       )}
 
       <div className="hidden sm:block w-px h-6 bg-border mx-1" />

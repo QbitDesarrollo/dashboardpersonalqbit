@@ -119,6 +119,7 @@ export default function AdminConfig() {
   const [siteSettings, setSiteSettings] = useState<Record<string, string | null>>({});
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
 
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [delDialogOpen, setDelDialogOpen] = useState(false);
@@ -259,6 +260,7 @@ export default function AdminConfig() {
       toast.error('Error al cargar datos');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -545,7 +547,10 @@ export default function AdminConfig() {
     setSelectedItem(null);
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -669,6 +674,26 @@ export default function AdminConfig() {
                   >
                     <span className="font-medium text-sm truncate">{item.nombre}</span>
                     <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                      <label className="flex items-center gap-1 text-[11px] text-muted-foreground" title="Tiempo estándar por unidad. Al crear una tarea, las horas estimadas se calculan solas: cantidad × este tiempo (editable).">
+                        <Input
+                          type="number" min={0} step={5}
+                          defaultValue={(item as { minutos_estimados?: number | null }).minutos_estimados ?? ''}
+                          placeholder="min"
+                          className="h-7 w-16 text-xs"
+                          onBlur={async (e) => {
+                            const v = e.target.value.trim();
+                            const prev = (item as { minutos_estimados?: number | null }).minutos_estimados ?? null;
+                            const nuevo = v === '' ? null : Math.round(Number(v));
+                            if (nuevo === prev) return;
+                            try {
+                              await api.patchDeliverableTypeMinutos(item.id, nuevo);
+                              setDeliverableTypes((list) => list.map((d) => (d.id === item.id ? { ...d, minutos_estimados: nuevo } as typeof d : d)));
+                              toast.success(nuevo ? `${item.nombre}: ${nuevo} min por unidad` : `${item.nombre}: sin tiempo estándar`);
+                            } catch (err) { toast.error(err instanceof Error ? err.message : 'No se pudo guardar'); }
+                          }}
+                        />
+                        min/u
+                      </label>
                       <Badge variant={item.activo ? "default" : "secondary"} className="text-[10px] sm:text-xs">
                         {item.activo ? 'Activo' : 'Inactivo'}
                       </Badge>

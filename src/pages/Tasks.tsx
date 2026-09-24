@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Sheet,
@@ -55,6 +56,9 @@ import {
   Eye,
   Edit,
   Trash2,
+  Pencil,
+  Copy,
+  FolderKanban,
   Bookmark,
   BookmarkPlus,
   MessageSquare,
@@ -78,6 +82,9 @@ import {
   Clock,
   Filter,
   Workflow,
+  EyeOff,
+  RotateCcw,
+  Users,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -88,15 +95,17 @@ import { DriveBrowser } from '@/components/drive/DriveBrowser';
 import type { DriveFile } from '@/lib/apiClient';
 import { DeliverableProgress } from '@/components/tasks/DeliverableProgress';
 import { SubtaskList } from '@/components/tasks/SubtaskList';
+import { TaskHistorial } from '@/components/tasks/TaskHistorial';
 import { RescheduleDialog, MotivoReschedule } from '@/components/tasks/RescheduleDialog';
 import { ResponsableMetrics } from '@/components/tasks/ResponsableMetrics';
+import { TodayMeetings } from '@/components/TodayMeetings';
 import { CommentsPanel } from '@/components/tasks/CommentsPanel';
 import { BulkActions } from '@/components/tasks/BulkActions';
 import { formatTimeDisplay } from '@/hooks/useTaskTimer';
 import { sendTaskNotification } from '@/lib/api';
 import { RichTextEditor, RichTextViewer } from '@/components/RichTextEditor';
 import { CustomFieldsForm } from '@/components/tasks/CustomFieldsForm';
-import { DepartmentSelect, DepartmentBadge } from '@/components/tasks/DepartmentSelect';
+import { DepartmentSelect, DepartmentBadge, useDepartments } from '@/components/tasks/DepartmentSelect';
 import { ProjectSelect } from '@/components/tasks/ProjectSelect';
 import { HandoffDialog } from '@/components/tasks/HandoffDialog';
 
@@ -115,11 +124,14 @@ interface Task {
   department_color?: string | null;
   project_id?: string | null;
   prioridad: 'alta' | 'media' | 'baja';
-  estado: 'backlog' | 'en_proceso' | 'en_revision' | 'revision_interna' | 'revision_cliente' | 'aprobado' | 'entregado' | 'bloqueado';
+  estado: 'backlog' | 'en_proceso' | 'en_revision' | 'revision_interna' | 'revision_cliente' | 'ajustes' | 'aprobado' | 'entregado' | 'bloqueado';
+  ajustes_count?: number;
   fecha_inicio: string | null;
   fecha_entrega: string;
   fecha_cliente?: string | null;
   client_board_id?: string | null;
+  folder_id?: string | null;
+  folder_nombre?: string | null;
   enlaces: string[] | null;
   estado_envio: 'pendiente' | 'enviado';
   qa_checklist: any;
@@ -156,6 +168,11 @@ interface Task {
   recurrence_parent_id?: string | null;
   subtask_count?: number;
   subtask_done_count?: number;
+  cambios_cliente?: number;
+  cambios_internos?: number;
+  tiempo_por_persona?: { user_id: string; nombre: string; avatar_url: string | null; segundos: number }[];
+  seguidores?: { user_id: string; nombre: string; avatar_url: string | null }[];
+  me_sigue?: boolean;
 }
 
 interface Brand {
@@ -178,12 +195,13 @@ export default function Tasks() {
   const [searchParams] = useSearchParams();
   const { profile, isAdmin, isEjecutivo, isEquipo } = useAuth();
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
+  const { departments } = useDepartments();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [desks, setDesks] = useState<Desk[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [taskTypes, setTaskTypes] = useState<{ id: string; nombre: string; activo?: boolean }[]>([]);
-  const [deliverableTypes, setDeliverableTypes] = useState<{ id: string; nombre: string; activo?: boolean }[]>([]);
+  const [deliverableTypes, setDeliverableTypes] = useState<{ id: string; nombre: string; activo?: boolean; minutos_estimados?: number | null }[]>([]);
   const [deskMembers, setDeskMembers] = useState<Profile[]>([]);
   const [deskBrandsForForm, setDeskBrandsForForm] = useState<Brand[] | null>(null);
   const [filterDeskMembers, setFilterDeskMembers] = useState<Profile[]>([]);
@@ -216,7 +234,155 @@ export default function Tasks() {
   const [siteSettings, setSiteSettings] = useState<Record<string, string | null>>({});
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-  const [groupBy, setGroupBy] = useState<'estado' | 'mes' | 'departamento' | 'responsable'>('estado');
+  const [groupBy, setGroupBy] = useState<'estado' | 'mes' | 'departamento' | 'responsable' | 'carpeta' | 'mes_carpeta'>('estado');
+  // Carpetas de la mesa activa (agrupan tareas estilo ClickUp; reunión Steven 22-ago)
+  const [folders, setFolders] = useState<{ id: string; desk_id: string; nombre: string; parent_folder_id?: string | null; tareas?: number; tareas_listas?: number }[]>([]);
+  const [filterFolder, setFilterFolder] = useState<string>('all');
+  // Diálogo propio para TODO lo de carpetas (nada de prompt/confirm del navegador)
+  const [folderDialog, setFolderDialog] = useState<{ open: boolean; mode: 'create' | 'rename' | 'template' | 'delete'; folderId?: string; nombre: string } | null>(null);
+  const [folderSaving, setFolderSaving] = useState(false);
+  // Drag & drop de tareas hacia los chips de carpeta
+  const dragTaskId = useRef<string | null>(null);
+  const [isDraggingTask, setIsDraggingTask] = useState(false);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  const [foldersCollapsed, setFoldersCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('tasks_folders_collapsed') === 'true'; } catch { return false; }
+  });
+
+  // Arrastre de CARPETAS (para meterlas en otras — 1 nivel máximo)
+  const dragFolderId = useRef<string | null>(null);
+  const [isDraggingFolder, setIsDraggingFolder] = useState(false);
+
+  const nestFolder = async (childId: string, parentId: string | null) => {
+    dragFolderId.current = null;
+    setIsDraggingFolder(false);
+    setDragOverFolder(null);
+    if (childId === parentId) return;
+    try {
+      await api.moveTaskFolder(childId, parentId);
+      const child = folders.find((x) => x.id === childId)?.nombre;
+      const parent = parentId ? folders.find((x) => x.id === parentId)?.nombre : null;
+      toast.success(parentId ? `"${child}" ahora está dentro de "${parent}"` : `"${child}" volvió al nivel principal`);
+      if (activeDeskId) reloadFolders(activeDeskId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      toast.error(/nivel|subcarpetas|misma/.test(msg) ? msg.replace(/.*"error":"([^"]+)".*/, '$1') : 'No se pudo mover la carpeta');
+    }
+  };
+
+  const dropOnFolder = async (folderId: string | null) => {
+    // ¿Lo que viene volando es una carpeta? Entonces es anidar, no mover tareas
+    if (dragFolderId.current) { nestFolder(dragFolderId.current, folderId); return; }
+    const id = dragTaskId.current;
+    dragTaskId.current = null;
+    setIsDraggingTask(false);
+    setDragOverFolder(null);
+    if (!id || !(isAdmin || isEjecutivo)) return;
+    // Si la tarea arrastrada esta seleccionada, viajan todas las seleccionadas
+    const ids = selectedIds.has(id) ? Array.from(selectedIds) : [id];
+    try {
+      await api.bulkUpdateTasks(ids, { folder_id: folderId });
+      const nombre = folderId ? folders.find((x) => x.id === folderId)?.nombre : null;
+      toast.success(folderId
+        ? `${ids.length === 1 ? 'Tarea movida' : `${ids.length} tareas movidas`} a "${nombre}"`
+        : `${ids.length === 1 ? 'Tarea' : `${ids.length} tareas`} sin carpeta`);
+      if (ids.length > 1) setSelectedIds(new Set());
+      fetchData();
+      if (activeDeskId) reloadFolders(activeDeskId);
+    } catch { toast.error('No se pudo mover'); }
+  };
+
+  const reloadFolders = (deskId: string) => api.getTaskFolders(deskId).then(setFolders).catch(() => setFolders([]));
+
+  const submitFolderDialog = async () => {
+    if (!folderDialog || folderSaving) return;
+    const { mode, folderId, nombre } = folderDialog;
+    if (mode !== 'delete' && !nombre.trim()) { toast.error('Escribe un nombre'); return; }
+    setFolderSaving(true);
+    try {
+      if (mode === 'create' && activeDeskId) {
+        await api.createTaskFolder(activeDeskId, nombre.trim());
+        toast.success(`Carpeta "${nombre.trim()}" creada`);
+      } else if (mode === 'rename' && folderId) {
+        await api.renameTaskFolder(folderId, nombre.trim());
+        toast.success('Carpeta renombrada');
+      } else if (mode === 'template' && folderId) {
+        const r = await api.saveFolderAsTemplate(folderId, nombre.trim() || undefined);
+        toast.success(`Plantilla "${r.name}" creada con ${r.tareas} tareas — está en el módulo Plantillas`);
+      } else if (mode === 'delete' && folderId) {
+        await api.deleteTaskFolder(folderId);
+        if (filterFolder === folderId) setFilterFolder('all');
+        toast.success('Carpeta eliminada (las tareas quedaron sin carpeta)');
+      }
+      if (activeDeskId) reloadFolders(activeDeskId);
+      if (mode !== 'create') fetchData();
+      setFolderDialog(null);
+    } catch {
+      toast.error(mode === 'create' ? 'No se pudo crear (¿nombre repetido?)' : 'No se pudo completar la acción');
+    }
+    setFolderSaving(false);
+  };
+
+  // Chip de carpeta: con selección activa MUEVE las tareas; sin selección, filtra
+  // Tile de carpeta (hoja o hija). Reusado por el panel.
+  const renderFolderTile = (fo: { id: string; nombre: string; tareas?: number; tareas_listas?: number; parent_folder_id?: string | null }, esHija: boolean) => {
+    const total = fo.tareas ?? 0;
+    const listas = fo.tareas_listas ?? 0;
+    const activa = filterFolder === fo.id;
+    return (
+      <button
+        key={fo.id}
+        draggable={(isAdmin || isEjecutivo)}
+        onDragStart={(e) => { e.stopPropagation(); dragFolderId.current = fo.id; setIsDraggingFolder(true); e.dataTransfer.effectAllowed = 'move'; }}
+        onDragEnd={() => { dragFolderId.current = null; setIsDraggingFolder(false); setDragOverFolder(null); }}
+        onClick={() => onFolderChipClick(fo.id)}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverFolder(fo.id); }}
+        onDragLeave={() => setDragOverFolder((p) => (p === fo.id ? null : p))}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); dropOnFolder(fo.id); }}
+        title={selectedIds.size > 0 ? `Mover la selección a "${fo.nombre}"` : (activa ? 'Quitar filtro' : `Ver solo "${fo.nombre}"`)}
+        className={cn(
+          esHija ? 'w-[190px]' : 'w-[210px]',
+          'text-left rounded-lg border p-2.5 transition-all cursor-grab active:cursor-grabbing',
+          activa ? 'bg-teal-600 border-teal-600 text-white shadow-md' : 'bg-background border-border hover:border-teal-400 hover:shadow-sm',
+          dragOverFolder === fo.id && 'ring-2 ring-teal-500 ring-offset-1 scale-[1.03]'
+        )}
+      >
+        <div className="flex items-center justify-between gap-1.5">
+          <span className="text-xs font-semibold truncate">📁 {fo.nombre}</span>
+          {activa && selectedIds.size === 0 && (isAdmin || isEjecutivo) && (
+            <span className="flex items-center gap-1.5 shrink-0">
+              <span role="button" title="Renombrar" className="opacity-80 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setFolderDialog({ open: true, mode: 'rename', folderId: fo.id, nombre: fo.nombre }); }}><Pencil className="h-3 w-3" /></span>
+              <span role="button" title="Dejar como plantilla" className="opacity-80 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setFolderDialog({ open: true, mode: 'template', folderId: fo.id, nombre: fo.nombre }); }}><Copy className="h-3 w-3" /></span>
+              <span role="button" title="Eliminar carpeta" className="opacity-80 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setFolderDialog({ open: true, mode: 'delete', folderId: fo.id, nombre: fo.nombre }); }}><Trash2 className="h-3 w-3" /></span>
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className={cn('h-1.5 flex-1 rounded-full overflow-hidden', activa ? 'bg-white/25' : 'bg-muted-foreground/15')}>
+            <span className={cn('block h-full rounded-full transition-all', activa ? 'bg-white' : 'bg-teal-500')}
+              style={{ width: total > 0 ? `${Math.round((listas / total) * 100)}%` : '0%' }} />
+          </span>
+          <span className={cn('text-[10px] font-semibold shrink-0', activa ? 'text-white/85' : 'text-muted-foreground')}>{listas}/{total}</span>
+        </div>
+      </button>
+    );
+  };
+
+  const onFolderChipClick = async (folderId: string | null) => {
+    if (selectedIds.size > 0 && (isAdmin || isEjecutivo)) {
+      try {
+        await api.bulkUpdateTasks(Array.from(selectedIds), { folder_id: folderId });
+        const nombre = folderId ? folders.find((x) => x.id === folderId)?.nombre : null;
+        toast.success(folderId ? `${selectedIds.size} tarea(s) movida(s) a "${nombre}"` : `${selectedIds.size} tarea(s) sin carpeta`);
+        setSelectedIds(new Set());
+        fetchData();
+        if (activeDeskId) reloadFolders(activeDeskId);
+      } catch { toast.error('No se pudieron mover'); }
+      return;
+    }
+    const key = folderId ?? '__none__';
+    setFilterFolder((prev) => (prev === key ? 'all' : key));
+  };
   // Quick-add estilo Monday: crear tarea inline al pie de cada grupo
   const [quickAddGroup, setQuickAddGroup] = useState<string | null>(null);
   const [qaTitle, setQaTitle] = useState('');
@@ -272,7 +438,7 @@ export default function Tasks() {
       const saved = localStorage.getItem('tasks_visible_cols');
       if (saved) return JSON.parse(saved);
     } catch {}
-    return { marca: true, mesa: true, depto: true, responsable: true, entregables: true, timer: true, archivos: true, tipo: false, prioridad: true, estado: true, entrega: true, dias: true, enlace: false, autor: false, creado: false };
+    return { marca: true, mesa: true, depto: true, responsable: true, entregables: true, timer: true, archivos: true, tipo: false, prioridad: true, estado: true, entrega: true, dias: false, enlace: false, autor: false, creado: false };
   });
 
   const toggleCol = (key: ColKey) => {
@@ -287,6 +453,9 @@ export default function Tasks() {
 
   // Debounce del término de búsqueda para no saturar el servidor
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  // Distingue la carga inicial de las recargas: solo la inicial puede
+  // mostrar el spinner de pantalla completa (ver nota en el guard de abajo).
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm), 400);
     return () => clearTimeout(timer);
@@ -337,6 +506,41 @@ export default function Tasks() {
 
   // Auto-open task detail from query param (e.g. desde email, notificación, daily, link copiado).
   // Detecta cambios en el query param ?task=... y abre/recarga el modal cada vez que cambie.
+  // El panel de detalle necesita campos que la LISTA no trae (seguidores,
+  // cambios, tiempo por persona). Se completan con GET /tasks/:id al abrirlo.
+  const enrichedTaskId = useRef<string | null>(null);
+  useEffect(() => {
+    const id = selectedTask?.id;
+    if (!detailDialogOpen || !id) { enrichedTaskId.current = null; return; }
+    if (enrichedTaskId.current === id) return;
+    enrichedTaskId.current = id;
+    api.getTask(id).then((full: any) => {
+      if (!full || full.id !== id) return;
+      setSelectedTask((prev) => (prev && prev.id === id ? { ...prev, ...full } : prev));
+    }).catch(() => {});
+  }, [detailDialogOpen, selectedTask?.id]);
+
+  const reloadSelectedTask = () => {
+    const id = selectedTask?.id;
+    if (!id) return;
+    api.getTask(id).then((full: any) => {
+      if (full && full.id === id) setSelectedTask((prev) => (prev && prev.id === id ? { ...prev, ...full } : prev));
+    }).catch(() => {});
+  };
+
+  const toggleSeguirTarea = async () => {
+    const t = selectedTask;
+    if (!t?.id) return;
+    try {
+      if (t.me_sigue) await api.dejarDeSeguirTarea(t.id);
+      else await api.seguirTarea(t.id);
+      reloadSelectedTask();
+      toast.success(t.me_sigue ? 'Dejaste de seguir la tarea' : 'Ahora sigues esta tarea');
+    } catch (e: any) {
+      toast.error('Error', { description: e?.message });
+    }
+  };
+
   const lastDeepLinkTaskId = useRef<string | null>(null);
   useEffect(() => {
     const taskId = searchParams.get('task');
@@ -508,6 +712,22 @@ export default function Tasks() {
     }
   }, [formData.desk_id]);
 
+  // Horas estimadas automáticas (Steven): suma de cantidad × tiempo estándar de cada tipo
+  // de entregable. Se recalcula mientras nadie escriba las horas a mano.
+  const [estimadoManual, setEstimadoManual] = useState(false);
+  const estimadoAuto = React.useMemo(() => {
+    const min = formData.entregables.reduce((acc, e) => {
+      const dt = deliverableTypes.find((d) => d.id === e.tipo_entregable_id);
+      return acc + (dt?.minutos_estimados ? Number(dt.minutos_estimados) * (e.cantidad || 1) : 0);
+    }, 0);
+    return min > 0 ? Math.round((min / 60) * 4) / 4 : null;
+  }, [formData.entregables, deliverableTypes]);
+  useEffect(() => {
+    if (estimadoManual || estimadoAuto == null) return;
+    const v = String(estimadoAuto);
+    setFormData((prev) => (prev.estimated_hours === v ? prev : { ...prev, estimated_hours: v }));
+  }, [estimadoAuto, estimadoManual]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -540,6 +760,7 @@ export default function Tasks() {
       toast.error('Error al cargar datos');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -592,6 +813,15 @@ export default function Tasks() {
         }
 
         toast.success('Tarea creada');
+        // Recordar seleccion para la proxima "Nueva Tarea"
+        try {
+          localStorage.setItem('nueva_tarea_defaults', JSON.stringify({
+            brand_id: formData.brand_id, desk_id: formData.desk_id,
+            departamento: formData.departamento, department_id: formData.department_id,
+            project_id: formData.project_id, task_type_id: formData.task_type_id,
+            prioridad: formData.prioridad,
+          }));
+        } catch {}
 
         if (formData.responsable_user_id) {
           const assignedUser = users.find(u => u.id === formData.responsable_user_id);
@@ -644,6 +874,15 @@ export default function Tasks() {
     e.preventDefault();
 
     const validEntregables = formData.entregables.filter(e => e.tipo_entregable_id);
+    // Obligatorio: al menos un tipo de entregable con su cantidad (pedido de Steven 10-jul)
+    if (validEntregables.length === 0) {
+      toast.error('Indica el tipo de entregable', { description: 'El tipo y el número de entregables son obligatorios.' });
+      return;
+    }
+    if (validEntregables.some(e => !e.cantidad || e.cantidad < 1)) {
+      toast.error('Indica el número de entregables', { description: 'Cada tipo de entregable necesita su cantidad.' });
+      return;
+    }
     const taskData: any = {
       titulo_tarea: formData.titulo_tarea,
       detalle: formData.detalle || null,
@@ -685,24 +924,29 @@ export default function Tasks() {
 
   const resetForm = () => {
     const defaultDeskId = filterDesk !== 'all' ? filterDesk : (pinnedDeskId || '');
+    setEstimadoManual(false);
+    // Recordar los ultimos valores usados al crear (pedido de Jonathan):
+    // marca/mesa/depto/proyecto/tipo/prioridad se pre-llenan de la ultima tarea creada.
+    let saved: any = {};
+    try { saved = JSON.parse(localStorage.getItem('nueva_tarea_defaults') || '{}'); } catch {}
     setFormData({
       titulo_tarea: '',
       detalle: '',
-      brand_id: '',
-      project_id: '',
-      desk_id: defaultDeskId,
+      brand_id: saved.brand_id || '',
+      project_id: saved.project_id || '',
+      desk_id: defaultDeskId || saved.desk_id || '',
       responsable_user_id: '',
       responsable_ids: [],
-      departamento: '',
-      department_id: '',
-      prioridad: 'media',
+      departamento: saved.departamento || '',
+      department_id: saved.department_id || '',
+      prioridad: saved.prioridad || 'media',
       estado: 'backlog',
       fecha_inicio: '',
       fecha_entrega: '',
       fecha_cliente: '',
       cantidad_entregables: 1,
       enlaces: '',
-      task_type_id: '',
+      task_type_id: saved.task_type_id || '',
       tipo_entregable_id: '',
       entregables: [{ tipo_entregable_id: '', cantidad: 1 }],
       estimated_hours: '',
@@ -719,6 +963,7 @@ export default function Tasks() {
 
   const openEditDialog = (task: Task) => {
     setSelectedTask(task);
+    setEstimadoManual(task.estimated_hours != null && Number(task.estimated_hours) > 0);
     isEditingRef.current = true;
 
     // Build entregables from multi-type list or fallback to legacy single type
@@ -802,11 +1047,19 @@ export default function Tasks() {
   // Aquí solo filtramos combinaciones de dropdown + pinned sidebar cuando ambos están activos.
   const filteredTasks = tasks.filter(task => {
     const matchesBrand = filterBrand === 'all' || task.brand_id === filterBrand;
-    // Confiamos en el backend: si pidió mesa, ya devolvió tareas relacionadas (mesa primaria + mesas de responsables)
+    // Confiamos en el backend: si pidió mesa, ya devolvió solo tareas de esa mesa (t.desk_id)
     const matchesDesk = true;
     const matchesPinnedDesk = !pinnedDeskId || task.desk_id === pinnedDeskId;
     const matchesPinnedBrand = !pinnedBrandId || task.brand_id === pinnedBrandId;
-    return matchesBrand && matchesDesk && matchesPinnedDesk && matchesPinnedBrand;
+    const matchesFolder = (() => {
+      if (filterFolder === 'all') return true;
+      if (filterFolder === '__none__') return !task.folder_id;
+      if (task.folder_id === filterFolder) return true;
+      // Si se filtra por una carpeta madre, sus hijas también cuentan
+      const tf = folders.find((x) => x.id === task.folder_id);
+      return tf?.parent_folder_id === filterFolder;
+    })();
+    return matchesBrand && matchesDesk && matchesPinnedDesk && matchesPinnedBrand && matchesFolder;
   });
 
   const getPriorityColor = (prioridad: string) => {
@@ -823,6 +1076,7 @@ export default function Tasks() {
       backlog: 'bg-status-backlog text-white',
       en_proceso: 'bg-status-in-progress text-white',
       en_revision: 'bg-status-in-review text-black',
+      ajustes: 'bg-orange-600 text-white',
       revision_interna: 'bg-amber-500 text-white',
       revision_cliente: 'bg-purple-500 text-white',
       aprobado: 'bg-status-approved text-white',
@@ -837,6 +1091,7 @@ export default function Tasks() {
       backlog: 'Pendiente',
       en_proceso: 'En Proceso',
       en_revision: 'En Revisión',
+      ajustes: 'Ajustes',
       revision_interna: 'Revisión interna',
       revision_cliente: 'Revisión cliente',
       aprobado: 'Aprobado',
@@ -846,18 +1101,33 @@ export default function Tasks() {
     return labels[estado] || estado;
   };
 
-  const statusOrder: Task['estado'][] = ['en_proceso', 'revision_interna', 'revision_cliente', 'en_revision', 'backlog', 'bloqueado', 'entregado'];
+  const statusOrder: Task['estado'][] = ['en_proceso', 'ajustes', 'revision_interna', 'revision_cliente', 'en_revision', 'backlog', 'bloqueado', 'entregado'];
 
   const quickAddTask = async (groupKey: string, tasksInGroup: Task[]) => {
     if (!qaTitle.trim() || !qaBrand) { toast.error('Pon título y marca'); return; }
     const fecha = qaFecha || (() => { const d = new Date(); d.setDate(d.getDate() + 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
     const payload: Record<string, unknown> = { titulo_tarea: qaTitle.trim(), brand_id: qaBrand, fecha_entrega: fecha };
     if (groupBy === 'departamento' && groupKey !== 'Por clasificar') {
-      payload.departamento = groupKey;
-      const depId = tasksInGroup.find((t) => t.department_id)?.department_id;
-      if (depId) payload.department_id = depId;
+      const dept = departments.find((d) => d.nombre === groupKey);
+      if (dept) {
+        payload.department_id = dept.id;
+      } else {
+        // Bucket legacy huérfano (texto viejo sin departamento real equivalente) — se mantiene tal cual.
+        payload.departamento = groupKey;
+      }
     }
     if (groupBy === 'estado' && ['backlog', 'en_proceso', 'en_revision', 'entregado', 'bloqueado'].includes(groupKey)) payload.estado = groupKey;
+    if (groupBy === 'carpeta' && groupKey !== 'Sin carpeta') {
+      const fo = folders.find((x) => x.nombre === groupKey);
+      if (fo) payload.folder_id = fo.id;
+    }
+    if (groupBy === 'mes_carpeta') {
+      const folderName = groupKey.split('\u0007')[1];
+      if (folderName && folderName !== 'Sin carpeta') {
+        const fo = folders.find((x) => x.nombre === folderName);
+        if (fo) payload.folder_id = fo.id;
+      }
+    }
     if (groupBy === 'responsable' && groupKey !== 'Sin asignar') {
       const u = users.find((x) => x.nombre === groupKey);
       if (u) payload.responsable_ids = [u.id];
@@ -879,6 +1149,7 @@ export default function Tasks() {
       backlog: 'bg-[hsl(222,35%,35%)]',
       en_proceso: 'bg-[hsl(199,89%,48%)]',
       en_revision: 'bg-[hsl(38,92%,50%)]',
+      ajustes: 'bg-[hsl(24,95%,53%)]',
       revision_interna: 'bg-[hsl(38,92%,50%)]',
       revision_cliente: 'bg-[hsl(271,76%,53%)]',
       aprobado: 'bg-[hsl(142,76%,36%)]',
@@ -916,6 +1187,13 @@ export default function Tasks() {
     return map[d] || 'bg-primary/80 text-primary-foreground';
   };
 
+  const activeDeskId = filterDesk !== 'all' ? filterDesk : (pinnedDeskId || null);
+  useEffect(() => {
+    setFilterFolder('all');
+    if (!activeDeskId) { setFolders([]); return; }
+    reloadFolders(activeDeskId);
+  }, [activeDeskId]);
+
   const groupedTasks = React.useMemo(() => {
     if (groupBy === 'mes') {
       const byMonth: Record<string, Task[]> = {};
@@ -929,6 +1207,46 @@ export default function Tasks() {
       const sorted = Object.keys(byMonth).sort().reverse();
       return sorted.reduce<Record<string, Task[]>>((acc, key) => {
         acc[key] = byMonth[key];
+        return acc;
+      }, {});
+    }
+    if (groupBy === 'mes_carpeta') {
+      // Mes (de la fecha de entrega) y, dentro, carpeta. Key compuesto "ym\u0007carpeta".
+      const byKey: Record<string, Task[]> = {};
+      filteredTasks.forEach((t) => {
+        const d = t.fecha_entrega ? t.fecha_entrega.substring(0, 10) : '';
+        const [y, m] = d.split('-').map(Number);
+        const ym = `${y || 0}-${String(m || 1).padStart(2, '0')}`;
+        const key = `${ym}\u0007${t.folder_nombre || 'Sin carpeta'}`;
+        if (!byKey[key]) byKey[key] = [];
+        byKey[key].push(t);
+      });
+      const sorted = Object.keys(byKey).sort((a, b) => {
+        const [ymA, fA] = a.split('\u0007');
+        const [ymB, fB] = b.split('\u0007');
+        if (ymA !== ymB) return ymB.localeCompare(ymA); // mes reciente primero
+        if (fA === 'Sin carpeta') return 1;
+        if (fB === 'Sin carpeta') return -1;
+        return fA.localeCompare(fB, 'es');
+      });
+      return sorted.reduce<Record<string, Task[]>>((acc, key) => {
+        acc[key] = byKey[key];
+        return acc;
+      }, {});
+    }
+    if (groupBy === 'carpeta') {
+      const byFolder: Record<string, Task[]> = {};
+      filteredTasks.forEach((t) => {
+        const key = t.folder_nombre || 'Sin carpeta';
+        if (!byFolder[key]) byFolder[key] = [];
+        byFolder[key].push(t);
+      });
+      // Las carpetas vacías también se muestran: recién creadas, aún sin tareas
+      folders.forEach((fo) => { if (!byFolder[fo.nombre]) byFolder[fo.nombre] = []; });
+      const sorted = Object.keys(byFolder).sort((a, b) =>
+        a === 'Sin carpeta' ? 1 : b === 'Sin carpeta' ? -1 : a.localeCompare(b, 'es'));
+      return sorted.reduce<Record<string, Task[]>>((acc, key) => {
+        acc[key] = byFolder[key];
         return acc;
       }, {});
     }
@@ -967,10 +1285,16 @@ export default function Tasks() {
       if (tasksInGroup.length > 0) acc[status] = tasksInGroup;
       return acc;
     }, {});
-  }, [filteredTasks, groupBy, users]);
+  }, [filteredTasks, groupBy, users, folders]);
 
   const getGroupLabel = (key: string) => {
-    if (groupBy === 'departamento' || groupBy === 'responsable') return key;
+    if (groupBy === 'departamento' || groupBy === 'responsable' || groupBy === 'carpeta') return key;
+    if (groupBy === 'mes_carpeta') {
+      const [ym, folder] = key.split('\u0007');
+      const [y, m] = ym.split('-').map(Number);
+      const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+      return `${monthNames[(m || 1) - 1]} ${y || '—'} · 📁 ${folder}`;
+    }
     if (groupBy === 'mes') {
       const [y, m] = key.split('-').map(Number);
       const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -1108,7 +1432,9 @@ export default function Tasks() {
   const canEditTask = (task: Task) => {
     if (isAdmin) return true;
     const isProtected = task.created_by_rol === 'admin' || task.created_by_rol === 'ejecutivo';
-    if (isEjecutivo) return !isProtected || task.created_by === profile?.id;
+    // Ejecutivo: edita cualquier tarea que puede ver (el backend valida el acceso por mesa).
+    // Antes solo podia editar las protegidas que el mismo creo y bloqueaba a los demas ejecutivos.
+    if (isEjecutivo) return true;
     if (isEquipo) return !isProtected && isAssignedTo(task);
     return false;
   };
@@ -1138,7 +1464,10 @@ export default function Tasks() {
     }
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Si se usara `loading` a secas,
+  // cada busqueda o cambio de filtro desmontaria la pagina completa: el input
+  // perderia el foco y los dialogos abiertos se cerrarian solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -1148,6 +1477,9 @@ export default function Tasks() {
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-fade-in min-w-0 overflow-x-hidden">
+      {/* Tu dia: reuniones de hoy del usuario (carga automatica desde Google Calendar) */}
+      <TodayMeetings />
+
       {/* Header + vista */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
@@ -1209,7 +1541,7 @@ export default function Tasks() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="col-span-1 sm:col-span-2 space-y-2">
-                    <Label htmlFor="titulo">Título *</Label>
+                    <Label htmlFor="titulo">Título <span className="text-destructive font-semibold">*</span></Label>
                     <Input
                       id="titulo"
                       value={formData.titulo_tarea}
@@ -1219,7 +1551,7 @@ export default function Tasks() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="brand">Marca *</Label>
+                    <Label htmlFor="brand">Marca <span className="text-destructive font-semibold">*</span></Label>
                     {(() => {
                       const availableBrands = deskBrandsForForm ? brands.filter(b => deskBrandsForForm.some(db => db.id === b.id)) : brands;
                       return (
@@ -1287,7 +1619,10 @@ export default function Tasks() {
                                 const ids = checked
                                   ? [...formData.responsable_ids, user.id]
                                   : formData.responsable_ids.filter(id => id !== user.id);
-                                setFormData({ ...formData, responsable_ids: ids, responsable_user_id: ids[0] || '' });
+                                // Al elegir al primer responsable, la tarea toma su departamento (Administración > Usuarios)
+                                const primeroResp = deskMembers.find((u) => u.id === ids[0]) as { department_id?: string | null } | undefined;
+                                const depto = checked && ids.length === 1 && primeroResp?.department_id ? primeroResp.department_id : formData.department_id;
+                                setFormData({ ...formData, responsable_ids: ids, responsable_user_id: ids[0] || '', department_id: depto });
                               }}
                             />
                             {user.nombre}
@@ -1334,7 +1669,7 @@ export default function Tasks() {
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label>Tipos de Entregable</Label>
+                      <Label>Tipos de Entregable <span className="text-destructive font-semibold">*</span></Label>
                       <Button
                         type="button"
                         variant="outline"
@@ -1437,6 +1772,7 @@ export default function Tasks() {
                         <SelectItem value="en_proceso">En Proceso</SelectItem>
                         <SelectItem value="revision_interna">Revisión interna</SelectItem>
                         <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
+                        <SelectItem value="ajustes">Ajustes</SelectItem>
                         <SelectItem value="entregado">Entregado</SelectItem>
                         <SelectItem value="bloqueado">Bloqueado</SelectItem>
                       </SelectContent>
@@ -1454,7 +1790,7 @@ export default function Tasks() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="fecha_entrega">Fecha Entrega *</Label>
+                    <Label htmlFor="fecha_entrega">Fecha Entrega <span className="text-destructive font-semibold">*</span></Label>
                     <Input
                       id="fecha_entrega"
                       type="date"
@@ -1485,8 +1821,15 @@ export default function Tasks() {
                       min="0"
                       placeholder="Ej: 4.5"
                       value={formData.estimated_hours}
-                      onChange={(e) => setFormData({ ...formData, estimated_hours: e.target.value })}
+                      onChange={(e) => { setEstimadoManual(true); setFormData({ ...formData, estimated_hours: e.target.value }); }}
                     />
+                    {estimadoAuto != null && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {estimadoManual
+                          ? <>Por tipo de entregable serían {estimadoAuto} h. <button type="button" className="underline" onClick={() => setEstimadoManual(false)}>Usar ese cálculo</button></>
+                          : <>Calculado por tipo de entregable ({formData.entregables.filter((e) => e.tipo_entregable_id).map((e) => { const dt = deliverableTypes.find((d) => d.id === e.tipo_entregable_id); return dt?.minutos_estimados ? `${e.cantidad} × ${dt.nombre} (${dt.minutos_estimados} min)` : null; }).filter(Boolean).join(' + ')}). Puedes editarlo.</>}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -1674,10 +2017,10 @@ export default function Tasks() {
         };
         const dropdowns = (
           <>
-            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[180px]">
-              <Label className="text-xs text-muted-foreground block">Marca</Label>
+            <div className="space-y-1.5 sm:space-y-0 w-full sm:w-auto">
+              <Label className="text-xs text-muted-foreground block sm:hidden">Marca</Label>
               <Select value={filterBrand} onValueChange={setFilterBrand}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-auto sm:min-w-[120px] h-8 text-xs gap-1"><span className="hidden sm:inline text-muted-foreground">Marca:</span><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
                   {(filterDeskBrands.length > 0 ? filterDeskBrands : brands).map((brand) => (
@@ -1686,35 +2029,36 @@ export default function Tasks() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[120px]">
-              <Label className="text-xs text-muted-foreground block">Mesa</Label>
+            <div className="space-y-1.5 sm:space-y-0 w-full sm:w-auto">
+              <Label className="text-xs text-muted-foreground block sm:hidden">Mesa</Label>
               <Select value={filterDesk} onValueChange={setFilterDesk}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-auto sm:min-w-[100px] h-8 text-xs gap-1"><span className="hidden sm:inline text-muted-foreground">Mesa:</span><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
                   {desks.map((desk) => (<SelectItem key={desk.id} value={desk.id}>{desk.nombre}</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[120px]">
-              <Label className="text-xs text-muted-foreground block">Estado</Label>
+            <div className="space-y-1.5 sm:space-y-0 w-full sm:w-auto">
+              <Label className="text-xs text-muted-foreground block sm:hidden">Estado</Label>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Todos" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-auto sm:min-w-[100px] h-8 text-xs gap-1"><span className="hidden sm:inline text-muted-foreground">Estado:</span><SelectValue placeholder="Todos" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="backlog">Pendiente</SelectItem>
                   <SelectItem value="en_proceso">En Proceso</SelectItem>
                   <SelectItem value="revision_interna">Revisión interna</SelectItem>
                         <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
+                        <SelectItem value="ajustes">Ajustes</SelectItem>
                   <SelectItem value="entregado">Entregado</SelectItem>
                   <SelectItem value="bloqueado">Bloqueado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[110px]">
-              <Label className="text-xs text-muted-foreground block">Prioridad</Label>
+            <div className="space-y-1.5 sm:space-y-0 w-full sm:w-auto">
+              <Label className="text-xs text-muted-foreground block sm:hidden">Prioridad</Label>
               <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-auto sm:min-w-[100px] h-8 text-xs gap-1"><span className="hidden sm:inline text-muted-foreground">Prioridad:</span><SelectValue placeholder="Todas" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
                   <SelectItem value="alta">Alta</SelectItem>
@@ -1723,10 +2067,10 @@ export default function Tasks() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 w-full sm:w-auto sm:flex-1 sm:min-w-[130px]">
-              <Label className="text-xs text-muted-foreground block">Responsable</Label>
+            <div className="space-y-1.5 sm:space-y-0 w-full sm:w-auto">
+              <Label className="text-xs text-muted-foreground block sm:hidden">Responsable</Label>
               <Select value={filterResponsable} onValueChange={setFilterResponsable}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Todos" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-auto sm:min-w-[110px] h-8 text-xs gap-1"><span className="hidden sm:inline text-muted-foreground">Resp:</span><SelectValue placeholder="Todos" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
                   {(filterDeskMembers.length > 0 ? filterDeskMembers : users).map((user) => (
@@ -1739,7 +2083,7 @@ export default function Tasks() {
         );
         return (
       <Card className="glass-card">
-        <CardContent className="p-3 sm:p-4 space-y-3">
+        <CardContent className="p-2 sm:p-2.5 space-y-2">
           {/* Mobile: 1 botón compacto que abre Sheet */}
           <div className="flex sm:hidden items-center gap-2">
             <Button
@@ -1759,11 +2103,6 @@ export default function Tasks() {
                 <X className="h-4 w-4" />
               </Button>
             )}
-          </div>
-
-          {/* Desktop: dropdowns inline */}
-          <div className="hidden sm:flex flex-wrap items-end gap-3">
-            {dropdowns}
           </div>
 
           {/* Mobile sheet con todos los filtros */}
@@ -1789,30 +2128,32 @@ export default function Tasks() {
               </div>
             </SheetContent>
           </Sheet>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-0 sm:min-w-[180px] w-full sm:w-auto">
-              <Label className="text-xs text-muted-foreground block mb-1.5">Buscar</Label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex-1 min-w-0 sm:min-w-[160px] w-full sm:w-auto">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   placeholder="Buscar tareas..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-8 h-8 text-sm"
                 />
               </div>
             </div>
-            <div className="space-y-1.5 w-full sm:w-auto">
-              <Label className="text-xs text-muted-foreground block">Agrupar por</Label>
-              <Select value={groupBy} onValueChange={(v: 'estado' | 'mes' | 'departamento' | 'responsable') => setGroupBy(v)}>
-                <SelectTrigger className="w-full sm:w-[140px]">
-                  <SelectValue />
+            <div className="hidden sm:contents">{dropdowns}</div>
+            <div className="space-y-1.5 sm:space-y-0 w-full sm:w-auto">
+              <Label className="text-xs text-muted-foreground block sm:hidden">Agrupar por</Label>
+              <Select value={groupBy} onValueChange={(v: 'estado' | 'mes' | 'departamento' | 'responsable' | 'carpeta' | 'mes_carpeta') => setGroupBy(v)}>
+                <SelectTrigger className="w-full sm:w-auto h-8 text-xs gap-1">
+                  <span className="hidden sm:inline text-muted-foreground">Agrupar:</span><SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="estado">Estado</SelectItem>
                   <SelectItem value="mes">Mes de entrega</SelectItem>
                   <SelectItem value="departamento">Departamento</SelectItem>
                   <SelectItem value="responsable">Responsable</SelectItem>
+                  {activeDeskId && <SelectItem value="carpeta">Carpeta</SelectItem>}
+                  {activeDeskId && <SelectItem value="mes_carpeta">Mes → Carpeta</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
@@ -1820,8 +2161,8 @@ export default function Tasks() {
               {(isAdmin || isEjecutivo || isEquipo) && savedFilters.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Bookmark className="h-4 w-4 mr-1" />
+                    <Button variant="outline" size="sm" className="h-8">
+                      <Bookmark className="h-3.5 w-3.5 mr-1" />
                       Filtros
                     </Button>
                   </DropdownMenuTrigger>
@@ -1835,9 +2176,8 @@ export default function Tasks() {
                 </DropdownMenu>
               )}
               {(isAdmin || isEjecutivo || isEquipo) && (
-                <Button variant="outline" size="sm" onClick={() => setSaveFilterOpen(true)}>
-                  <BookmarkPlus className="h-4 w-4 mr-1" />
-                  Guardar filtro
+                <Button variant="outline" size="sm" className="h-8" onClick={() => setSaveFilterOpen(true)} title="Guardar filtro">
+                  <BookmarkPlus className="h-3.5 w-3.5" />
                 </Button>
               )}
             </div>
@@ -1864,6 +2204,148 @@ export default function Tasks() {
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* Apartado de carpetas de la mesa activa (estilo ClickUp) */}
+      {activeDeskId && (folders.length > 0 || isAdmin || isEjecutivo) && (
+        <Card className="glass-card overflow-hidden">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between px-3 py-2">
+              <button
+                onClick={() => { setFoldersCollapsed((v) => { try { localStorage.setItem('tasks_folders_collapsed', String(!v)); } catch { /* ignore */ } return !v; }); }}
+                className="flex items-center gap-2 text-sm font-semibold text-foreground"
+              >
+                {foldersCollapsed && !isDraggingTask ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                <FolderKanban className="h-4 w-4 text-teal-600" />
+                Carpetas
+                <Badge variant="secondary" className="text-[10px]">{folders.length}</Badge>
+                {isDraggingTask && <span className="text-xs font-medium text-teal-600 animate-pulse ml-1">Suelta en una carpeta</span>}
+                {isDraggingFolder && <span className="text-xs font-medium text-teal-600 animate-pulse ml-1">Suéltala dentro de otra carpeta</span>}
+                {!isDraggingTask && selectedIds.size > 0 && (isAdmin || isEjecutivo) && folders.length > 0 && (
+                  <span className="text-xs font-medium text-primary ml-1">Clic en una para mover {selectedIds.size} seleccionada{selectedIds.size !== 1 ? 's' : ''}</span>
+                )}
+              </button>
+              <div className="flex items-center gap-1.5">
+                {selectedIds.size === 0 && filterFolder !== 'all' && (
+                  <button onClick={() => setFilterFolder('all')} className="px-2 py-1 rounded-full text-xs text-muted-foreground hover:bg-muted" title="Ver todas las tareas">✕ Ver todas</button>
+                )}
+                {(isAdmin || isEjecutivo) && (
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1 border-dashed border-primary/50 text-primary hover:bg-primary/10"
+                    onClick={() => setFolderDialog({ open: true, mode: 'create', nombre: '' })}>
+                    <Plus className="h-3 w-3" />Crear carpeta
+                  </Button>
+                )}
+              </div>
+            </div>
+            {(!foldersCollapsed || isDraggingTask || isDraggingFolder) && folders.length > 0 && (
+              <div className="flex flex-wrap items-start gap-2 px-3 pb-3">
+                {(() => {
+                  const hijasDe: Record<string, typeof folders> = {};
+                  folders.forEach((x) => { if (x.parent_folder_id) (hijasDe[x.parent_folder_id] ||= []).push(x); });
+                  const raices = folders.filter((x) => !x.parent_folder_id);
+                  const ordenadas = [...raices.filter((r) => (hijasDe[r.id] || []).length > 0), ...raices.filter((r) => (hijasDe[r.id] || []).length === 0)];
+                  return ordenadas.map((root) => {
+                    const hijas = hijasDe[root.id] || [];
+                    if (hijas.length === 0) return renderFolderTile(root, false);
+                    const total = (root.tareas ?? 0) + hijas.reduce((a, h) => a + (h.tareas ?? 0), 0);
+                    const listas = (root.tareas_listas ?? 0) + hijas.reduce((a, h) => a + (h.tareas_listas ?? 0), 0);
+                    const activa = filterFolder === root.id;
+                    return (
+                      <div key={root.id} className={cn('rounded-lg border p-2', activa ? 'border-teal-500 bg-teal-50/40 dark:bg-teal-950/30' : 'border-border bg-muted/30', dragOverFolder === root.id && 'ring-2 ring-teal-500')}>
+                        <button
+                          onClick={() => onFolderChipClick(root.id)}
+                          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverFolder(root.id); }}
+                          onDragLeave={() => setDragOverFolder((p) => (p === root.id ? null : p))}
+                          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); dropOnFolder(root.id); }}
+                          title={activa ? 'Quitar filtro' : `Ver todo lo de "${root.nombre}" (incluye sus subcarpetas)`}
+                          className="w-full flex items-center justify-between gap-2 px-1 pb-1.5 text-left"
+                        >
+                          <span className={cn('text-xs font-bold flex items-center gap-1.5', activa ? 'text-teal-700 dark:text-teal-300' : 'text-foreground')}>
+                            📂 {root.nombre}
+                            <span className="text-[10px] font-semibold text-muted-foreground">{listas}/{total}</span>
+                          </span>
+                          {activa && (isAdmin || isEjecutivo) && (
+                            <span className="flex items-center gap-1.5 shrink-0">
+                              <span role="button" title="Renombrar" className="opacity-80 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setFolderDialog({ open: true, mode: 'rename', folderId: root.id, nombre: root.nombre }); }}><Pencil className="h-3 w-3" /></span>
+                              <span role="button" title="Dejar como plantilla (incluye subcarpetas)" className="opacity-80 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setFolderDialog({ open: true, mode: 'template', folderId: root.id, nombre: root.nombre }); }}><Copy className="h-3 w-3" /></span>
+                              <span role="button" title="Eliminar carpeta (las subcarpetas suben de nivel)" className="opacity-80 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setFolderDialog({ open: true, mode: 'delete', folderId: root.id, nombre: root.nombre }); }}><Trash2 className="h-3 w-3" /></span>
+                            </span>
+                          )}
+                        </button>
+                        <div className="flex flex-wrap gap-1.5">
+                          {hijas.map((h) => renderFolderTile(h, true))}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+                {false && folders.map((fo) => {
+                  const total = fo.tareas ?? 0;
+                  const listas = fo.tareas_listas ?? 0;
+                  const activa = filterFolder === fo.id;
+                  return (
+                    <button
+                      key={fo.id}
+                      onClick={() => onFolderChipClick(fo.id)}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverFolder(fo.id); }}
+                      onDragLeave={() => setDragOverFolder((p) => (p === fo.id ? null : p))}
+                      onDrop={(e) => { e.preventDefault(); dropOnFolder(fo.id); }}
+                      title={selectedIds.size > 0 ? `Mover la selección a "${fo.nombre}"` : (activa ? 'Quitar filtro' : `Ver solo "${fo.nombre}"`)}
+                      className={cn(
+                        'w-[210px] text-left rounded-lg border p-2.5 transition-all',
+                        activa ? 'bg-teal-600 border-teal-600 text-white shadow-md' : 'bg-background border-border hover:border-teal-400 hover:shadow-sm',
+                        dragOverFolder === fo.id && 'ring-2 ring-teal-500 ring-offset-1 scale-[1.03]'
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="text-xs font-semibold truncate">📁 {fo.nombre}</span>
+                        {activa && selectedIds.size === 0 && (isAdmin || isEjecutivo) && (
+                          <span className="flex items-center gap-1.5 shrink-0">
+                            <span role="button" title="Renombrar" className="opacity-80 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setFolderDialog({ open: true, mode: 'rename', folderId: fo.id, nombre: fo.nombre }); }}><Pencil className="h-3 w-3" /></span>
+                            <span role="button" title="Dejar como plantilla" className="opacity-80 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setFolderDialog({ open: true, mode: 'template', folderId: fo.id, nombre: fo.nombre }); }}><Copy className="h-3 w-3" /></span>
+                            <span role="button" title="Eliminar carpeta" className="opacity-80 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setFolderDialog({ open: true, mode: 'delete', folderId: fo.id, nombre: fo.nombre }); }}><Trash2 className="h-3 w-3" /></span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className={cn('h-1.5 flex-1 rounded-full overflow-hidden', activa ? 'bg-white/25' : 'bg-muted-foreground/15')}>
+                          <span className={cn('block h-full rounded-full transition-all', activa ? 'bg-white' : 'bg-teal-500')}
+                            style={{ width: total > 0 ? `${Math.round((listas / total) * 100)}%` : '0%' }} />
+                        </span>
+                        <span className={cn('text-[10px] font-semibold shrink-0', activa ? 'text-white/85' : 'text-muted-foreground')}>{listas}/{total}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+                {isDraggingFolder && (isAdmin || isEjecutivo) && (
+                  <button
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverFolder('__root__'); }}
+                    onDragLeave={() => setDragOverFolder((p) => (p === '__root__' ? null : p))}
+                    onDrop={(e) => { e.preventDefault(); if (dragFolderId.current) nestFolder(dragFolderId.current, null); }}
+                    className={cn('w-[210px] rounded-lg border border-dashed border-teal-400 p-2.5 text-xs text-teal-600 flex items-center justify-center',
+                      dragOverFolder === '__root__' && 'ring-2 ring-teal-500 scale-[1.03]')}
+                    title="Soltar aquí para sacarla al nivel principal"
+                  >
+                    ⬆ Nivel principal
+                  </button>
+                )}
+                {(selectedIds.size > 0 || isDraggingTask) && (isAdmin || isEjecutivo) && (
+                  <button
+                    onClick={() => onFolderChipClick(null)}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverFolder('__none__'); }}
+                    onDragLeave={() => setDragOverFolder((p) => (p === '__none__' ? null : p))}
+                    onDrop={(e) => { e.preventDefault(); dropOnFolder(null); }}
+                    className={cn('w-[210px] rounded-lg border border-dashed border-border p-2.5 text-xs text-muted-foreground hover:bg-muted flex items-center justify-center',
+                      dragOverFolder === '__none__' && 'ring-2 ring-slate-400 scale-[1.03]')}
+                    title="Quitar de su carpeta"
+                  >
+                    Sin carpeta
+                  </button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Tasks Table */}
@@ -1900,11 +2382,11 @@ export default function Tasks() {
             </div>
           </div>
           <div className="overflow-x-auto -mx-px">
-            <Table className="min-w-[600px]">
+            <Table className="w-full [&_th]:px-1.5 [&_td]:px-1.5">
               <TableHeader>
                 <TableRow className="border-border">
-                  <TableHead className="w-10 px-1" title="Expandir subtareas"></TableHead>
-                  <TableHead className="w-10 px-1 text-center">
+                  <TableHead className="w-8 px-0.5" title="Expandir subtareas"></TableHead>
+                  <TableHead className="w-10 px-1 text-center hidden md:table-cell">
                     <Checkbox
                       checked={filteredTasks.length > 0 && selectedIds.size === filteredTasks.length}
                       onCheckedChange={toggleSelectAll}
@@ -1912,24 +2394,24 @@ export default function Tasks() {
                       className="h-4 w-4"
                     />
                   </TableHead>
-                  <TableHead className="w-8 px-1" title="Favorito"></TableHead>
-                  <TableHead>Tarea</TableHead>
-                  {visibleCols.marca && <TableHead>Marca</TableHead>}
-                  {visibleCols.mesa && <TableHead>Mesa</TableHead>}
-                  {visibleCols.depto && <TableHead>Depto</TableHead>}
-                  {visibleCols.responsable && <TableHead>Responsable</TableHead>}
-                  {visibleCols.entregables && <TableHead className="text-center">Entregables</TableHead>}
-                  {visibleCols.timer && <TableHead>Timer</TableHead>}
-                  {visibleCols.archivos && <TableHead>Archivos</TableHead>}
-                  {visibleCols.tipo && <TableHead>Tipo</TableHead>}
-                  {visibleCols.prioridad && <TableHead>Prioridad</TableHead>}
-                  {visibleCols.estado && <TableHead>Estado</TableHead>}
-                  {visibleCols.entrega && <TableHead>Entrega</TableHead>}
-                  {visibleCols.dias && <TableHead>Días</TableHead>}
-                  {visibleCols.enlace && <TableHead className="w-10">Enlace</TableHead>}
-                  {visibleCols.autor && <TableHead>Autor</TableHead>}
-                  {visibleCols.creado && <TableHead className="w-20">Creado</TableHead>}
-                  <TableHead className="w-24">Acciones</TableHead>
+                  <TableHead className="w-7 px-0.5 hidden md:table-cell" title="Favorito"></TableHead>
+                  <TableHead className="w-full min-w-[160px]">Tarea</TableHead>
+                  {visibleCols.marca && <TableHead className="whitespace-nowrap hidden md:table-cell">Marca</TableHead>}
+                  {visibleCols.mesa && <TableHead className="whitespace-nowrap hidden md:table-cell">Mesa</TableHead>}
+                  {visibleCols.depto && <TableHead className="whitespace-nowrap hidden md:table-cell">Depto</TableHead>}
+                  {visibleCols.responsable && <TableHead className="whitespace-nowrap hidden md:table-cell">Responsable</TableHead>}
+                  {visibleCols.entregables && <TableHead className="text-center whitespace-nowrap px-1 w-12 hidden md:table-cell">Entr.</TableHead>}
+                  {visibleCols.timer && <TableHead className="whitespace-nowrap px-2">Timer</TableHead>}
+                  {visibleCols.archivos && <TableHead className="whitespace-nowrap px-1 w-10 text-center hidden md:table-cell">Arch.</TableHead>}
+                  {visibleCols.tipo && <TableHead className="whitespace-nowrap hidden md:table-cell">Tipo</TableHead>}
+                  {visibleCols.prioridad && <TableHead className="whitespace-nowrap px-2 hidden md:table-cell">Prioridad</TableHead>}
+                  {visibleCols.estado && <TableHead className="whitespace-nowrap px-2">Estado</TableHead>}
+                  {visibleCols.entrega && <TableHead className="whitespace-nowrap px-2 hidden md:table-cell">Entrega</TableHead>}
+                  {visibleCols.dias && <TableHead className="whitespace-nowrap px-2 hidden md:table-cell">Días</TableHead>}
+                  {visibleCols.enlace && <TableHead className="w-10 hidden md:table-cell">Enlace</TableHead>}
+                  {visibleCols.autor && <TableHead className="whitespace-nowrap hidden md:table-cell">Autor</TableHead>}
+                  {visibleCols.creado && <TableHead className="w-20 hidden md:table-cell">Creado</TableHead>}
+                  <TableHead className="w-24 hidden md:table-cell">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1949,13 +2431,34 @@ export default function Tasks() {
                             onClick={() => toggleGroup(groupKey)}
                             className={cn(
                               "flex items-center gap-2 w-full px-3 py-2 rounded-t-md text-white text-sm font-semibold",
-                              groupBy === 'mes' ? getMonthHeaderColor(groupKey) : groupBy === 'departamento' ? (groupKey === 'Por clasificar' ? 'bg-slate-400' : getDepartmentColor(groupKey)) : groupBy === 'responsable' ? (groupKey === 'Sin asignar' ? 'bg-slate-400' : getMonthHeaderColor(groupKey)) : getStatusHeaderColor(groupKey)
+                              groupBy === 'mes' ? getMonthHeaderColor(groupKey) : groupBy === 'departamento' ? (groupKey === 'Por clasificar' ? 'bg-slate-400' : getDepartmentColor(groupKey)) : groupBy === 'responsable' ? (groupKey === 'Sin asignar' ? 'bg-slate-400' : getMonthHeaderColor(groupKey)) : groupBy === 'carpeta' ? (groupKey === 'Sin carpeta' ? 'bg-slate-400' : 'bg-teal-600') : groupBy === 'mes_carpeta' ? getMonthHeaderColor(groupKey.split('\u0007')[0]) : getStatusHeaderColor(groupKey)
                             )}
                           >
                             {collapsedGroups[groupKey] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             {getGroupLabel(groupKey)}
                             <span className="ml-1 opacity-90 font-normal">({tasksInGroup.length})</span>
                             <span className="ml-auto hidden sm:flex items-center gap-2 pr-1">
+                              {groupBy === 'carpeta' && groupKey !== 'Sin carpeta' && (isAdmin || isEjecutivo) && (() => {
+                                const fo = folders.find((x) => x.nombre === groupKey);
+                                if (!fo) return null;
+                                const stop = (e: React.MouseEvent) => { e.stopPropagation(); e.preventDefault(); };
+                                return (
+                                  <span className="flex items-center gap-1.5 mr-1">
+                                    <span role="button" title="Renombrar carpeta" className="opacity-70 hover:opacity-100 cursor-pointer"
+                                      onClick={(e) => { stop(e); setFolderDialog({ open: true, mode: 'rename', folderId: fo.id, nombre: fo.nombre }); }}>
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </span>
+                                    <span role="button" title="Dejar como plantilla (módulo Plantillas)" className="opacity-70 hover:opacity-100 cursor-pointer"
+                                      onClick={(e) => { stop(e); setFolderDialog({ open: true, mode: 'template', folderId: fo.id, nombre: fo.nombre }); }}>
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </span>
+                                    <span role="button" title="Eliminar carpeta (las tareas quedan sin carpeta)" className="opacity-70 hover:opacity-100 cursor-pointer"
+                                      onClick={(e) => { stop(e); setFolderDialog({ open: true, mode: 'delete', folderId: fo.id, nombre: fo.nombre }); }}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </span>
+                                  </span>
+                                );
+                              })()}
                               <span className="text-[11px] font-normal opacity-90">{tasksInGroup.filter((t) => ['aprobado', 'entregado'].includes(t.estado)).length}/{tasksInGroup.length} listas</span>
                               {groupBy !== 'estado' && (
                                 <span className="flex h-1.5 w-28 rounded-full overflow-hidden bg-white/25">
@@ -1973,8 +2476,13 @@ export default function Tasks() {
                         const isExpanded = expandedTaskIds.has(task.id);
                         return (
                           <React.Fragment key={task.id}>
-                          <TableRow className="border-border hover:bg-muted/50">
-                            <TableCell className="w-10 px-1">
+                          <TableRow
+                            className={cn('border-border hover:bg-muted/50', (isAdmin || isEjecutivo) && activeDeskId && folders.length > 0 && 'cursor-grab active:cursor-grabbing')}
+                            draggable={(isAdmin || isEjecutivo) && !!activeDeskId && folders.length > 0}
+                            onDragStart={(e) => { dragTaskId.current = task.id; setIsDraggingTask(true); e.dataTransfer.effectAllowed = 'move'; }}
+                            onDragEnd={() => { dragTaskId.current = null; setIsDraggingTask(false); setDragOverFolder(null); }}
+                          >
+                            <TableCell className="w-8 px-0.5">
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1984,7 +2492,7 @@ export default function Tasks() {
                                 {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                               </Button>
                             </TableCell>
-                            <TableCell className="w-10 px-1 text-center">
+                            <TableCell className="w-10 px-1 text-center hidden md:table-cell">
                               <Checkbox
                                 checked={selectedIds.has(task.id)}
                                 onCheckedChange={() => toggleSelectTask(task.id)}
@@ -1992,7 +2500,7 @@ export default function Tasks() {
                                 className="h-4 w-4"
                               />
                             </TableCell>
-                            <TableCell className="w-8 px-1">
+                            <TableCell className="w-7 px-0.5 hidden md:table-cell">
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -2041,10 +2549,10 @@ export default function Tasks() {
                                 )}
                               </div>
                             </TableCell>
-                            {visibleCols.marca && <TableCell><span className="text-sm">{task.brands?.nombre || '-'}</span></TableCell>}
-                            {visibleCols.mesa && <TableCell><span className="text-sm">{task.desks?.nombre || '-'}</span></TableCell>}
+                            {visibleCols.marca && <TableCell className="hidden md:table-cell"><span className="text-sm block max-w-[80px] truncate" title={task.brands?.nombre || ''}>{task.brands?.nombre || '-'}</span></TableCell>}
+                            {visibleCols.mesa && <TableCell className="hidden md:table-cell"><span className="text-sm block max-w-[80px] truncate" title={task.desks?.nombre || ''}>{task.desks?.nombre || '-'}</span></TableCell>}
                             {visibleCols.depto && (
-                              <TableCell>
+                              <TableCell className="hidden md:table-cell">
                                 {task.department_nombre ? (
                                   <DepartmentBadge nombre={task.department_nombre} color={task.department_color} />
                                 ) : task.departamento ? (
@@ -2057,7 +2565,7 @@ export default function Tasks() {
                               </TableCell>
                             )}
                             {visibleCols.responsable && (
-                              <TableCell>
+                              <TableCell className="hidden md:table-cell">
                                 {(task.responsables && task.responsables.length > 0) ? (
                                   <div className="flex flex-col gap-0.5">
                                     {task.responsables.map((r) => (
@@ -2091,7 +2599,7 @@ export default function Tasks() {
                               </TableCell>
                             )}
                             {visibleCols.entregables && (
-                              <TableCell className="text-center">
+                              <TableCell className="text-center hidden md:table-cell">
                                 <div className="flex items-center justify-center gap-1">
                                   <Package className="h-4 w-4 text-muted-foreground" />
                                   <span className="font-medium">{task.cantidad_entregables}</span>
@@ -2107,12 +2615,14 @@ export default function Tasks() {
                                   startTime={task.timer_inicio}
                                   canEdit={canOperateTask(task)}
                                   compact
+                                  warnEnabled={isAssignedTo(task)}
+                                  taskTitle={task.titulo_tarea}
                                   onUpdate={fetchData}
                                 />
                               </TableCell>
                             )}
                             {visibleCols.archivos && (
-                              <TableCell>
+                              <TableCell className="hidden md:table-cell">
                                 <TaskFiles
                                   taskId={task.id}
                                   canEdit={canEditTask(task)}
@@ -2121,12 +2631,12 @@ export default function Tasks() {
                               </TableCell>
                             )}
                             {visibleCols.tipo && (
-                              <TableCell className="px-1">
+                              <TableCell className="px-1 hidden md:table-cell">
                                 <span className="text-xs text-muted-foreground">{task.task_type?.nombre || '—'}</span>
                               </TableCell>
                             )}
                             {visibleCols.prioridad && (
-                              <TableCell className="px-1">
+                              <TableCell className="px-1 hidden md:table-cell">
                                 {canEditTask(task) ? (
                                   <Select
                                     value={task.prioridad}
@@ -2155,7 +2665,12 @@ export default function Tasks() {
                                     value={task.estado}
                                     onValueChange={(value: Task['estado']) => updateTaskStatus(task.id, value)}
                                   >
-                                    <SelectTrigger className={cn("h-8 w-full min-w-[110px] text-xs font-semibold border-0 rounded-md justify-center [&>svg]:ml-1", getStatusColor(task.estado))}>
+                                    <SelectTrigger title={(task.ajustes_count || 0) > 0 ? `Volvió a ajustes ${task.ajustes_count} ${task.ajustes_count === 1 ? 'vez' : 'veces'}` : undefined} className={cn("h-8 w-full min-w-[110px] text-xs font-semibold border-0 rounded-md justify-center [&>svg]:ml-1 relative", getStatusColor(task.estado))}>
+                                      {(task.ajustes_count || 0) > 0 && (
+                                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-orange-600 text-white text-[9px] font-bold flex items-center justify-center border border-background">
+                                          {task.ajustes_count}
+                                        </span>
+                                      )}
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -2163,27 +2678,47 @@ export default function Tasks() {
                                       <SelectItem value="en_proceso">En Proceso</SelectItem>
                                       <SelectItem value="revision_interna">Revisión interna</SelectItem>
                         <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
+                        <SelectItem value="ajustes">Ajustes</SelectItem>
                                       <SelectItem value="entregado">Entregado</SelectItem>
                                       <SelectItem value="bloqueado">Bloqueado</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 ) : (
-                                  <div className={cn("h-8 flex items-center justify-center rounded-md text-xs font-semibold", getStatusColor(task.estado))}>
+                                  <div className={cn("h-8 flex items-center justify-center rounded-md text-xs font-semibold relative", getStatusColor(task.estado))}>
                                     {getStatusLabel(task.estado)}
                                   </div>
                                 )}
                               </TableCell>
                             )}
                             {visibleCols.entrega && (
-                              <TableCell>
-                                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                                  <Calendar className="h-3 w-3" />
-                                  {task.fecha_entrega ? parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES') : <span className="text-muted-foreground italic">Sin fecha</span>}
+                              <TableCell className="hidden md:table-cell">
+                                <div className="flex items-center gap-1 text-sm whitespace-nowrap">
+                                  {task.fecha_entrega ? (
+                                    <>
+                                      <span className={cn(
+                                        (task.estado === 'entregado' || task.estado === 'aprobado') ? 'text-muted-foreground' :
+                                        dias < 0 ? 'text-destructive font-medium' : 'text-muted-foreground'
+                                      )}>
+                                        {parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                                      </span>
+                                      {/* Urgencia (antes columna "Días"): solo cuando importa */}
+                                      {!(task.estado === 'entregado' || task.estado === 'aprobado') && dias <= 2 && (
+                                        <span className={cn(
+                                          'text-[10px] font-semibold px-1 py-0.5 rounded leading-none',
+                                          dias < 0 ? 'bg-destructive/15 text-destructive' :
+                                          dias === 0 ? 'bg-warning/20 text-warning' :
+                                          'bg-info/20 text-info'
+                                        )} title={dias < 0 ? `${Math.abs(dias)} día(s) de atraso` : dias === 0 ? 'Vence hoy' : `Vence en ${dias} día(s)`}>
+                                          {dias < 0 ? `+${Math.abs(dias)}d` : dias === 0 ? 'Hoy' : `${dias}d`}
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : <span className="text-muted-foreground italic">Sin fecha</span>}
                                 </div>
                               </TableCell>
                             )}
                             {visibleCols.dias && (
-                              <TableCell>
+                              <TableCell className="hidden md:table-cell">
                                 {(task.estado === 'entregado' || task.estado === 'aprobado') ? (
                                   <span className="text-sm font-medium px-2 py-0.5 rounded bg-success/20 text-success">Listo</span>
                                 ) : (
@@ -2200,7 +2735,7 @@ export default function Tasks() {
                               </TableCell>
                             )}
                             {visibleCols.enlace && (
-                              <TableCell>
+                              <TableCell className="hidden md:table-cell">
                                 {task.enlaces && task.enlaces.length > 0 ? (
                                   <a
                                     href={task.enlaces[0]}
@@ -2217,7 +2752,7 @@ export default function Tasks() {
                               </TableCell>
                             )}
                             {visibleCols.autor && (
-                              <TableCell>
+                              <TableCell className="hidden md:table-cell">
                                 <div className="flex items-center gap-1.5">
                                   <Avatar className="h-5 w-5">
                                     {task.created_by_profile?.avatar_url ? (
@@ -2234,18 +2769,18 @@ export default function Tasks() {
                               </TableCell>
                             )}
                             {visibleCols.creado && (
-                              <TableCell>
+                              <TableCell className="hidden md:table-cell">
                                 <span className="text-xs text-muted-foreground">
                                   {task.created_at ? new Date(task.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
                                 </span>
                               </TableCell>
                             )}
-                            <TableCell>
-                              <div className="flex items-center gap-1">
+                            <TableCell className="hidden md:table-cell px-1">
+                              <div className="flex items-center gap-0.5">
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="h-7 w-7"
                                   onClick={() => {
                                     setSelectedTask(task);
                                     setDetailDialogOpen(true);
@@ -2490,8 +3025,72 @@ export default function Tasks() {
                       isActive={selectedTask.timer_activo}
                       startTime={selectedTask.timer_inicio}
                       canEdit={canOperateTask(selectedTask)}
-                      onUpdate={fetchData}
+                      estimatedHours={selectedTask.estimated_hours}
+                      warnEnabled={isAssignedTo(selectedTask)}
+                      taskTitle={selectedTask.titulo_tarea}
+                      onUpdate={() => { fetchData(); reloadSelectedTask(); }}
                     />
+                  </div>
+
+                  {/* C) Cambios / vueltas: internos vs cliente */}
+                  {((selectedTask.cambios_cliente ?? 0) + (selectedTask.cambios_internos ?? 0)) > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Cambios / vueltas</h4>
+                      <div className="flex items-center gap-1.5 flex-wrap text-sm">
+                        <RotateCcw className="h-4 w-4 text-amber-500" />
+                        <span className="font-medium">{(selectedTask.cambios_cliente ?? 0) + (selectedTask.cambios_internos ?? 0)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({selectedTask.cambios_internos ?? 0} internos · {selectedTask.cambios_cliente ?? 0} del cliente)
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* E) Tiempo por persona */}
+                  {selectedTask.tiempo_por_persona && selectedTask.tiempo_por_persona.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Tiempo por persona</h4>
+                      <div className="space-y-1.5">
+                        {selectedTask.tiempo_por_persona.map((p) => (
+                          <div key={p.user_id} className="flex items-center gap-2 text-sm">
+                            <Avatar className="h-6 w-6">
+                              {p.avatar_url ? <AvatarImage src={p.avatar_url} alt={p.nombre} className="object-cover" /> : null}
+                              <AvatarFallback className="bg-primary/20 text-primary text-[9px] font-semibold">{getInitials(p.nombre || '?')}</AvatarFallback>
+                            </Avatar>
+                            <span className="flex-1 truncate">{p.nombre || '—'}</span>
+                            <span className="font-mono text-muted-foreground">{formatTimeDisplay(p.segundos)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* E2) Historial: sesiones de tiempo y cambios (pedido de Steven) */}
+                  <TaskHistorial taskId={selectedTask.id} ajustes={Number((selectedTask as { ajustes_count?: number }).ajustes_count ?? 0)} />
+
+                  {/* B) Seguidores */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5"><Users className="h-4 w-4" />Seguidores</h4>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={toggleSeguirTarea}>
+                        {selectedTask.me_sigue ? <><EyeOff className="h-3.5 w-3.5" />Dejar de seguir</> : <><Eye className="h-3.5 w-3.5" />Seguir</>}
+                      </Button>
+                    </div>
+                    {selectedTask.seguidores && selectedTask.seguidores.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedTask.seguidores.map((sg) => (
+                          <span key={sg.user_id} className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-full">
+                            <Avatar className="h-4 w-4">
+                              {sg.avatar_url ? <AvatarImage src={sg.avatar_url} alt={sg.nombre} className="object-cover" /> : null}
+                              <AvatarFallback className="bg-primary/20 text-primary text-[7px] font-semibold">{getInitials(sg.nombre || '?')}</AvatarFallback>
+                            </Avatar>
+                            {sg.nombre}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">Nadie sigue esta tarea todavía. Quien la pasa de etapa la sigue automáticamente.</p>
+                    )}
                   </div>
 
                   {/* Responsable Section */}
@@ -2557,15 +3156,6 @@ export default function Tasks() {
                     </div>
                   )}
 
-                  {selectedTask.detalle && (
-                    <div>
-                      <h4 className="text-sm font-medium text-muted-foreground mb-1">Detalle</h4>
-                      <div className="bg-muted/30 p-3 rounded-lg border border-border/50">
-                        <RichTextViewer content={selectedTask.detalle} />
-                      </div>
-                    </div>
-                  )}
-
                   {selectedTask.enlaces && selectedTask.enlaces.length > 0 && (
                     <div>
                       <h4 className="text-sm font-medium text-muted-foreground mb-1">Enlaces</h4>
@@ -2589,6 +3179,15 @@ export default function Tasks() {
 
                 {/* Right column — status, files, comments, calendar */}
                 <div className="space-y-5">
+                  {/* Detalle arriba (Steven): es lo primero que el equipo necesita leer */}
+                  {selectedTask.detalle && (
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-1">Detalle</h4>
+                      <div className="bg-muted/30 p-3 rounded-lg border border-border/50 max-h-72 overflow-y-auto">
+                        <RichTextViewer content={selectedTask.detalle} />
+                      </div>
+                    </div>
+                  )}
                   {canOperateTask(selectedTask) && (
                     <div className="pb-4 border-b border-border">
                       <div className="flex items-center justify-between mb-2">
@@ -2716,11 +3315,64 @@ export default function Tasks() {
         users={users}
         onDone={() => { fetchData(); setDetailDialogOpen(false); }}
       />
+      {/* Diálogo de carpetas: crear / renombrar / plantilla / eliminar */}
+      <Dialog open={!!folderDialog?.open} onOpenChange={(o) => { if (!o) setFolderDialog(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {folderDialog?.mode === 'create' && '📁 Nueva carpeta'}
+              {folderDialog?.mode === 'rename' && '📁 Renombrar carpeta'}
+              {folderDialog?.mode === 'template' && '📋 Dejar como plantilla'}
+              {folderDialog?.mode === 'delete' && '🗑️ Eliminar carpeta'}
+            </DialogTitle>
+            <DialogDescription>
+              {folderDialog?.mode === 'create' && 'Agrupa las tareas de esta mesa, por ejemplo "Cronograma Septiembre". Luego selecciona tareas y muévelas con un clic.'}
+              {folderDialog?.mode === 'rename' && 'El nuevo nombre se refleja en todas las tareas de la carpeta.'}
+              {folderDialog?.mode === 'template' && 'Crea una plantilla en el módulo Plantillas con las tareas de esta carpeta y sus fechas relativas, lista para reusar el próximo mes.'}
+              {folderDialog?.mode === 'delete' && `Las tareas NO se borran: solo quedan sin carpeta.`}
+            </DialogDescription>
+          </DialogHeader>
+          {folderDialog && folderDialog.mode !== 'delete' && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">{folderDialog.mode === 'template' ? 'Nombre de la plantilla' : 'Nombre de la carpeta'}</Label>
+              <Input
+                autoFocus
+                value={folderDialog.nombre}
+                onChange={(e) => setFolderDialog((d) => (d ? { ...d, nombre: e.target.value } : d))}
+                onKeyDown={(e) => { if (e.key === 'Enter') submitFolderDialog(); }}
+                placeholder={folderDialog.mode === 'create' ? 'ej. Cronograma Septiembre' : ''}
+                maxLength={160}
+              />
+            </div>
+          )}
+          {folderDialog?.mode === 'delete' && (
+            <p className="text-sm text-foreground">¿Eliminar la carpeta <strong>"{folderDialog.nombre}"</strong>?</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFolderDialog(null)} disabled={folderSaving}>Cancelar</Button>
+            <Button
+              variant={folderDialog?.mode === 'delete' ? 'destructive' : 'default'}
+              onClick={submitFolderDialog}
+              disabled={folderSaving}
+            >
+              {folderSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {folderDialog?.mode === 'create' && 'Crear'}
+              {folderDialog?.mode === 'rename' && 'Guardar'}
+              {folderDialog?.mode === 'template' && 'Crear plantilla'}
+              {folderDialog?.mode === 'delete' && 'Eliminar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <BulkActions
         selectedIds={selectedIds}
         onClear={() => setSelectedIds(new Set())}
-        onComplete={() => { setSelectedIds(new Set()); fetchData(); }}
+        onComplete={() => { setSelectedIds(new Set()); fetchData(); if (activeDeskId) reloadFolders(activeDeskId); }}
         users={users}
+        folders={folders}
+        onEditOne={(id) => { const t = tasks.find((x) => x.id === id); if (t) openEditDialog(t); }}
+        onOpenOne={(id) => { const t = tasks.find((x) => x.id === id); if (t) { setSelectedTask(t); setDetailDialogOpen(true); } }}
       />
     </div>
   );

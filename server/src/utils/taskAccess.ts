@@ -44,7 +44,13 @@ export async function canAccessTask(userId: string, taskId: string, _depth: numb
       'SELECT 1 as n FROM task_responsables WHERE task_id = ? AND user_id = ? LIMIT 1',
       [taskId, userId]
     );
-    return !!resp;
+    if (resp) return true;
+    // Seguidor de la tarea (le pasaron la tarea y la sigue viendo)
+    const seg = await queryOne<{ n: number }>(
+      'SELECT 1 as n FROM task_seguidores WHERE task_id = ? AND user_id = ? LIMIT 1',
+      [taskId, userId]
+    );
+    return !!seg;
   }
 
   if (role === 'cliente') {

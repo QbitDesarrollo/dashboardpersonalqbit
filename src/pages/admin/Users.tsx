@@ -40,11 +40,24 @@ interface User {
   rol: 'admin' | 'ejecutivo' | 'equipo' | 'cliente';
   activo: boolean;
   created_at: string;
+  department_id?: string | null;
 }
 
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
+  // Departamento de cada persona: al elegirla como responsable, la tarea toma su departamento
+  const [departamentos, setDepartamentos] = useState<{ id: string; nombre: string }[]>([]);
+  useEffect(() => { api.getDepartments().then((d) => setDepartamentos((Array.isArray(d) ? d : []).filter((x: { activo?: unknown }) => x.activo !== 0 && x.activo !== false))).catch(() => {}); }, []);
+  const cambiarDepartamento = async (user: User, depId: string) => {
+    const valor = depId === '__none__' ? null : depId;
+    try {
+      await api.setProfileDepartment(user.id, valor);
+      setUsers((list) => list.map((u) => (u.id === user.id ? { ...u, department_id: valor } : u)));
+      toast.success(`${user.nombre.trim()}: departamento actualizado`);
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'No se pudo guardar'); }
+  };
   const [loading, setLoading] = useState(true);
+  const [primeraCarga, setPrimeraCarga] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -70,6 +83,7 @@ export default function AdminUsers() {
       toast.error('Error al cargar usuarios');
     } finally {
       setLoading(false);
+      setPrimeraCarga(false);
     }
   };
 
@@ -138,7 +152,10 @@ export default function AdminUsers() {
     return colors[rol] || 'bg-muted text-muted-foreground';
   };
 
-  if (loading) {
+  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
+  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
+  // el foco del input y los dialogos abiertos se cerraban solos.
+  if (loading && primeraCarga) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -195,6 +212,7 @@ export default function AdminUsers() {
                   <TableHead>Usuario</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Rol</TableHead>
+                  <TableHead>Departamento</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Acciones</TableHead>
                 </TableRow>
@@ -202,7 +220,7 @@ export default function AdminUsers() {
               <TableBody>
                 {users.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
                       No hay usuarios
                     </TableCell>
@@ -216,6 +234,15 @@ export default function AdminUsers() {
                         <Badge className={cn("text-xs", getRoleBadge(user.rol))}>
                           {user.rol.toUpperCase()}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Select value={user.department_id || '__none__'} onValueChange={(v) => cambiarDepartamento(user, v)}>
+                          <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Sin departamento</SelectItem>
+                            {departamentos.map((d) => <SelectItem key={d.id} value={d.id}>{d.nombre}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell>
                         <Badge variant={user.activo ? "default" : "secondary"}>

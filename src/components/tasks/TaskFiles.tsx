@@ -129,17 +129,7 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
         onChange={handleFileInputChange}
         accept=".jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.mp4,.mp3,.ai,.psd,.fig,.sketch"
       />
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-7 gap-1"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={uploading}
-      >
-        {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-        Subir
-      </Button>
+      {/* Solo Drive y URL (Steven, 23-sep): los archivos pesados no se suben a Tiusdei */}
       <Button
         type="button"
         variant="ghost"
@@ -201,12 +191,14 @@ export function TaskFiles({ taskId, canEdit, compact = false }: TaskFilesProps) 
             {files.length > 0 && <span className="text-xs">{files.length}</span>}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-72 p-3" align="start">
+        <PopoverContent className="w-80 p-3" align="start">
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Archivos</span>
-              {canEdit && <FileActions />}
-            </div>
+            <span className="text-sm font-medium block">Archivos</span>
+            {canEdit && (
+              <div className="flex items-center gap-0.5 flex-wrap -ml-1">
+                <FileActions />
+              </div>
+            )}
             {files.length === 0 ? (
               <p className="text-xs text-muted-foreground py-2">Sin archivos</p>
             ) : (

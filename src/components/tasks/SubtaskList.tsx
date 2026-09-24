@@ -39,6 +39,10 @@ interface Subtask {
   desk_id?: string | null;
   fecha_entrega?: string | null;
   fecha_inicio?: string | null;
+  cantidad_entregables?: number | null;
+  estimated_hours?: number | null;
+  department_nombre?: string | null;
+  department_color?: string | null;
 }
 
 // Helpers de fecha
@@ -297,6 +301,27 @@ function SortableRow({
               ))}
             </SelectContent>
           </Select>
+
+          {st.department_nombre && (
+            <span
+              className="inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] font-medium"
+              style={{ borderColor: st.department_color || undefined, color: st.department_color || undefined }}
+              title="Departamento (heredado de la tarea principal)"
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: st.department_color || 'currentColor' }} />
+              {st.department_nombre}
+            </span>
+          )}
+          {(st.cantidad_entregables ?? 0) > 0 && (
+            <span className="inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] text-muted-foreground" title="Entregables (edítalos abriendo la subtarea completa)">
+              📦 {st.cantidad_entregables}
+            </span>
+          )}
+          {st.estimated_hours != null && Number(st.estimated_hours) > 0 && (
+            <span className="inline-flex items-center gap-1 h-6 px-2 rounded border text-[11px] text-muted-foreground" title="Horas estimadas">
+              ⏱ {Number(st.estimated_hours)}h
+            </span>
+          )}
 
           {/* Fecha de entrega: button con showPicker() + popover de historial */}
           <div className="relative inline-flex items-center">

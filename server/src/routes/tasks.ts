@@ -12,6 +12,7 @@ import { autoSyncTaskToCalendar } from '../utils/googleCalendarSync.js';
 
 const createTaskSchema = z.object({
   titulo_tarea: z.string().min(1, 'Título requerido').max(500),
+  folder_id: z.string().uuid().nullish(),
   brand_id: z.string().min(1, 'Marca requerida'),
   desk_id: z.string().nullable().optional(),
   detalle: z.string().max(5000).nullable().optional(),
@@ -22,7 +23,7 @@ const createTaskSchema = z.object({
   department_id: z.string().nullable().optional(),
   project_id: z.string().nullable().optional(),
   prioridad: z.enum(['alta', 'media', 'baja']).optional().default('media'),
-  estado: z.enum(['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado']).optional().default('backlog'),
+  estado: z.enum(['backlog', 'en_proceso', 'en_revision', 'revision_interna', 'revision_cliente', 'ajustes', 'aprobado', 'entregado', 'bloqueado']).optional().default('backlog'),
   fecha_inicio: z.string().nullable().optional(),
   fecha_entrega: z.string().min(1, 'Fecha de entrega requerida'),
   enlaces: z.union([z.string(), z.array(z.string())]).nullable().optional(),
@@ -79,6 +80,16 @@ function notifyUser(userId: string, mensaje: string, taskId: string): void {
   createNotification(userId, mensaje, taskId).catch(() => {});
 }
 
+/** Notifica a los seguidores de una tarea (los que la pasaron y la siguen mirando). */
+async function notifySeguidores(taskId: string, mensaje: string, exceptUserId?: string | null): Promise<void> {
+  try {
+    const rows = await query<{ user_id: string }[]>('SELECT user_id FROM task_seguidores WHERE task_id = ?', [taskId]);
+    for (const r of rows) {
+      if (r.user_id && r.user_id !== exceptUserId) notifyUser(r.user_id, mensaje, taskId);
+    }
+  } catch { /* best-effort */ }
+}
+
 /** Safely extract a single string id from an Express body value (could be any). */
 function asString(v: unknown): string {
   if (typeof v === 'string') return v;
@@ -121,8 +132,9 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
          LEFT JOIN task_types tt ON tt.id = t.task_type_id
          LEFT JOIN deliverable_types dt ON dt.id = t.tipo_entregable_id
          LEFT JOIN departments dep ON dep.id = t.department_id
-         LEFT JOIN profiles cb ON cb.id = t.created_by`;
-    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre as department_nombre, dep.color as department_color, t.fecha_cliente, t.cliente_visible, t.client_board_id, t.project_id, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol,
+         LEFT JOIN profiles cb ON cb.id = t.created_by
+         LEFT JOIN task_folders tf ON tf.id = t.folder_id`;
+    const baseSelect = `SELECT t.*, b.nombre as brand_nombre, d.nombre as desk_nombre, dep.nombre as department_nombre, dep.color as department_color, t.fecha_cliente, t.cliente_visible, t.client_board_id, t.project_id, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url, f.name as feature_name, sp.name as sprint_name, tt.nombre as task_type_nombre, dt.nombre as deliverable_type_nombre, cb.nombre as created_by_nombre, cb.avatar_url as created_by_avatar_url, cb.rol as created_by_rol, tf.nombre as folder_nombre,
        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count,
        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id AND (st.check_done = 1 OR st.estado IN ('entregado','aprobado'))) AS subtask_done_count
        ${baseFrom}`;
@@ -148,16 +160,12 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
     let extraConditions = '';
     const extraParams: string[] = [];
     if (deskIdFilter) {
-      extraConditions += ` AND (
-        t.desk_id = ?
-        OR t.responsable_user_id IN (SELECT user_id FROM desk_members WHERE desk_id = ?)
-        OR t.id IN (
-          SELECT tr.task_id FROM task_responsables tr
-          INNER JOIN desk_members dm ON dm.user_id = tr.user_id
-          WHERE dm.desk_id = ?
-        )
-      )`;
-      extraParams.push(deskIdFilter, deskIdFilter, deskIdFilter);
+      // Estricto: solo tareas cuya mesa es la pedida. Antes incluia tambien las
+      // tareas de los miembros de la mesa en otras mesas; con mesas de 30+
+      // personas eso devolvia 2/3 de todas las tareas y el frontend (que filtra
+      // por t.desk_id) mostraba paginas vacias.
+      extraConditions += ' AND t.desk_id = ?';
+      extraParams.push(deskIdFilter);
     }
     if (responsableFilter) {
       extraConditions += ' AND (t.responsable_user_id = ? OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?))';
@@ -198,12 +206,12 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
       const deskRows = await query<{ desk_id: string }[]>('SELECT desk_id FROM desk_members WHERE user_id = ?', [req.userId]);
       const deskIds = deskRows.map((r) => r.desk_id);
       // FIX: incluir también tareas donde el usuario es co-responsable (task_responsables)
-      const coRespCondition = ' OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?)';
+      const coRespCondition = ' OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?) OR t.id IN (SELECT task_id FROM task_seguidores WHERE user_id = ?)';
       const where = deskIds.length > 0
         ? ` WHERE ((t.desk_id IN (${deskIds.map(() => '?').join(',')})) OR t.responsable_user_id = ?${coRespCondition})${noSubtasksCondition}${sprintCondition}${extraConditions}`
         : ` WHERE (t.responsable_user_id = ?${coRespCondition})${noSubtasksCondition}${sprintCondition}${extraConditions}`;
-      countParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, ...sprintParam, ...extraParams] : [req.userId!, req.userId!, ...sprintParam, ...extraParams];
-      listParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)] : [req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)];
+      countParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams] : [req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams];
+      listParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)] : [req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)];
       countSql = `SELECT COUNT(*) as total ${baseFrom}${where}`;
       listSql = `${baseSelect}${where}${orderBy} LIMIT ? OFFSET ?`;
     } else {
@@ -307,13 +315,26 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
 // pero pueden ser varias si quedaron pegadas.
 tasksRouter.get("/tasks/active-timer", requireAuth, async (req: AuthRequest, res) => {
   try {
+    // OJO: `tasks.timer_activo` es una bandera POR TAREA (no tiene dueño). Si se
+    // filtra por "soy responsable", el timer que arranca un COMPANERO en una tarea
+    // compartida aparece como propio -> "tarea fantasma" (incidencia a4df370e), y
+    // al aceptar el conflicto se pausaba el timer del companero.
+    // La verdad por persona son las SESIONES (time_entries.user_id).
     const rows = await query<any[]>(
       `SELECT t.id, t.titulo_tarea, t.timer_inicio, t.tiempo_trabajado,
               b.nombre AS brand_nombre
        FROM tasks t
        LEFT JOIN brands b ON b.id = t.brand_id
        WHERE t.timer_activo = 1
-         AND (t.responsable_user_id = ? OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?))
+         AND (
+           EXISTS (SELECT 1 FROM time_entries te
+                    WHERE te.task_id = t.id AND te.user_id = ? AND te.status = 'active')
+           OR (
+             t.responsable_user_id = ?
+             AND NOT EXISTS (SELECT 1 FROM time_entries te2
+                              WHERE te2.task_id = t.id AND te2.status = 'active')
+           )
+         )
        ORDER BY t.timer_inicio DESC`,
       [req.userId, req.userId]
     );
@@ -377,6 +398,31 @@ tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       [taskId]
     );
 
+    // C) Cambios/vueltas: de 'revision_cliente' -> lo pidió el CLIENTE; de revisión interna -> INTERNO.
+    const cambiosRow = await queryOne<any>(
+      `SELECT COALESCE(SUM(old_value = 'revision_cliente'), 0) AS cliente,
+              COALESCE(SUM(old_value IN ('revision_interna','en_revision')), 0) AS internos
+       FROM activity_log
+       WHERE entity_type = 'task' AND entity_id = ? AND field_name = 'estado' AND new_value = 'en_proceso'`,
+      [taskId]
+    );
+    // E) Tiempo por persona (desde las sesiones de tiempo).
+    const tiempoPersona = await query<any[]>(
+      `SELECT te.user_id, p.nombre, p.avatar_url, SUM(te.duration_seconds) AS segundos
+       FROM time_entries te LEFT JOIN profiles p ON p.id = te.user_id
+       WHERE te.task_id = ? AND te.status = 'completed'
+       GROUP BY te.user_id, p.nombre, p.avatar_url
+       HAVING segundos > 0 ORDER BY segundos DESC`,
+      [taskId]
+    );
+    // B) Seguidores de la tarea.
+    const seguidoresRows = await query<any[]>(
+      `SELECT ts.user_id, p.nombre, p.avatar_url FROM task_seguidores ts
+       LEFT JOIN profiles p ON p.id = ts.user_id WHERE ts.task_id = ? ORDER BY p.nombre`,
+      [taskId]
+    );
+    const meSigue = req.userId ? seguidoresRows.some((r) => r.user_id === req.userId) : false;
+
     const task = {
       ...row,
       brands: row.brand_nombre ? { nombre: row.brand_nombre } : null,
@@ -392,6 +438,11 @@ tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       created_by_rol: row.created_by_rol || null,
       is_read: Number(readRow?.cnt ?? 0) > 0,
       read_count: Number(readCountRow?.cnt ?? 0),
+      cambios_cliente: Number(cambiosRow?.cliente ?? 0),
+      cambios_internos: Number(cambiosRow?.internos ?? 0),
+      tiempo_por_persona: tiempoPersona.map((r: any) => ({ user_id: r.user_id, nombre: r.nombre, avatar_url: r.avatar_url || null, segundos: Number(r.segundos || 0) })),
+      seguidores: seguidoresRows.map((r: any) => ({ user_id: r.user_id, nombre: r.nombre, avatar_url: r.avatar_url || null })),
+      me_sigue: meSigue,
     };
     res.json(task);
   } catch (e) {
@@ -432,10 +483,11 @@ tasksRouter.post('/tasks', requireAuth, async (req: AuthRequest, res) => {
     const primaryResponsable = responsableIds[0] || null;
 
     await query(
-      `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, department_id, project_id, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, responsable_user_id, departamento, department_id, project_id, folder_id, prioridad, estado, fecha_inicio, fecha_entrega, enlaces, sprint_id, story_points, feature_id, task_type_id, tipo_entregable_id, created_by, estimated_hours, recurrence_type, recurrence_interval, recurrence_end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, body.check_done ? 1 : 0, body.brand_id, body.desk_id || null, body.titulo_tarea, body.detalle || null,
         body.cantidad_entregables ?? 1, primaryResponsable, body.departamento || null, body.department_id || null, body.project_id || null,
+        body.folder_id || null,
         body.prioridad || 'media', body.estado || 'backlog', body.fecha_inicio || null, body.fecha_entrega,
         enlaces, body.sprint_id || null, body.story_points ?? null, body.feature_id || null, body.task_type_id || null, body.tipo_entregable_id || null, req.userId ?? null,
         body.estimated_hours ?? null, body.recurrence_type || 'none', body.recurrence_interval ?? null, body.recurrence_end_date || null
@@ -506,7 +558,7 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
     const isProtected = creatorRole === 'admin' || creatorRole === 'ejecutivo';
 
     // Fields that equipo can always change on assigned tasks (even protected ones)
-    const operationalFields = new Set(['estado', 'timer_activo', 'timer_inicio', 'tiempo_trabajado', 'check_done', 'is_favorite']);
+    const operationalFields = new Set(['estado', 'timer_activo', 'timer_inicio', 'tiempo_trabajado', 'tiempo_trabajado_delta', 'check_done', 'is_favorite']);
     const bodyKeys = Object.keys(body);
     const onlyOperational = bodyKeys.every(k => operationalFields.has(k));
 
@@ -584,6 +636,7 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
       tiempo_trabajado: 'tiempo_trabajado', timer_activo: 'timer_activo', timer_inicio: 'timer_inicio',
       sprint_id: 'sprint_id', story_points: 'story_points', feature_id: 'feature_id',
       task_type_id: 'task_type_id', tipo_entregable_id: 'tipo_entregable_id', is_favorite: 'is_favorite', sort_order: 'sort_order',
+      folder_id: 'folder_id',
       estimated_hours: 'estimated_hours', recurrence_type: 'recurrence_type',
       recurrence_interval: 'recurrence_interval', recurrence_end_date: 'recurrence_end_date',
     };
@@ -606,6 +659,53 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
         }
       }
     }
+    // Contador de ajustes: suma cada vez que la tarea ENTRA al estado "ajustes"
+    // (la reactivaron con correcciones). Lo decide el server mirando el estado viejo.
+    if (body.estado === 'ajustes' && oldRow?.estado !== 'ajustes') {
+      fields.unshift('ajustes_count = ajustes_count + 1');
+    }
+
+    // ── Timer idempotente y autoritativo (bug "se remarca") ────────────────
+    // La UI puede quedar desincronizada (pestana vieja, panel sin refrescar) y
+    // mandar pausas repetidas o deltas inflados. El SERVER decide:
+    //   - pausa con tarea ACTIVA: delta real = now - timer_inicio; se usa
+    //     min(delta_cliente, delta_real) para respetar "pausar sin sumar" (0).
+    //   - pausa con tarea YA PAUSADA: no se suma nada (multi-clic inofensivo).
+    //   - reset explicito (tiempo_trabajado=0): se respeta.
+    //   - doble play con tarea ya activa: NO resetea timer_inicio.
+    {
+      const wasActive = Number(oldRow?.timer_activo) === 1;
+      const pausing = body.timer_activo === false || body.timer_activo === 0;
+      const starting = body.timer_activo === true || body.timer_activo === 1;
+      const isReset = body.tiempo_trabajado === 0;
+
+      if (starting && wasActive) {
+        delete body.timer_inicio; // doble play: conservar el inicio real del tramo
+      }
+
+      let deltaFinal: number | null = null;
+      if (pausing && !isReset) {
+        delete body.tiempo_trabajado; // en pausas manda el server, no numeros absolutos del cliente
+        if (wasActive && oldRow?.timer_inicio) {
+          const realSecs = Math.max(0, Math.floor((Date.now() - new Date(oldRow.timer_inicio).getTime()) / 1000));
+          const clientDelta = Number.isFinite(Number(body.tiempo_trabajado_delta)) ? Math.max(0, Number(body.tiempo_trabajado_delta)) : Infinity;
+          deltaFinal = Math.min(realSecs, clientDelta, 43200);
+        } else {
+          deltaFinal = 0; // ya estaba pausada: idempotente
+        }
+        delete body.tiempo_trabajado_delta;
+      } else if (body.tiempo_trabajado_delta !== undefined) {
+        const d = Number(body.tiempo_trabajado_delta);
+        if (Number.isFinite(d)) deltaFinal = Math.max(-43200, Math.min(43200, Math.round(d)));
+        delete body.tiempo_trabajado_delta;
+      }
+
+      if (deltaFinal !== null && deltaFinal !== 0) {
+        fields.push('tiempo_trabajado = GREATEST(0, tiempo_trabajado + ?)');
+        values.push(deltaFinal);
+      }
+    }
+
     // Permitimos PATCH solo con responsable_ids/entregables (sin otros fields del map)
     const hasOtherFields = fields.length > 0;
     const hasResponsableIds = Array.isArray(body.responsable_ids);
@@ -733,6 +833,11 @@ tasksRouter.patch('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
         notifyUser(authorId, `La tarea "${tituloNotif}" cambió a estado: ${estadoStr}`, id);
       }
     }
+    // Avisar a los seguidores de la tarea cuando cambia de estado.
+    if (estadoChanged) {
+      const tituloSeg: string = asString(oldRow?.titulo_tarea) || 'Tarea';
+      notifySeguidores(id, `La tarea que sigues "${tituloSeg}" cambió a estado: ${asString(body.estado)}`, req.userId).catch(() => {});
+    }
 
     // If only responsable_user_id was updated (single assignee change), notify new assignee
     const newRespId: string = asString(body.responsable_user_id);
@@ -806,6 +911,31 @@ tasksRouter.get('/tasks/:id/reads', requireAuth, async (req: AuthRequest, res) =
 
 // ========== SUBTASKS ==========
 // POST /tasks/:id/handoff — pasar una tarea al siguiente departamento (handoff de etapa)
+// POST /tasks/:id/seguir — seguir manualmente una tarea
+tasksRouter.post('/tasks/:id/seguir', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id);
+    if (!(await canAccessTask(req.userId!, id))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
+    await query('INSERT IGNORE INTO task_seguidores (id, task_id, user_id, motivo) VALUES (?, ?, ?, ?)', [uuid(), id, req.userId, 'manual']);
+    res.json({ ok: true, siguiendo: true });
+  } catch (e) {
+    console.error('[TASKS] seguir error:', e);
+    res.status(500).json({ error: 'Error al seguir la tarea' });
+  }
+});
+
+// DELETE /tasks/:id/seguir — dejar de seguir
+tasksRouter.delete('/tasks/:id/seguir', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = String(req.params.id);
+    await query('DELETE FROM task_seguidores WHERE task_id = ? AND user_id = ?', [id, req.userId]);
+    res.json({ ok: true, siguiendo: false });
+  } catch (e) {
+    console.error('[TASKS] dejar de seguir error:', e);
+    res.status(500).json({ error: 'Error al dejar de seguir la tarea' });
+  }
+});
+
 tasksRouter.post('/tasks/:id/handoff', requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = String(req.params.id);
@@ -836,9 +966,60 @@ tasksRouter.post('/tasks/:id/handoff', requireAuth, async (req: AuthRequest, res
     const dueDate = typeof req.body?.due_date === 'string' && req.body.due_date ? req.body.due_date : null;
     const createNew = req.body?.create_new_task === true;
 
+    // Si al pasar la tarea se cambia la fecha de entrega, exigir motivo y registrarlo
+    // (mismo criterio que PATCH /tasks/:id). Antes se movia la vara del cumplimiento sin registro.
+    const MOTIVOS_RESCHEDULE_HANDOFF = ['INTERNO', 'CLIENTE', 'ALCANCE', 'FUERZA_MAYOR', 'SIN_CLASIFICAR'];
+    let handoffReschedule: { oldFecha: string | null; newFecha: string; motivo: string; comentario: string | null } | null = null;
+    if (!createNew && dueDate) {
+      const normOld = src.fecha_entrega ? new Date(src.fecha_entrega).toISOString().slice(0, 10) : null;
+      const normNew = String(dueDate).slice(0, 10);
+      if (normOld !== normNew) {
+        const mr = String(req.body?.motivo_reschedule || '').toUpperCase();
+        if (!MOTIVOS_RESCHEDULE_HANDOFF.includes(mr)) {
+          return res.status(400).json({ error: 'Debes indicar el motivo del cambio de fecha (motivo_reschedule)' });
+        }
+        handoffReschedule = {
+          oldFecha: normOld,
+          newFecha: normNew,
+          motivo: mr,
+          comentario: typeof req.body?.comentario_reschedule === 'string' && req.body.comentario_reschedule.trim()
+            ? req.body.comentario_reschedule.trim().slice(0, 500) : null,
+        };
+      }
+    }
+
     const fromDeptId = src.department_id || null;
     const fromResp = src.responsable_user_id || null;
     let targetTaskId: string | null = null;
+
+    // D) Pausar el timer de quien tenía la tarea y cerrar su sesión, para que
+    //    el tiempo no se le cuente a quien la recibe (cada quien con su tiempo).
+    if (!createNew) {
+      if (src.timer_activo && src.timer_inicio) {
+        const startMs = new Date(src.timer_inicio).getTime();
+        const elapsed = Math.max(0, Math.min(12 * 3600, Math.floor((Date.now() - startMs) / 1000)));
+        await query('UPDATE tasks SET tiempo_trabajado = tiempo_trabajado + ?, timer_activo = 0, timer_inicio = NULL WHERE id = ?', [elapsed, id]);
+      } else if (src.timer_activo) {
+        await query('UPDATE tasks SET timer_activo = 0, timer_inicio = NULL WHERE id = ?', [id]);
+      }
+      await query(
+        `UPDATE time_entries
+           SET end_time = NOW(), status = 'completed',
+               duration_seconds = GREATEST(0, TIMESTAMPDIFF(SECOND, start_time, NOW()) - COALESCE(idle_seconds, 0))
+         WHERE task_id = ? AND status IN ('active','paused')`,
+        [id]
+      );
+
+      // B) Seguidores: quien la pasa (y responsables previos) la siguen viendo.
+      const seguidores = new Set<string>();
+      if (fromResp) seguidores.add(fromResp);
+      const prevResps = await query<{ user_id: string }[]>('SELECT user_id FROM task_responsables WHERE task_id = ?', [id]);
+      for (const r of prevResps) if (r.user_id) seguidores.add(r.user_id);
+      for (const nid of respIds) seguidores.delete(nid); // los nuevos responsables no son "seguidores"
+      for (const sid of seguidores) {
+        await query('INSERT IGNORE INTO task_seguidores (id, task_id, user_id, motivo) VALUES (?, ?, ?, ?)', [uuid(), id, sid, 'handoff']);
+      }
+    }
 
     if (createNew) {
       // Crear una tarea nueva relacionada en el nuevo departamento
@@ -882,6 +1063,14 @@ tasksRouter.post('/tasks/:id/handoff', requireAuth, async (req: AuthRequest, res
       await query(
         'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
         [uuid(), id, toDeptId, primaryResp]
+      );
+    }
+
+    // Registrar el reagendamiento (si el handoff movio la fecha de entrega)
+    if (handoffReschedule) {
+      await query(
+        'INSERT INTO task_reschedules (id, task_id, fecha_anterior, fecha_nueva, motivo, comentario, changed_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [uuid(), id, handoffReschedule.oldFecha, handoffReschedule.newFecha, handoffReschedule.motivo, handoffReschedule.comentario, req.userId]
       );
     }
 
@@ -941,10 +1130,12 @@ tasksRouter.get('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, res
     const { id } = req.params;
     if (!(await canAccessTask(req.userId!, String(id)))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
     const rows = await query<any[]>(
-      `SELECT t.*, b.nombre as brand_nombre, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url
+      `SELECT t.*, b.nombre as brand_nombre, p.nombre as resp_nombre, p.avatar_url as resp_avatar_url,
+              d.nombre as department_nombre, d.color as department_color
        FROM tasks t
        LEFT JOIN brands b ON b.id = t.brand_id
        LEFT JOIN profiles p ON p.id = t.responsable_user_id
+       LEFT JOIN departments d ON d.id = t.department_id
        WHERE t.parent_task_id = ? ORDER BY t.sort_order ASC, t.created_at ASC`,
       [id]
     );
@@ -986,16 +1177,18 @@ tasksRouter.post('/tasks/:id/subtasks', requireAuth, async (req: AuthRequest, re
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const parentId = req.params.id;
     if (!(await canAccessTask(req.userId!, String(parentId)))) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
-    const parent = await queryOne<any>('SELECT brand_id, desk_id, fecha_entrega FROM tasks WHERE id = ?', [parentId]);
+    const parent = await queryOne<any>('SELECT brand_id, desk_id, fecha_entrega, department_id, departamento, project_id, task_type_id FROM tasks WHERE id = ?', [parentId]);
     if (!parent) return res.status(404).json({ error: 'Tarea padre no encontrada' });
 
     const body = req.body;
     const id = uuid();
     const fechaEntrega = body.fecha_entrega || parent.fecha_entrega || new Date().toISOString().slice(0, 10);
     const responsableId = body.responsable_user_id || null;
+    // La subtarea hereda la estructura del padre (departamento/proyecto/tipo) para
+    // que las fases de una campana mantengan el mismo contexto y colores.
     await query(
-      `INSERT INTO tasks (id, parent_task_id, brand_id, desk_id, titulo_tarea, detalle, prioridad, estado, fecha_entrega, responsable_user_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, parentId, parent.brand_id, parent.desk_id, body.titulo_tarea, body.detalle || null, body.prioridad || 'media', 'backlog', fechaEntrega, responsableId, req.userId ?? null]
+      `INSERT INTO tasks (id, parent_task_id, brand_id, desk_id, titulo_tarea, detalle, prioridad, estado, fecha_entrega, responsable_user_id, department_id, departamento, project_id, task_type_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, parentId, parent.brand_id, parent.desk_id, body.titulo_tarea, body.detalle || null, body.prioridad || 'media', 'backlog', fechaEntrega, responsableId, parent.department_id || null, parent.departamento || null, parent.project_id || null, parent.task_type_id || null, req.userId ?? null]
     );
     const rid: string = asString(responsableId);
     if (rid && rid !== req.userId) {
@@ -1173,6 +1366,14 @@ tasksRouter.post('/tasks/:taskId/comments', requireAuth, async (req: AuthRequest
     );
     const comment = row ? { ...row, user: row.user_nombre ? { nombre: row.user_nombre, avatar_url: row.user_avatar_url || null } : null, likes_count: 0, liked_by_me: false } : null;
 
+    // Avisar a los seguidores de la tarea que hay un comentario nuevo.
+    (async () => {
+      try {
+        const t = await queryOne<{ titulo_tarea: string }>('SELECT titulo_tarea FROM tasks WHERE id = ?', [taskId]);
+        await notifySeguidores(taskId, `Nuevo comentario en la tarea que sigues: ${t?.titulo_tarea || 'Tarea'}`, req.userId);
+      } catch { /* best-effort */ }
+    })();
+
     // Detectar @menciones y notificar (in-app + email con link a la tarea). Fire-and-forget.
     const mentionText = text || (typeof contenido_html === 'string' ? contenido_html.replace(/<[^>]*>/g, ' ') : '');
     if (mentionText && req.userId) {
@@ -1261,7 +1462,7 @@ tasksRouter.post('/tasks/bulk-update', requireAuth, async (req: AuthRequest, res
 
     const allowedFields: Record<string, string> = {
       estado: 'estado', prioridad: 'prioridad', responsable_user_id: 'responsable_user_id',
-      sprint_id: 'sprint_id', desk_id: 'desk_id', check_done: 'check_done',
+      sprint_id: 'sprint_id', desk_id: 'desk_id', check_done: 'check_done', folder_id: 'folder_id',
     };
 
     const fields: string[] = [];
@@ -1271,6 +1472,10 @@ tasksRouter.post('/tasks/bulk-update', requireAuth, async (req: AuthRequest, res
         fields.push(`${col} = ?`);
         vals.push(updates[k]);
       }
+    }
+    if (updates.estado === 'ajustes') {
+      // va ANTES de `estado = ?` en el SET: el IF ve el estado anterior
+      fields.unshift(`ajustes_count = ajustes_count + IF(estado <> 'ajustes', 1, 0)`);
     }
     if (fields.length === 0) return res.status(400).json({ error: 'Sin campos válidos para actualizar' });
 
@@ -1351,7 +1556,7 @@ function addMonths(date: Date, months: number): Date {
   return result;
 }
 
-async function spawnNextRecurrence(parentTask: any, userId: string): Promise<void> {
+export async function spawnNextRecurrence(parentTask: any, userId: string): Promise<void> {
   if (parentTask.recurrence_end_date) {
     const endDate = new Date(parentTask.recurrence_end_date);
     if (new Date() > endDate) return;

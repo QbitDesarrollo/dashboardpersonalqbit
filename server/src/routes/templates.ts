@@ -137,10 +137,19 @@ templatesRouter.post('/templates/:id/tasks', requireAuth, async (req: AuthReques
     if (!t) return res.status(404).json({ error: 'Plantilla no encontrada' });
 
     const body = req.body;
+
+    // ── Departamento (opcional, por id — FK real, no texto libre) ──
+    if (body.department_id) {
+      const dept = await queryOne<{ id: string }>(
+        'SELECT id FROM departments WHERE id = ? AND activo = 1', [body.department_id]
+      );
+      if (!dept) return res.status(400).json({ error: 'Departamento no válido' });
+    }
+
     const taskId = uuid();
     await query(
-      `INSERT INTO template_tasks (id, template_id, titulo_tarea, detalle, prioridad, departamento, cantidad_entregables, story_points, relative_start_days, relative_due_days, parent_template_task_id, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO template_tasks (id, template_id, titulo_tarea, detalle, prioridad, departamento, department_id, cantidad_entregables, story_points, relative_start_days, relative_due_days, parent_template_task_id, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         taskId,
         templateId,
@@ -148,6 +157,7 @@ templatesRouter.post('/templates/:id/tasks', requireAuth, async (req: AuthReques
         body.detalle || null,
         body.prioridad || 'media',
         body.departamento || null,
+        body.department_id || null,
         body.cantidad_entregables ?? 1,
         body.story_points ?? null,
         body.relative_start_days ?? 0,
@@ -172,8 +182,18 @@ templatesRouter.patch('/templates/:templateId/tasks/:taskId', requireAuth, async
 
     const { templateId, taskId } = req.params;
     const body = req.body;
+
+    // ── Departamento (opcional, por id — FK real, no texto libre) ──
+    if (body.department_id) {
+      const dept = await queryOne<{ id: string }>(
+        'SELECT id FROM departments WHERE id = ? AND activo = 1', [body.department_id]
+      );
+      if (!dept) return res.status(400).json({ error: 'Departamento no válido' });
+    }
+
     const map: Record<string, string> = {
       titulo_tarea: 'titulo_tarea', detalle: 'detalle', prioridad: 'prioridad', departamento: 'departamento',
+      department_id: 'department_id',
       cantidad_entregables: 'cantidad_entregables', story_points: 'story_points',
       relative_start_days: 'relative_start_days', relative_due_days: 'relative_due_days',
       parent_template_task_id: 'parent_template_task_id', sort_order: 'sort_order',
@@ -262,21 +282,27 @@ templatesRouter.post('/templates/:id/apply', requireAuth, async (req: AuthReques
         const parent = await queryOne<any>('SELECT brand_id, desk_id FROM tasks WHERE id = ?', [parentId]);
         if (!parent) continue;
         await query(
-          `INSERT INTO tasks (id, parent_task_id, brand_id, desk_id, titulo_tarea, detalle, prioridad, departamento, cantidad_entregables, story_points, estado, fecha_inicio, fecha_entrega)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?)`,
+          `INSERT INTO tasks (id, parent_task_id, brand_id, desk_id, titulo_tarea, detalle, prioridad, departamento, department_id, cantidad_entregables, story_points, estado, fecha_inicio, fecha_entrega)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?)`,
           [
             taskId, parentId, parent.brand_id, parent.desk_id, tt.titulo_tarea, tt.detalle, tt.prioridad,
-            tt.departamento, tt.cantidad_entregables ?? 1, tt.story_points, dateStr(start), dateStr(due),
+            tt.departamento, tt.department_id || null, tt.cantidad_entregables ?? 1, tt.story_points, dateStr(start), dateStr(due),
           ]
         );
       } else {
         await query(
-          `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, departamento, prioridad, estado, fecha_inicio, fecha_entrega, story_points)
-           VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?, ?)`,
+          `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables, departamento, department_id, prioridad, estado, fecha_inicio, fecha_entrega, story_points)
+           VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'backlog', ?, ?, ?)`,
           [
             taskId, brand_id, desk_id || null, tt.titulo_tarea, tt.detalle, tt.cantidad_entregables ?? 1,
-            tt.departamento, tt.prioridad, dateStr(start), dateStr(due), tt.story_points,
+            tt.departamento, tt.department_id || null, tt.prioridad, dateStr(start), dateStr(due), tt.story_points,
           ]
+        );
+      }
+      if (tt.department_id) {
+        await query(
+          'INSERT INTO task_department_history (id, task_id, department_id, responsable_user_id) VALUES (?, ?, ?, ?)',
+          [uuid(), taskId, tt.department_id, null]
         );
       }
       oldToNew.set(tt.id, taskId);

@@ -592,17 +592,8 @@ export function CommentsPanel({ taskId, deskId }: CommentsPanelProps) {
               <Smile className="h-4 w-4" />
             </Button>
 
-            {/* Imagen */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-              onClick={() => fileInputRef.current?.click()}
-              title="Adjuntar imagen (también puedes pegar con Ctrl+V)"
-            >
-              {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-            </Button>
+            {/* Sin botón de imagen: las capturas se pegan con Ctrl+V en el comentario */}
+            {uploadingImage && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
 
             <span className="text-xs text-muted-foreground ml-1 hidden sm:block">

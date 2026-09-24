@@ -35,6 +35,7 @@ const profilePatchSchema = z.object({
   nombre: z.string().min(1).optional(),
   rol: z.preprocess((v) => (typeof v === 'string' ? v.toLowerCase() : v), z.enum(['admin', 'ejecutivo', 'equipo', 'cliente']).optional()),
   activo: z.preprocess((v) => (v === undefined ? undefined : !!(v === 1 || v === '1' || v === true || v === 'true')), z.boolean().optional()),
+  department_id: z.string().uuid().nullable().optional(),
 }).strict();
 
 profilesRouter.patch('/profiles/:id', requireAuth, async (req: AuthRequest, res) => {
@@ -44,12 +45,13 @@ profilesRouter.patch('/profiles/:id', requireAuth, async (req: AuthRequest, res)
     const parsed = profilePatchSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Datos inválidos', details: parsed.error.flatten() });
     const { id } = req.params;
-    const { nombre, rol, activo } = parsed.data;
+    const { nombre, rol, activo, department_id } = parsed.data;
     const updates: string[] = [];
     const values: unknown[] = [];
     if (nombre !== undefined) { updates.push('nombre = ?'); values.push(nombre); }
     if (rol !== undefined) { updates.push('rol = ?'); values.push(rol); }
     if (activo !== undefined) { updates.push('activo = ?'); values.push(activo ? 1 : 0); }
+    if (department_id !== undefined) { updates.push('department_id = ?'); values.push(department_id); }
     if (updates.length === 0) return res.status(400).json({ error: 'Ningún campo válido para actualizar' });
     values.push(id);
     await query(`UPDATE profiles SET ${updates.join(', ')} WHERE id = ?`, values);

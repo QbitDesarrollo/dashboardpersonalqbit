@@ -10,6 +10,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useDepartments, DepartmentBadge } from '@/components/tasks/DepartmentSelect';
 import { ArrowRight, Loader2, Workflow } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+
+const MOTIVOS_FECHA = [
+  { value: 'CLIENTE', label: 'Cliente' },
+  { value: 'ALCANCE', label: 'Cambio de alcance' },
+  { value: 'FUERZA_MAYOR', label: 'Fuerza mayor' },
+  { value: 'INTERNO', label: 'Interno (nuestra culpa)' },
+];
 
 interface MiniUser { id: string; nombre: string; avatar_url?: string | null }
 
@@ -42,7 +50,8 @@ export function HandoffDialog({
   const [respIds, setRespIds] = useState<string[]>([]);
   const [motivo, setMotivo] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [createNew, setCreateNew] = useState(false);
+  const [motivoResched, setMotivoResched] = useState('');
+  const [comentarioResched, setComentarioResched] = useState('');
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -59,9 +68,14 @@ export function HandoffDialog({
     setRespIds([]);
     setMotivo('');
     setDueDate('');
-    setCreateNew(false);
+    setMotivoResched('');
+    setComentarioResched('');
     setSearch('');
   }, [open, task, currentDept, initialToDeptId]);
+
+  // La fecha solo "cambia" si es distinta de la que ya tiene la tarea.
+  const fechaActual = task?.fecha_entrega ? String(task.fecha_entrega).slice(0, 10) : '';
+  const fechaCambio = !!dueDate && dueDate !== fechaActual;
 
   const activeDepts = departments.filter((d) => d.activo && d.id !== task?.department_id);
   const toDept = departments.find((d) => d.id === toDeptId);
@@ -76,7 +90,11 @@ export function HandoffDialog({
 
   const handleConfirm = async () => {
     if (!task || !toDeptId) {
-      toast.error('Elegí el departamento destino');
+      toast.error('Elige el departamento destino');
+      return;
+    }
+    if (fechaCambio && !motivoResched) {
+      toast.error('Indica el motivo del cambio de fecha');
       return;
     }
     setSaving(true);
@@ -86,9 +104,11 @@ export function HandoffDialog({
         to_responsable_ids: respIds,
         motivo: motivo.trim() || undefined,
         due_date: dueDate || undefined,
-        create_new_task: createNew,
+        create_new_task: false,
+        motivo_reschedule: fechaCambio ? motivoResched : undefined,
+        comentario_reschedule: fechaCambio && comentarioResched.trim() ? comentarioResched.trim() : undefined,
       });
-      toast.success(createNew ? 'Tarea creada en el nuevo departamento' : `Tarea pasada a ${toDept?.nombre}`);
+      toast.success(`Tarea pasada a ${toDept?.nombre}`);
       onDone();
       onClose();
     } catch (e) {
@@ -189,24 +209,49 @@ export function HandoffDialog({
             </div>
           </div>
 
-          {/* Crear nueva vs misma tarea */}
-          <label className="flex items-start gap-2 rounded-lg border p-2.5 cursor-pointer hover:bg-muted/30">
-            <Checkbox checked={createNew} onCheckedChange={(v) => setCreateNew(!!v)} className="mt-0.5" />
-            <span className="text-xs">
-              <span className="font-medium">Crear como tarea nueva relacionada</span>
-              <br />
-              <span className="text-muted-foreground">
-                Por defecto se pasa la <strong>misma</strong> tarea al nuevo departamento. Activá esto si querés
-                dejar la original como está y crear una copia para la siguiente etapa.
-              </span>
-            </span>
-          </label>
+          {/* Si se mueve la fecha, exigir motivo: no se puede mover la vara del cumplimiento en silencio */}
+          {fechaCambio && (
+            <div className="space-y-1.5 rounded-lg border border-amber-300/70 bg-amber-50/60 dark:bg-amber-950/20 p-2.5">
+              <Label className="text-xs font-medium">Motivo del cambio de fecha *</Label>
+              <p className="text-[11px] text-muted-foreground">
+                Si el motivo es <strong>Interno</strong>, el cumplimiento se sigue midiendo contra la fecha original.
+              </p>
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {MOTIVOS_FECHA.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => setMotivoResched(m.value)}
+                    className={cn(
+                      'px-2 py-1 rounded-md border text-xs transition',
+                      motivoResched === m.value ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'
+                    )}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <Input
+                value={comentarioResched}
+                onChange={(e) => setComentarioResched(e.target.value)}
+                placeholder="Comentario (opcional)"
+                className="h-8 text-sm mt-1"
+              />
+            </div>
+          )}
+
+          {/* Se pasa SIEMPRE la misma tarea: no se duplica y se conservan los comentarios */}
+          <p className="text-[11px] text-muted-foreground italic px-1">
+            Se pasa la <strong>misma</strong> tarea al nuevo departamento: no se duplica y se conserva todo el
+            historial de comentarios. Quien la pasa queda como <strong>seguidor</strong> (la sigue viendo y recibe
+            avisos, sin que le cuente al cumplimiento).
+          </p>
 
           <DialogFooter>
             <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
-            <Button onClick={handleConfirm} disabled={saving || !toDeptId}>
+            <Button onClick={handleConfirm} disabled={saving || !toDeptId || (fechaCambio && !motivoResched)}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Workflow className="h-4 w-4" />}
-              {createNew ? 'Crear y pasar' : 'Pasar tarea'}
+              Pasar tarea
             </Button>
           </DialogFooter>
         </div>

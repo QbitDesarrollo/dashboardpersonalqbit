@@ -28,6 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
+import { DepartmentSelect } from '@/components/tasks/DepartmentSelect';
 import {
   Plus,
   FileStack,
@@ -54,6 +55,7 @@ interface TemplateTask {
   detalle: string | null;
   prioridad: string;
   departamento: string | null;
+  department_id: string | null;
   cantidad_entregables: number;
   story_points: number | null;
   relative_start_days: number;
@@ -87,6 +89,7 @@ export default function Templates() {
   const [saving, setSaving] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPrioridad, setNewTaskPrioridad] = useState<string>('media');
+  const [newTaskDepartmentId, setNewTaskDepartmentId] = useState<string | null>(null);
   const [newTaskStartDays, setNewTaskStartDays] = useState<number>(0);
   const [newTaskDueDays, setNewTaskDueDays] = useState<number>(7);
   const [newTaskSaving, setNewTaskSaving] = useState(false);
@@ -209,12 +212,14 @@ export default function Templates() {
       await api.addTemplateTask(selectedTemplate.id, {
         titulo_tarea: newTaskTitle.trim(),
         prioridad: newTaskPrioridad,
+        department_id: newTaskDepartmentId,
         relative_start_days: newTaskStartDays,
         relative_due_days: newTaskDueDays,
       });
       toast.success('Tarea agregada');
       setNewTaskTitle('');
       setNewTaskPrioridad('media');
+      setNewTaskDepartmentId(null);
       setNewTaskStartDays(0);
       setNewTaskDueDays(7);
       const full = await api.getTemplate(selectedTemplate.id);
@@ -238,7 +243,7 @@ export default function Templates() {
     }
   };
 
-  const handleUpdateTask = async (taskId: string, updates: { titulo_tarea?: string; prioridad?: string; relative_start_days?: number; relative_due_days?: number }) => {
+  const handleUpdateTask = async (taskId: string, updates: { titulo_tarea?: string; prioridad?: string; department_id?: string | null; relative_start_days?: number; relative_due_days?: number }) => {
     if (!selectedTemplate?.tasks) return;
     try {
       await api.patchTemplateTask(selectedTemplate.id, taskId, updates);
@@ -424,6 +429,14 @@ export default function Templates() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="w-full sm:w-36 shrink-0">
+                  <Label className="text-xs text-muted-foreground">Departamento</Label>
+                  <DepartmentSelect
+                    value={newTaskDepartmentId}
+                    onChange={setNewTaskDepartmentId}
+                    className="mt-0.5 h-9"
+                  />
+                </div>
                 <div className="w-24 sm:w-20 shrink-0">
                   <Label className="text-xs text-muted-foreground">Inicio (+d)</Label>
                   <Input
@@ -477,6 +490,7 @@ export default function Templates() {
                 <TableRow>
                   <TableHead>Tarea</TableHead>
                   <TableHead>Prioridad</TableHead>
+                  <TableHead>Departamento</TableHead>
                   <TableHead>Inicio</TableHead>
                   <TableHead>Entrega</TableHead>
                   <TableHead className="w-10" />
@@ -511,6 +525,13 @@ export default function Templates() {
                           <SelectItem value="baja">Baja</SelectItem>
                         </SelectContent>
                       </Select>
+                    </TableCell>
+                    <TableCell>
+                      <DepartmentSelect
+                        value={tt.department_id}
+                        onChange={(v) => handleUpdateTask(tt.id, { department_id: v })}
+                        className="h-8 w-36"
+                      />
                     </TableCell>
                     <TableCell>
                       <Input
