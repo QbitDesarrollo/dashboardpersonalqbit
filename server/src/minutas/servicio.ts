@@ -2,7 +2,7 @@ import type { RowDataPacket } from 'mysql2';
 import type { z } from 'zod';
 import { pool, query, queryOne, uuid } from '../db/mysql.js';
 import { progreso, type EstadoPunto } from './domain.js';
-import type { crearSchema } from './esquemas.js';
+import type { crearSchema, itemSchema } from './esquemas.js';
 import { codigo, insertarPunto, sincronizarArranques } from './consultas.js';
 
 /**
@@ -102,6 +102,31 @@ export async function crearMinuta(b: z.infer<typeof crearSchema>, userId: string
     }
     await conn.commit();
     return id;
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
+/** Appends points after the last one of an existing minuta (1.3, 1.4…). Returns the new point ids in order. */
+export async function agregarPuntos(minutaId: string, items: z.infer<typeof itemSchema>[]): Promise<string[]> {
+  if (!pool) throw new ErrorMinuta(500, 'Base de datos no configurada');
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [minuta] = await conn.query<RowDataPacket[]>('SELECT id FROM minutas WHERE id = ? FOR UPDATE', [minutaId]);
+    if (!minuta.length) throw new ErrorMinuta(404, 'Minuta no encontrada', 'TIUSDEI_NOT_FOUND');
+    const [rows] = await conn.query<RowDataPacket[]>(
+      'SELECT COALESCE(MAX(numero), 0) AS ultimo FROM minuta_items WHERE minuta_id = ?',
+      [minutaId],
+    );
+    let numero = Number(rows[0].ultimo);
+    const ids: string[] = [];
+    for (const it of items) ids.push(await insertarPunto(conn, minutaId, ++numero, it));
+    await conn.commit();
+    return ids;
   } catch (e) {
     await conn.rollback();
     throw e;

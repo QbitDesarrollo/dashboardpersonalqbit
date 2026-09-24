@@ -32,7 +32,7 @@
 
 ## Minutas
 Reuniones con el cliente → puntos → tareas → evidencia. Cuelgan de la marca (proyecto opcional). Front: `src/pages/Minuta*.tsx` y `src/components/minutas/`; modo presentación en `/minutas/:id/presentar` (solo puntos visibles; el cliente aprueba, pide ajustes o deja notas). Back: `server/src/minutas/` y `server/src/routes/minuta*.ts`. Migraciones 035–039. No hay enlace público: todo se ve dentro de Tiusdei.
-- **MCP**: `list_minutas`, `get_minuta` (con capturas de evidencia como imágenes; horas en hora de Ecuador), `create_minuta`, `link_task_to_minuta_point`. Herramientas en `mcp-server/src/herramientas/minutas.ts`, API en `server/src/routes/mcp-minutas.ts`, lógica compartida con la web en `server/src/minutas/servicio.ts`.
+- **MCP**: `list_minutas`, `get_minuta` (con capturas de evidencia como imágenes; horas en hora de Ecuador), `create_minuta`, `add_minuta_points` (agrega puntos al final de una minuta existente), `link_task_to_minuta_point`. Herramientas en `mcp-server/src/herramientas/minutas.ts`, API en `server/src/routes/mcp-minutas.ts`, lógica compartida con la web en `server/src/minutas/servicio.ts`.
 - **Zona horaria**: servidor, Node y MySQL en UTC (no cambiar). Se muestra y se calcula "hoy" en `America/Guayaquil`; las fechas de reunión y compromiso son DATE sin hora.
 
 ## 🎯 Misión activa: el CONVERTIDOR DE CONTENIDOS

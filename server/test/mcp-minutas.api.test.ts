@@ -105,6 +105,34 @@ describe('GET /api/minutas/:id/images', () => {
   });
 });
 
+describe('POST /api/minutas/:id/points (add_minuta_points)', () => {
+  const agregar = (minutaId: string, cuerpo: Record<string, unknown>) => llamar(`${api.url}/minutas/${minutaId}/points`, even, 'POST', cuerpo);
+
+  it('agrega los puntos al final de la minuta existente y devuelve los nuevos con su código', async () => {
+    const diego = await crearUsuario('Diego Ruiz', 'equipo');
+    const creada = await crear({ brandId: marcaId, title: 'Revisión', points: [{ title: 'Home' }, { title: 'Menú' }] });
+    const r = await agregar(creada.body.id, { points: [
+      { title: 'Llamadas no contestadas', description: 'Crear la Task en Salesforce.', assigneeId: diego.id, dueDate: '2026-09-30' },
+      { title: 'Enviar logos', client: true },
+    ] });
+    expect(r.status).toBe(201);
+    expect(r.body.points.map((p: any) => [p.code, p.title])).toEqual([['1.3', 'Llamadas no contestadas'], ['1.4', 'Enviar logos']]);
+    const detalle = await llamar(`${api.url}/minutas/${creada.body.id}`, even);
+    expect(detalle.body.points.map((p: any) => [p.code, p.assignee, p.dueDate])).toEqual([
+      ['1.1', null, null], ['1.2', null, null], ['1.3', 'Diego Ruiz', '2026-09-30'], ['1.4', 'Cliente', null],
+    ]);
+  });
+
+  it('rechaza con nombre una minuta que no existe, un responsable inválido o una lista vacía', async () => {
+    const creada = await crear({ brandId: marcaId, title: 'Revisión', points: [] });
+    expect(await agregar(uuid(), { points: [{ title: 'X' }] })).toMatchObject({ status: 404, body: { error: 'TIUSDEI_NOT_FOUND' } });
+    expect(await agregar(creada.body.id, { points: [{ title: 'X', assigneeId: uuid() }] })).toMatchObject({ status: 400, body: { error: 'TIUSDEI_INVALID_ASSIGNEE' } });
+    expect((await agregar(creada.body.id, { points: [] })).body.error).toBe('TIUSDEI_VALIDATION');
+    const [{ n }] = await query<any[]>('SELECT COUNT(*) AS n FROM minuta_items WHERE minuta_id = ?', [creada.body.id]);
+    expect(Number(n)).toBe(0);
+  });
+});
+
 describe('POST /api/minuta-points/:id/tasks (link_task_to_minuta_point)', () => {
   it('vincula una tarea de la misma marca al punto', async () => {
     const creada = await crear({ brandId: marcaId, title: 'Revisión', points: [{ title: 'Home' }] });

@@ -6,8 +6,8 @@ import { pool, query, queryOne } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
 import { crearSchema, editarSchema, itemSchema } from '../minutas/esquemas.js';
 import { soloEquipoInterno } from '../minutas/permisos.js';
-import { cargarDetalle, insertarPunto } from '../minutas/consultas.js';
-import { crearMinuta, ErrorMinuta, listarMinutas } from '../minutas/servicio.js';
+import { cargarDetalle } from '../minutas/consultas.js';
+import { agregarPuntos, crearMinuta, ErrorMinuta, listarMinutas } from '../minutas/servicio.js';
 import { minutaItemsRouter } from './minuta-items.js';
 
 /**
@@ -122,31 +122,14 @@ minutasRouter.post('/minutas/:id/items', requireAuth, soloEquipoInterno, async (
   if (!parsed.success) {
     return res.status(400).json({ error: 'Datos del punto inválidos', details: parsed.error.flatten().fieldErrors });
   }
-  if (!pool) return res.status(500).json({ error: 'Base de datos no configurada' });
   const id = String(req.params.id);
-  const it = parsed.data;
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-    const [minuta] = await conn.query<RowDataPacket[]>('SELECT id FROM minutas WHERE id = ? FOR UPDATE', [id]);
-    if (!minuta.length) {
-      await conn.rollback();
-      return res.status(404).json({ error: 'Minuta no encontrada' });
-    }
-    const [rows] = await conn.query<RowDataPacket[]>(
-      'SELECT COALESCE(MAX(numero), 0) + 1 AS siguiente FROM minuta_items WHERE minuta_id = ?',
-      [id],
-    );
-    const numero = Number(rows[0].siguiente);
-    await insertarPunto(conn, id, numero, it);
-    await conn.commit();
+    await agregarPuntos(id, [parsed.data]);
     res.status(201).json(await cargarDetalle(id));
   } catch (e) {
-    await conn.rollback();
+    if (e instanceof ErrorMinuta) return res.status(e.status).json({ error: e.message });
     console.error('[MINUTAS] agregar punto:', e);
     res.status(500).json({ error: 'Error al agregar el punto' });
-  } finally {
-    conn.release();
   }
 });
 

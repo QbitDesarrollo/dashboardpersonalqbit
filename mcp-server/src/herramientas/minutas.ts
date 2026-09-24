@@ -92,6 +92,33 @@ export function registrarMinutas(server: McpServer, llamar: LlamarTiusdei): void
   );
 
   server.registerTool(
+    "add_minuta_points",
+    {
+      description:
+        "Add points to an EXISTING minuta. WRITE operation. They are appended after the last point (if it has 1.1 and 1.2, the new ones become 1.3, 1.4…). Same point fields as create_minuta: a title, optional description, `client: true` when the CLIENT must do or send it, otherwise optionally `assigneeId` (a person id from list_assignees), and an optional due date. Returns { id, code, url, points: [{ id, code, title }] } with only the new points — use a point id with link_task_to_minuta_point.",
+      inputSchema: {
+        minutaId: z.string().describe("Minuta id from list_minutas"),
+        points: z
+          .array(
+            z.object({
+              title: z.string(),
+              description: z.string().optional(),
+              assigneeId: z.string().optional().describe("Team member id from list_assignees"),
+              client: z.boolean().optional().describe("true when the client owes this point"),
+              dueDate: z.string().optional().describe("Commitment date YYYY-MM-DD"),
+            }),
+          )
+          .min(1)
+          .describe("Points to add, in order"),
+      },
+    },
+    async ({ minutaId, points }) => {
+      const added = await llamar(`/minutas/${encodeURIComponent(minutaId)}/points`, { method: "POST", body: JSON.stringify({ points }) });
+      return { content: [json({ ok: true, ...(added as object) })] };
+    },
+  );
+
+  server.registerTool(
     "link_task_to_minuta_point",
     {
       description:

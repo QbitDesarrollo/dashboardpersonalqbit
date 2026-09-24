@@ -9,7 +9,7 @@ import { hasRole } from '../utils/roles.js';
 import { cargarDetalle } from '../minutas/consultas.js';
 import { esImagenPropia, fechaIso } from '../minutas/esquemas.js';
 import { hoyEcuador, minutaParaAgente, resumenParaAgente } from '../minutas/formatoMcp.js';
-import { crearMinuta, ErrorMinuta, listarMinutas, vincularTarea } from '../minutas/servicio.js';
+import { agregarPuntos, crearMinuta, ErrorMinuta, listarMinutas, vincularTarea } from '../minutas/servicio.js';
 
 /**
  * Minutas for the Tiusdei MCP (mcp-server/: list_minutas, get_minuta, create_minuta,
@@ -97,16 +97,28 @@ const crearMcpSchema = z.object({
   points: z.array(puntoSchema).max(100).default([]),
 });
 
+/** Ids of the given assignees that are not people in Tiusdei. */
+async function personasQueNoExisten(points: z.infer<typeof puntoSchema>[]): Promise<string[]> {
+  const responsables = [...new Set(points.map((p) => p.assigneeId).filter((id): id is string => !!id))];
+  if (!responsables.length) return [];
+  const existentes = await query<{ id: string }[]>(`SELECT id FROM profiles WHERE id IN (${responsables.map(() => '?').join(',')})`, responsables);
+  return responsables.filter((id) => !existentes.some((e) => e.id === id));
+}
+
+const aItem = (p: z.infer<typeof puntoSchema>) => ({
+  titulo: p.title,
+  descripcion: p.description ?? null,
+  responsable_user_id: p.client ? null : p.assigneeId ?? null,
+  responsable_cliente: !!p.client,
+  fecha_compromiso: p.dueDate ?? null,
+});
+
 mcpMinutasRouter.post('/minutas', seguro(async (req, res) => {
   const parsed = crearMcpSchema.safeParse(req.body);
   if (!parsed.success) return fallo(res, 400, 'TIUSDEI_VALIDATION', JSON.stringify(parsed.error.flatten().fieldErrors));
   const b = parsed.data;
-  const responsables = [...new Set(b.points.map((p) => p.assigneeId).filter((id): id is string => !!id))];
-  if (responsables.length) {
-    const existentes = await query<{ id: string }[]>(`SELECT id FROM profiles WHERE id IN (${responsables.map(() => '?').join(',')})`, responsables);
-    const faltan = responsables.filter((id) => !existentes.some((e) => e.id === id));
-    if (faltan.length) return fallo(res, 400, 'TIUSDEI_INVALID_ASSIGNEE', `No existen estas personas: ${faltan.join(', ')}`);
-  }
+  const faltan = await personasQueNoExisten(b.points);
+  if (faltan.length) return fallo(res, 400, 'TIUSDEI_INVALID_ASSIGNEE', `No existen estas personas: ${faltan.join(', ')}`);
   const id = await crearMinuta({
     brand_id: b.brandId,
     project_id: b.projectId ?? null,
@@ -114,13 +126,7 @@ mcpMinutasRouter.post('/minutas', seguro(async (req, res) => {
     titulo: b.title,
     resumen: b.summary ?? null,
     estado: b.publish ? 'publicada' : 'borrador',
-    items: b.points.map((p) => ({
-      titulo: p.title,
-      descripcion: p.description ?? null,
-      responsable_user_id: p.client ? null : p.assigneeId ?? null,
-      responsable_cliente: !!p.client,
-      fecha_compromiso: p.dueDate ?? null,
-    })),
+    items: b.points.map(aItem),
   }, req.userId!);
   const detalle = await cargarDetalle(id);
   res.status(201).json({
@@ -128,6 +134,23 @@ mcpMinutasRouter.post('/minutas', seguro(async (req, res) => {
     code: detalle!.codigo,
     url: `${FRONTEND_URL}/minutas/${id}`,
     points: detalle!.items.map((i) => ({ id: i.id, code: `${detalle!.numero}.${i.numero}`, title: i.titulo })),
+  });
+}));
+
+// Add points to an existing minuta: they go after the last one (1.3, 1.4…).
+mcpMinutasRouter.post('/minutas/:id/points', seguro(async (req, res) => {
+  const parsed = z.object({ points: z.array(puntoSchema).min(1).max(100) }).safeParse(req.body);
+  if (!parsed.success) return fallo(res, 400, 'TIUSDEI_VALIDATION', JSON.stringify(parsed.error.flatten().fieldErrors));
+  const faltan = await personasQueNoExisten(parsed.data.points);
+  if (faltan.length) return fallo(res, 400, 'TIUSDEI_INVALID_ASSIGNEE', `No existen estas personas: ${faltan.join(', ')}`);
+  const minutaId = String(req.params.id);
+  const ids = await agregarPuntos(minutaId, parsed.data.points.map(aItem));
+  const detalle = await cargarDetalle(minutaId);
+  res.status(201).json({
+    id: minutaId,
+    code: detalle!.codigo,
+    url: `${FRONTEND_URL}/minutas/${minutaId}`,
+    points: detalle!.items.filter((i) => ids.includes(i.id)).map((i) => ({ id: i.id, code: `${detalle!.numero}.${i.numero}`, title: i.titulo })),
   });
 }));
 

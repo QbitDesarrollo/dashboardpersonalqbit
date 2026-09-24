@@ -6,14 +6,16 @@ import type { itemSchema } from './esquemas.js';
 
 /** Acceso a la base para minutas: armar el detalle y las escrituras que se reusan. */
 /** Un punto nuevo. Si lo debe hacer el cliente, no lleva responsable del equipo. */
-export async function insertarPunto(conn: PoolConnection, minutaId: string, numero: number, it: z.infer<typeof itemSchema>) {
+export async function insertarPunto(conn: PoolConnection, minutaId: string, numero: number, it: z.infer<typeof itemSchema>): Promise<string> {
+  const id = uuid();
   await conn.execute(
     `INSERT INTO minuta_items (id, minuta_id, numero, titulo, descripcion, responsable_user_id, responsable_cliente, fecha_compromiso, sort_order)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [uuid(), minutaId, numero, it.titulo, it.descripcion ?? null,
+    [id, minutaId, numero, it.titulo, it.descripcion ?? null,
      it.responsable_cliente ? null : (it.responsable_user_id ?? null),
      it.responsable_cliente ? 1 : 0, it.fecha_compromiso ?? null, numero],
   );
+  return id;
 }
 
 /**
