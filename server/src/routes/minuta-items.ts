@@ -6,6 +6,7 @@ import { aplicarAccion, type AccionPunto } from '../minutas/domain.js';
 import { accionSchema, editarItemSchema, esImagenPropia, evidenciaSchema } from '../minutas/esquemas.js';
 import { soloEquipoInterno } from '../minutas/permisos.js';
 import { cargarDetalle, insertarNota } from '../minutas/consultas.js';
+import { ErrorMinuta, vincularTarea } from '../minutas/servicio.js';
 
 /** Rutas de los puntos de una minuta: edición, acciones, evidencias, tareas y notas. */
 export const minutaItemsRouter = Router();
@@ -115,18 +116,9 @@ minutaItemsRouter.post('/minuta-items/:id/tareas', requireAuth, soloEquipoIntern
   const parsed = z.object({ task_id: z.string().uuid() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'task_id inválido' });
   try {
-    const itemId = String(req.params.id);
-    const item = await queryOne<{ minuta_id: string; brand_id: string }>(
-      'SELECT i.minuta_id, m.brand_id FROM minuta_items i JOIN minutas m ON m.id = i.minuta_id WHERE i.id = ?',
-      [itemId],
-    );
-    if (!item) return res.status(404).json({ error: 'Punto no encontrado' });
-    const tarea = await queryOne<{ brand_id: string }>('SELECT brand_id FROM tasks WHERE id = ?', [parsed.data.task_id]);
-    if (!tarea) return res.status(404).json({ error: 'Tarea no encontrada' });
-    if (tarea.brand_id !== item.brand_id) return res.status(400).json({ error: 'La tarea es de otra marca.' });
-    await query('UPDATE tasks SET minuta_item_id = ? WHERE id = ?', [itemId, parsed.data.task_id]);
-    res.json(await cargarDetalle(item.minuta_id));
+    res.json(await cargarDetalle(await vincularTarea(String(req.params.id), parsed.data.task_id)));
   } catch (e) {
+    if (e instanceof ErrorMinuta) return res.status(e.status).json({ error: e.message });
     console.error('[MINUTAS] vincular tarea:', e);
     res.status(500).json({ error: 'Error al vincular la tarea' });
   }

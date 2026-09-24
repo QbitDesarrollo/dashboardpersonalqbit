@@ -2,12 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { RowDataPacket } from 'mysql2';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
-import { pool, query, queryOne, uuid } from '../db/mysql.js';
+import { pool, query, queryOne } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
-import { progreso, type EstadoPunto } from '../minutas/domain.js';
 import { crearSchema, editarSchema, itemSchema } from '../minutas/esquemas.js';
 import { soloEquipoInterno } from '../minutas/permisos.js';
-import { cargarDetalle, codigo, insertarPunto, sincronizarArranques } from '../minutas/consultas.js';
+import { cargarDetalle, insertarPunto } from '../minutas/consultas.js';
+import { crearMinuta, ErrorMinuta, listarMinutas } from '../minutas/servicio.js';
 import { minutaItemsRouter } from './minuta-items.js';
 
 /**
@@ -20,57 +20,8 @@ minutasRouter.use(minutaItemsRouter);
 
 minutasRouter.get('/minutas', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
   try {
-    await sincronizarArranques();
-    const conds: string[] = [];
-    const params: unknown[] = [];
-    if (typeof req.query.brand_id === 'string' && req.query.brand_id) { conds.push('m.brand_id = ?'); params.push(req.query.brand_id); }
-    if (typeof req.query.project_id === 'string' && req.query.project_id) { conds.push('m.project_id = ?'); params.push(req.query.project_id); }
-    const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
-    if (q) {
-      const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-      conds.push(`(m.titulo LIKE ? OR EXISTS (
-        SELECT 1 FROM minuta_items i WHERE i.minuta_id = m.id AND (i.titulo LIKE ? OR i.descripcion LIKE ?)))`);
-      params.push(like, like, like);
-    }
-    const minutas = await query<any[]>(
-      `SELECT m.id, m.brand_id, b.nombre AS brand_nombre, m.project_id, p.nombre AS project_nombre,
-              m.numero, m.titulo, DATE_FORMAT(m.fecha, '%Y-%m-%d') AS fecha, m.estado,
-              m.owner_user_id, o.nombre AS owner_nombre, o.avatar_url AS owner_avatar
-         FROM minutas m
-         JOIN brands b ON b.id = m.brand_id
-         LEFT JOIN projects p ON p.id = m.project_id
-         LEFT JOIN profiles o ON o.id = m.owner_user_id
-        ${conds.length ? `WHERE ${conds.join(' AND ')}` : ''}
-        ORDER BY m.fecha DESC, m.numero DESC`,
-      params,
-    );
-    const estadosPorMinuta = new Map<string, EstadoPunto[]>();
-    if (minutas.length) {
-      const ids = minutas.map((m) => m.id);
-      const filas = await query<any[]>(
-        `SELECT minuta_id, estado FROM minuta_items WHERE minuta_id IN (${ids.map(() => '?').join(',')})`,
-        ids,
-      );
-      for (const f of filas) {
-        const lista = estadosPorMinuta.get(f.minuta_id) ?? [];
-        lista.push(f.estado);
-        estadosPorMinuta.set(f.minuta_id, lista);
-      }
-    }
-    res.json(minutas.map((m) => ({
-      id: m.id,
-      brand_id: m.brand_id,
-      brand_nombre: m.brand_nombre,
-      project_id: m.project_id,
-      project_nombre: m.project_nombre,
-      numero: m.numero,
-      codigo: codigo(m.numero),
-      titulo: m.titulo,
-      fecha: m.fecha,
-      estado: m.estado,
-      owner: { id: m.owner_user_id, nombre: m.owner_nombre, avatar_url: m.owner_avatar },
-      progreso: progreso(estadosPorMinuta.get(m.id) ?? []),
-    })));
+    const texto = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+    res.json(await listarMinutas({ brandId: texto(req.query.brand_id), projectId: texto(req.query.project_id), q: texto(req.query.q) }));
   } catch (e) {
     console.error('[MINUTAS] listar:', e);
     res.status(500).json({ error: 'Error al cargar minutas' });
@@ -204,45 +155,13 @@ minutasRouter.post('/minutas', requireAuth, soloEquipoInterno, async (req: AuthR
   if (!parsed.success) {
     return res.status(400).json({ error: 'Datos de minuta inválidos', details: parsed.error.flatten().fieldErrors });
   }
-  const b = parsed.data;
-  if (!pool) return res.status(500).json({ error: 'Base de datos no configurada' });
-  const marca = await queryOne('SELECT id FROM brands WHERE id = ?', [b.brand_id]);
-  if (!marca) return res.status(400).json({ error: 'La marca no existe.' });
-  if (b.project_id) {
-    const proyecto = await queryOne('SELECT id FROM projects WHERE id = ? AND brand_id = ?', [b.project_id, b.brand_id]);
-    if (!proyecto) return res.status(400).json({ error: 'El proyecto no pertenece a esa marca.' });
-  }
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-    const [rows] = await conn.query<RowDataPacket[]>(
-      'SELECT COALESCE(MAX(numero), 0) + 1 AS siguiente FROM minutas WHERE brand_id = ? FOR UPDATE',
-      [b.brand_id],
-    );
-    const numero = Number(rows[0].siguiente);
-    const id = uuid();
-    await conn.execute(
-      `INSERT INTO minutas (id, brand_id, project_id, numero, titulo, fecha, owner_user_id, resumen, estado, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, b.brand_id, b.project_id ?? null, numero, b.titulo, b.fecha, b.owner_user_id ?? req.userId!,
-       b.resumen ?? null, b.estado ?? 'borrador', req.userId!],
-    );
-    for (const userId of new Set(b.miembros ?? [])) {
-      await conn.execute('INSERT INTO minuta_miembros (minuta_id, user_id) VALUES (?, ?)', [id, userId]);
-    }
-    let n = 0;
-    for (const it of b.items ?? []) {
-      n += 1;
-      await insertarPunto(conn, id, n, it);
-    }
-    await conn.commit();
+    const id = await crearMinuta(parsed.data, req.userId!);
     res.status(201).json(await cargarDetalle(id));
   } catch (e) {
-    await conn.rollback();
+    if (e instanceof ErrorMinuta) return res.status(e.status).json({ error: e.message });
     console.error('[MINUTAS] crear:', e);
     res.status(500).json({ error: 'Error al crear la minuta' });
-  } finally {
-    conn.release();
   }
 });
 
