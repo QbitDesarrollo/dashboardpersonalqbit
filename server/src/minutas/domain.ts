@@ -1,5 +1,5 @@
 export type EstadoPunto = 'pendiente' | 'en_curso' | 'completado' | 'aprobado' | 'descartado';
-export type AccionPunto = 'iniciar' | 'completar' | 'aprobar' | 'reabrir' | 'descartar' | 'restaurar';
+export type AccionPunto = 'iniciar' | 'completar' | 'aprobar' | 'reabrir' | 'descartar' | 'restaurar' | 'pedir_ajuste';
 
 export interface PuntoParaAccion {
   estado: EstadoPunto;
@@ -30,6 +30,18 @@ const TRANSICIONES: Record<AccionPunto, { desde: EstadoPunto[]; hacia: EstadoPun
   reabrir: { desde: ['completado'], hacia: 'en_curso' },
   descartar: { desde: ['pendiente', 'en_curso', 'completado'], hacia: 'descartado' },
   restaurar: { desde: ['descartado'], hacia: 'pendiente' },
+  pedir_ajuste: { desde: ['completado'], hacia: 'en_curso' },
+};
+
+// Cómo se nombra cada acción en los mensajes de error.
+const VERBO: Record<AccionPunto, string> = {
+  iniciar: 'iniciar',
+  completar: 'completar',
+  aprobar: 'aprobar',
+  reabrir: 'reabrir',
+  descartar: 'descartar',
+  restaurar: 'restaurar',
+  pedir_ajuste: 'pedir un ajuste de',
 };
 
 /** Avance de una minuta. Los puntos descartados no cuentan. */
@@ -46,7 +58,7 @@ export function aplicarAccion(punto: PuntoParaAccion, accion: AccionPunto, datos
   const t = Object.hasOwn(TRANSICIONES, accion) ? TRANSICIONES[accion] : undefined;
   if (!t) return { ok: false, error: 'Acción desconocida.' };
   if (!t.desde.includes(punto.estado)) {
-    return { ok: false, error: `No se puede ${accion} un punto ${ETIQUETA[punto.estado]}.` };
+    return { ok: false, error: `No se puede ${VERBO[accion]} un punto ${ETIQUETA[punto.estado]}.` };
   }
   if (accion === 'completar') {
     if (punto.evidencias < 1) return { ok: false, error: 'Falta al menos una evidencia.' };
@@ -56,6 +68,9 @@ export function aplicarAccion(punto: PuntoParaAccion, accion: AccionPunto, datos
   }
   if (accion === 'descartar' && !(datos.motivo ?? '').trim()) {
     return { ok: false, error: 'Indica por qué se descarta el punto.' };
+  }
+  if (accion === 'pedir_ajuste' && !(datos.motivo ?? '').trim()) {
+    return { ok: false, error: 'Indica qué ajuste pidió el cliente.' };
   }
   return { ok: true, estado: t.hacia };
 }

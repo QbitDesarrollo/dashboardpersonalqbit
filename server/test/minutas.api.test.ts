@@ -499,3 +499,32 @@ describe('evidencia con imagen', () => {
     expect(r).toEqual({ status: 400, body: { error: 'La imagen debe subirse a Tiusdei.' } });
   });
 });
+
+describe('notas del cliente', () => {
+  it('agrega una nota al punto y la muestra con quién la registró', async () => {
+    const itemId = await puntoCon();
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/notas`, even, 'POST', { texto: '  Le gusta, pero quiere ver una versión en azul.  ' });
+    expect(r.status).toBe(201);
+    expect(r.body.items[0].notas).toEqual([
+      expect.objectContaining({ tipo: 'nota', texto: 'Le gusta, pero quiere ver una versión en azul.', autor: { id: even.id, nombre: 'Even' } }),
+    ]);
+  });
+
+  it('rechaza una nota vacía', async () => {
+    const itemId = await puntoCon();
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/notas`, even, 'POST', { texto: '   ' });
+    expect(r.status).toBe(400);
+  });
+});
+
+describe('pedir ajuste', () => {
+  it('devuelve el punto a en curso y guarda el pedido como nota de ajuste', async () => {
+    const itemId = await puntoCon();
+    await adjuntarEnlace(itemId);
+    await llamar(`${api.url}/minuta-items/${itemId}/accion`, even, 'POST', { accion: 'completar', resolucion: 'Video de 12 s en el home.' });
+    const r = await llamar(`${api.url}/minuta-items/${itemId}/accion`, even, 'POST', { accion: 'pedir_ajuste', motivo: 'Que el video no tenga sonido.' });
+    expect(r.status).toBe(200);
+    expect(r.body.items[0]).toMatchObject({ estado: 'en_curso', completado_en: null, completado_por: null });
+    expect(r.body.items[0].notas).toEqual([expect.objectContaining({ tipo: 'ajuste', texto: 'Que el video no tenga sonido.' })]);
+  });
+});

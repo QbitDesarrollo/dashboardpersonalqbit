@@ -142,6 +142,27 @@ describe('progreso', () => {
   });
 });
 
+describe('aplicarAccion · pedir ajuste', () => {
+  it('devuelve a en curso un punto completado cuando el cliente pide un ajuste', () => {
+    const r = aplicarAccion(
+      { estado: 'completado', responsableCliente: false, evidencias: 1 },
+      'pedir_ajuste',
+      { motivo: 'Que el video no tenga sonido.' },
+    );
+    expect(r).toEqual({ ok: true, estado: 'en_curso' });
+  });
+
+  it('exige decir qué ajuste pidió el cliente', () => {
+    const r = aplicarAccion({ estado: 'completado', responsableCliente: false, evidencias: 1 }, 'pedir_ajuste', { motivo: ' ' });
+    expect(r).toEqual({ ok: false, error: 'Indica qué ajuste pidió el cliente.' });
+  });
+
+  it('rechaza pedir ajuste de un punto que no está completado', () => {
+    const r = aplicarAccion({ estado: 'en_curso', responsableCliente: false, evidencias: 0 }, 'pedir_ajuste', { motivo: 'Otro color.' });
+    expect(r).toEqual({ ok: false, error: 'No se puede pedir un ajuste de un punto en curso.' });
+  });
+});
+
 describe('aplicarAccion · acción desconocida', () => {
   it('devuelve un error en vez de fallar', () => {
     const r = aplicarAccion(

@@ -30,7 +30,7 @@ export async function levantarAppEn(base: string, ...routers: express.Router[]):
 }
 
 const TABLAS_DE_PRUEBA = [
-  'minuta_item_evidencias', 'minuta_items', 'minuta_miembros', 'minutas',
+  'minuta_item_notas', 'minuta_item_evidencias', 'minuta_items', 'minuta_miembros', 'minutas',
   'tasks', 'projects', 'brands', 'user_roles', 'profiles', 'users',
 ];
 let conexionLimpieza: mysql.Connection | null = null;
