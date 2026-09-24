@@ -62,7 +62,7 @@ export function GenerarConIa({ abierto, onOpenChange, fecha, estado, onBorrador 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-primary" />Arma la minuta con IA</DialogTitle>
           <DialogDescription>
-            Pega la transcripción, el correo del cliente o ambos. La IA te propone el título, el resumen y los puntos, y tú revisas todo antes de guardar.
+            Pega la transcripción, las notas del cliente o ambos. La IA te propone el título, el resumen y los puntos, y tú revisas todo antes de guardar.
           </DialogDescription>
         </DialogHeader>
 
@@ -97,7 +97,7 @@ export function GenerarConIa({ abierto, onOpenChange, fecha, estado, onBorrador 
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="ia-notas">Correo o notas del cliente (opcional)</Label>
+          <Label htmlFor="ia-notas">Notas del cliente (opcional)</Label>
           <Textarea
             id="ia-notas"
             rows={5}

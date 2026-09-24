@@ -65,7 +65,7 @@ describe('EditorPuntos', () => {
     render(<Harness inicial={[
       { clave: 'a', titulo: 'Agregar incidencias', descripcion: '', responsable: '', fecha: '', cita: 'Agregar incidencias', citaFuente: 'cliente' },
     ]} />);
-    expect(screen.getByText(/^Según lo que envió el cliente:/)).toBeInTheDocument();
+    expect(screen.getByText(/^Según las notas del cliente:/)).toBeInTheDocument();
     expect(screen.queryByText(/^Dicho en la reunión:/)).not.toBeInTheDocument();
   });
 });

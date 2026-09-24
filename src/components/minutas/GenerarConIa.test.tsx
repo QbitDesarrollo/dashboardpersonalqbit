@@ -36,7 +36,7 @@ describe('GenerarConIa', () => {
 
   it('genera solo con lo que mandó el cliente y las indicaciones del equipo', async () => {
     const { onBorrador } = montar();
-    fireEvent.change(screen.getByLabelText('Correo o notas del cliente (opcional)'), { target: { value: 'Even,\n- Agregar incidencias\nGracias' } });
+    fireEvent.change(screen.getByLabelText('Notas del cliente (opcional)'), { target: { value: 'Even,\n- Agregar incidencias\nGracias' } });
     fireEvent.change(screen.getByLabelText('¿Algo que la IA deba tener en cuenta? (opcional)'), { target: { value: ' Solo lo del portal ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Crear borrador' }));
     await waitFor(() => expect(onBorrador).toHaveBeenCalledWith(BORRADOR));

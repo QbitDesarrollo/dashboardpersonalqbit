@@ -62,7 +62,7 @@ export function EditorPuntos({ puntos, onChange, personas }: Props) {
             />
             {p.cita && (
               <p className="border-l-2 border-primary/40 pl-2 text-xs text-muted-foreground">
-                <span className="font-medium">{p.citaFuente === 'cliente' ? 'Según lo que envió el cliente:' : 'Dicho en la reunión:'}</span> <span className="italic">«{p.cita}»</span>
+                <span className="font-medium">{p.citaFuente === 'cliente' ? 'Según las notas del cliente:' : 'Dicho en la reunión:'}</span> <span className="italic">«{p.cita}»</span>
               </p>
             )}
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_170px]">
