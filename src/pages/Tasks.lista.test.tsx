@@ -78,9 +78,9 @@ afterEach(async () => {
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 });
 
-function renderTasks() {
-  render(
-    <MemoryRouter initialEntries={['/tareas']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+function renderTasks(ruta = '/tareas') {
+  return render(
+    <MemoryRouter initialEntries={[ruta]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Tasks />
     </MemoryRouter>,
   );
@@ -221,6 +221,23 @@ describe('Tasks · fila de tarea (caracterización)', () => {
 });
 
 describe('Tasks · cuánto se redibuja', () => {
+  it('buscar no recarga la pantalla: el buscador conserva el foco y la tabla sigue a la vista', async () => {
+    renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    let soltar: (v: unknown) => void = () => {};
+    m.getTasks.mockImplementation(() => new Promise((r) => { soltar = r; }));
+    const buscador = screen.getByPlaceholderText('Buscar tareas...');
+    buscador.focus();
+    fireEvent.change(buscador, { target: { value: 'reel' } });
+    await waitFor(() => expect(m.getTasks).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'reel' })));
+
+    expect(document.activeElement).toBe(buscador);
+    expect(screen.getByText('Carrusel de lanzamiento')).toBeInTheDocument();
+    await act(async () => { soltar({ tasks: [REEL], total: 1 }); });
+    expect(document.activeElement).toBe(screen.getByPlaceholderText('Buscar tareas...'));
+    expect(screen.queryByText('Carrusel de lanzamiento')).not.toBeInTheDocument();
+  });
+
   it('escribir en el buscador no vuelve a dibujar las filas', async () => {
     renderTasks();
     await screen.findByText('Carrusel de lanzamiento');
@@ -242,5 +259,73 @@ describe('Tasks · cuánto se redibuja', () => {
 
     expect(dibujosDeTimer.t2).toBe(antes.t2);
     expect(dibujosDeTimer.t1).toBeGreaterThan(antes.t1);
+  });
+});
+
+describe('Tasks · recuerda los filtros', () => {
+  const primeraCarga = () => m.getTasks.mock.calls[0][0];
+
+  it('al volver a entrar abre con los filtros que la persona dejó puestos', async () => {
+    const { unmount } = renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    await elegirEnFiltro(filtro('Marca:'), 'Dinatek');
+    await elegirEnFiltro(filtro('Resp:'), 'Even');
+    await act(async () => {});
+    unmount();
+    m.getTasks.mockClear();
+
+    renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    expect(primeraCarga()).toMatchObject({ brand_id: 'b1', responsable_user_id: 'u1' });
+    expect(filtro('Marca:')).toHaveTextContent('Dinatek');
+  });
+
+  it('también recuerda el proyecto elegido dentro de la marca', async () => {
+    m.getProjects.mockResolvedValue([{ id: 'p1', nombre: 'Portal' }]);
+    const { unmount } = renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    await elegirEnFiltro(filtro('Marca:'), 'Dinatek');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Proyecto' })).toBeEnabled());
+    await elegirEnFiltro(screen.getByRole('combobox', { name: 'Proyecto' }), 'Portal');
+    await act(async () => {});
+    unmount();
+    m.getTasks.mockClear();
+
+    renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    expect(primeraCarga()).toMatchObject({ brand_id: 'b1', project_id: 'p1' });
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(m.getTasks).toHaveBeenLastCalledWith(expect.objectContaining({ brand_id: 'b1', project_id: 'p1' }));
+  });
+
+  it('un enlace con ?responsable manda sobre lo recordado', async () => {
+    localStorage.setItem('tareas_filtros:u1', JSON.stringify({ responsable: 'u9', brand: 'b1' }));
+    renderTasks('/tareas?responsable=u2');
+    await screen.findByText('Carrusel de lanzamiento');
+    expect(primeraCarga()).toMatchObject({ responsable_user_id: 'u2', brand_id: 'b1' });
+  });
+
+  it('con filtros recordados no aplica el filtro guardado como predeterminado', async () => {
+    localStorage.setItem('tareas_filtros:u1', JSON.stringify({ brand: 'b1' }));
+    m.getSavedFilters.mockResolvedValue([{ id: 'f1', name: 'Pronaca', is_default: 1, filter_config: { brand_id: 'b2' } }]);
+    renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(m.getTasks).not.toHaveBeenCalledWith(expect.objectContaining({ brand_id: 'b2' }));
+    expect(m.getTasks).toHaveBeenLastCalledWith(expect.objectContaining({ brand_id: 'b1' }));
+  });
+
+  it('sin filtros recordados sí aplica el filtro predeterminado, como hasta hoy', async () => {
+    m.getSavedFilters.mockResolvedValue([{ id: 'f1', name: 'Pronaca', is_default: 1, filter_config: { brand_id: 'b2' } }]);
+    renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    await waitFor(() => expect(m.getTasks).toHaveBeenLastCalledWith(expect.objectContaining({ brand_id: 'b2' })));
+  });
+
+  it('si la marca o la mesa recordada ya no existe, vuelve a "todas"', async () => {
+    localStorage.setItem('tareas_filtros:u1', JSON.stringify({ brand: 'b-desactivada', desk: 'd-cerrada', status: 'backlog' }));
+    renderTasks();
+    await screen.findByText('Carrusel de lanzamiento');
+    await waitFor(() => expect(m.getTasks).toHaveBeenLastCalledWith(expect.objectContaining({ brand_id: 'all', desk_id: undefined, estado: 'backlog' })));
   });
 });

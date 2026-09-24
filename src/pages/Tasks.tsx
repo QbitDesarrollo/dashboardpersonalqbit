@@ -104,6 +104,7 @@ import { HandoffDialog } from '@/components/tasks/HandoffDialog';
 import type { Brand, ColKey, Desk, Profile, Task } from '@/components/tasks/lista/tipos';
 import { FilaTarea, type AccionesFila } from '@/components/tasks/lista/FilaTarea';
 import { useAccionesEstables } from '@/hooks/useAccionesEstables';
+import { guardarFiltros, leerFiltros, SIN_FILTROS } from '@/lib/filtrosTareas';
 
 export default function Tasks() {
   const [searchParams] = useSearchParams();
@@ -119,12 +120,15 @@ export default function Tasks() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterBrand, setFilterBrand] = useState<string>('all');
-  const [filterProject, setFilterProject] = useState<string>('all');
-  const [filterDesk, setFilterDesk] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterPriority, setFilterPriority] = useState<string>('all');
-  const [filterResponsable, setFilterResponsable] = useState<string>(() => searchParams.get('responsable') || 'all');
+  // Filters this person left on last time (localStorage). A ?responsable= link wins over them.
+  const [recordados] = useState(() => leerFiltros(profile?.id));
+  const inicial = recordados ?? SIN_FILTROS;
+  const [filterBrand, setFilterBrand] = useState<string>(inicial.brand);
+  const [filterProject, setFilterProject] = useState<string>(inicial.project);
+  const [filterDesk, setFilterDesk] = useState<string>(inicial.desk);
+  const [filterStatus, setFilterStatus] = useState<string>(inicial.status);
+  const [filterPriority, setFilterPriority] = useState<string>(inicial.priority);
+  const [filterResponsable, setFilterResponsable] = useState<string>(() => searchParams.get('responsable') || inicial.responsable);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
@@ -378,9 +382,22 @@ export default function Tasks() {
     setPage(0);
   }, [filterResponsable, filterBrand, filterProject, filterDesk, filterStatus, filterPriority, debouncedSearch, pinnedDeskId, pinnedBrandId]);
 
-  // Projects belong to a brand: changing the brand resets the project filter.
+  // Projects belong to a brand: changing the brand resets the project filter
+  // (not on the first render, which may bring a remembered project).
   const marcaFiltrada = filterBrand !== 'all' ? filterBrand : (pinnedBrandId || 'all');
-  useEffect(() => { setFilterProject('all'); }, [marcaFiltrada]);
+  const marcaAnterior = useRef(marcaFiltrada);
+  useEffect(() => {
+    if (marcaAnterior.current === marcaFiltrada) return;
+    marcaAnterior.current = marcaFiltrada;
+    setFilterProject('all');
+  }, [marcaFiltrada]);
+
+  useEffect(() => {
+    guardarFiltros(profile?.id, {
+      brand: filterBrand, project: filterProject, desk: filterDesk,
+      status: filterStatus, priority: filterPriority, responsable: filterResponsable,
+    });
+  }, [profile?.id, filterBrand, filterProject, filterDesk, filterStatus, filterPriority, filterResponsable]);
 
   useEffect(() => {
     const r = searchParams.get('responsable');
@@ -509,7 +526,8 @@ export default function Tasks() {
 
   const appliedDefaultRef = useRef(false);
   useEffect(() => {
-    if (appliedDefaultRef.current || savedFilters.length === 0) return;
+    // Remembered filters are what the person chose last; the default saved filter only applies without them.
+    if (appliedDefaultRef.current || recordados || savedFilters.length === 0) return;
     const def = savedFilters.find((f) => (f as { is_default?: number }).is_default);
     if (!def?.filter_config || typeof def.filter_config !== 'object') return;
     appliedDefaultRef.current = true;
@@ -573,6 +591,14 @@ export default function Tasks() {
         toast.error('Error al cargar datos');
       });
   }, []);
+
+  // A remembered brand or desk that is no longer available would leave the list empty.
+  useEffect(() => {
+    if (brands.length > 0 && filterBrand !== 'all' && !brands.some((b) => b.id === filterBrand)) setFilterBrand('all');
+  }, [brands]);
+  useEffect(() => {
+    if (desks.length > 0 && filterDesk !== 'all' && !desks.some((d) => d.id === filterDesk)) setFilterDesk('all');
+  }, [desks]);
 
   // Only the latest request may update the list: a slow answer for an older filter is discarded.
   const ultimoPedido = useRef(0);
