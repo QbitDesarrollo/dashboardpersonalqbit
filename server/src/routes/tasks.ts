@@ -121,6 +121,7 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
     const statusFilter = req.query.estado as string | undefined;
     const priorityFilter = req.query.prioridad as string | undefined;
     const searchFilter = req.query.search as string | undefined;
+    const projectFilter = req.query.project_id as string | undefined;
 
     const role = await getUserRole(req.userId!);
     const baseFrom = `FROM tasks t
@@ -138,7 +139,15 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id) AS subtask_count,
        (SELECT COUNT(*) FROM tasks st WHERE st.parent_task_id = t.id AND (st.check_done = 1 OR st.estado IN ('entregado','aprobado'))) AS subtask_done_count
        ${baseFrom}`;
-    const orderBy = ' ORDER BY t.created_at DESC';
+    // orden=entrega (Tasks page): open tasks first, soonest due date first and undated last;
+    // then closed ones, most recent first. Without it, newest created first as always.
+    const orderBy = req.query.orden === 'entrega'
+      ? ` ORDER BY (t.estado IN ('entregado','aprobado')) ASC,
+          CASE WHEN t.estado IN ('entregado','aprobado') THEN NULL ELSE (t.fecha_entrega IS NULL) END ASC,
+          CASE WHEN t.estado IN ('entregado','aprobado') THEN NULL ELSE t.fecha_entrega END ASC,
+          CASE WHEN t.estado IN ('entregado','aprobado') THEN t.fecha_entrega END DESC,
+          t.created_at DESC`
+      : ' ORDER BY t.created_at DESC';
 
     let countSql: string;
     let listSql: string;
@@ -182,6 +191,10 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
     if (priorityFilter) {
       extraConditions += ' AND t.prioridad = ?';
       extraParams.push(priorityFilter);
+    }
+    if (projectFilter) {
+      extraConditions += ' AND t.project_id = ?';
+      extraParams.push(projectFilter);
     }
     if (searchFilter) {
       extraConditions += ' AND t.titulo_tarea LIKE ?';
