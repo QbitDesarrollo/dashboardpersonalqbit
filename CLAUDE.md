@@ -13,7 +13,7 @@
 ## Stack y estructura
 - **Front**: React + TypeScript + Vite + Tailwind + shadcn/ui (raíz del repo, `src/`). Build a `dist/`.
 - **Back**: `server/` — Express + MySQL (puerto **3003**). Socket.io tiempo real. Integraciones: Google Drive, Google Calendar, Gemini AI, WhatsApp (Baileys).
-- **MCP server**: `mcp-server/` — expone `list_brands`, `list_desks`, `list_assignees`, `get_enums`, `create_task`, `create_tasks` (auth por `api_tokens`).
+- **MCP server**: `mcp-server/` — expone `list_brands`, `list_desks`, `list_assignees`, `list_departments`, `get_enums`, `create_task`, `create_tasks` (auth por `api_tokens`).
 - **DB**: MySQL `tiusdei` — credenciales en `server/.env` (`DATABASE_URL`). Tablas clave: `brands`, `desks`, `tasks`, `users`, `sprints`, `time_entries`, `approvals`, `deliverable_types` (catálogo de tipos de entregable, sin precios), `deliverables` (por task), `incidencias`, `wa_*`, `gemini_*`.
 - **PM2**: `tiusdei-api` y `tiusdei-mcp`. Dominio: **tiusdei.qbit.ec** (nginx). Mapa de puertos del server: `/var/www/PUERTOS-EN-USO.md`.
 - Este servidor (QBIA, 24.144.84.250) aloja ~20 apps más de Qbit en `/var/www` — no tocar nada fuera de `/var/www/tiusdei` sin pedido explícito.

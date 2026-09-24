@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Servidor MCP remoto de Tiusdei — consumido por la skill speckit-to-tiusdei.",
+  "description": "Servidor MCP remoto de Tiusdei.",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
