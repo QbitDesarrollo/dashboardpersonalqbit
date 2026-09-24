@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -24,7 +23,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
@@ -78,7 +76,6 @@ import {
   Link2,
   Star,
   SlidersHorizontal,
-  FolderOpen,
   Repeat,
   Clock,
   Filter,
@@ -91,23 +88,18 @@ import { Link } from 'react-router-dom';
 
 import { TaskTimer } from '@/components/tasks/TaskTimer';
 import { TaskFiles } from '@/components/tasks/TaskFiles';
-import { FileUploader, UploadedFile } from '@/components/tasks/FileUploader';
-import { DriveBrowser } from '@/components/drive/DriveBrowser';
-import type { DriveFile } from '@/lib/apiClient';
 import { DeliverableProgress } from '@/components/tasks/DeliverableProgress';
 import { SubtaskList } from '@/components/tasks/SubtaskList';
 import { TaskHistorial } from '@/components/tasks/TaskHistorial';
-import { RescheduleDialog, MotivoReschedule } from '@/components/tasks/RescheduleDialog';
 import { ResponsableMetrics } from '@/components/tasks/ResponsableMetrics';
 import { TodayMeetings } from '@/components/TodayMeetings';
 import { CommentsPanel } from '@/components/tasks/CommentsPanel';
 import { BulkActions } from '@/components/tasks/BulkActions';
 import { formatTimeDisplay } from '@/hooks/useTaskTimer';
-import { sendTaskNotification } from '@/lib/api';
-import { RichTextEditor, RichTextViewer } from '@/components/RichTextEditor';
-import { CustomFieldsForm } from '@/components/tasks/CustomFieldsForm';
-import { DepartmentSelect, DepartmentBadge, useDepartments } from '@/components/tasks/DepartmentSelect';
-import { ProjectSelect } from '@/components/tasks/ProjectSelect';
+import { RichTextViewer } from '@/components/RichTextEditor';
+import { DepartmentBadge, useDepartments } from '@/components/tasks/DepartmentSelect';
+import { TaskFormDialog } from '@/components/tasks/form/TaskFormDialog';
+import type { TareaFormValues } from '@/lib/tareaForm';
 import { HandoffDialog } from '@/components/tasks/HandoffDialog';
 
 interface Task {
@@ -201,10 +193,6 @@ export default function Tasks() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [desks, setDesks] = useState<Desk[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
-  const [taskTypes, setTaskTypes] = useState<{ id: string; nombre: string; activo?: boolean }[]>([]);
-  const [deliverableTypes, setDeliverableTypes] = useState<{ id: string; nombre: string; activo?: boolean; minutos_estimados?: number | null }[]>([]);
-  const [deskMembers, setDeskMembers] = useState<Profile[]>([]);
-  const [deskBrandsForForm, setDeskBrandsForForm] = useState<Brand[] | null>(null);
   const [filterDeskMembers, setFilterDeskMembers] = useState<Profile[]>([]);
   const [filterDeskBrands, setFilterDeskBrands] = useState<Brand[]>([]);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -220,12 +208,8 @@ export default function Tasks() {
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskReads, setTaskReads] = useState<{ user_id: string; read_at: string; nombre: string; avatar_url: string | null }[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [pendingReschedule, setPendingReschedule] = useState<null | { taskData: any; oldFecha: string | null; newFecha: string | null }>(null);
-  const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([]);
-  const [pendingDriveFiles, setPendingDriveFiles] = useState<DriveFile[]>([]);
-  const [customFieldValues, setCustomFieldValues] = useState<Record<string, unknown>>({});
-  const [showDrivePicker, setShowDrivePicker] = useState(false);
+  const [tareaEditando, setTareaEditando] = useState<Task | null>(null);
+  const [prellenado, setPrellenado] = useState<Partial<TareaFormValues> | undefined>(undefined);
   const [page, setPage] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
   const [savedFilters, setSavedFilters] = useState<{ id: string; name: string; filter_config: Record<string, unknown> }[]>([]);
@@ -465,32 +449,6 @@ export default function Tasks() {
   const canDeleteTasks =
     (siteSettings.can_delete_tasks_roles || 'admin,ejecutivo').split(',').map((r) => r.trim()).includes(profile?.rol || '') ?? false;
 
-  const [formData, setFormData] = useState({
-    titulo_tarea: '',
-    detalle: '',
-    fecha_cliente: '',
-    brand_id: '',
-    project_id: '',
-    desk_id: '',
-    responsable_user_id: '',
-    responsable_ids: [] as string[],
-    departamento: '',
-    department_id: '' as string,
-    prioridad: 'media' as 'alta' | 'media' | 'baja',
-    estado: 'backlog' as Task['estado'],
-    fecha_inicio: '',
-    fecha_entrega: '',
-    cantidad_entregables: 1,
-    enlaces: '',
-    task_type_id: '',
-    tipo_entregable_id: '',
-    entregables: [{ tipo_entregable_id: '', cantidad: 1 }] as { tipo_entregable_id: string; cantidad: number }[],
-    estimated_hours: '' as string,
-    recurrence_type: 'none' as string,
-    recurrence_interval: 7,
-    recurrence_end_date: '',
-  });
-
   useEffect(() => {
     fetchData();
   }, [page, filterResponsable, filterBrand, filterDesk, filterStatus, filterPriority, debouncedSearch, pinnedDeskId, pinnedBrandId]);
@@ -678,61 +636,10 @@ export default function Tasks() {
     }
   };
 
-  // Cuando se selecciona una mesa, cargar el equipo y marcas de esa mesa
-  const isEditingRef = useRef(false);
-  useEffect(() => {
-    if (formData.desk_id) {
-      api.getProfiles(formData.desk_id)
-        .then((data) => setDeskMembers(Array.isArray(data) ? data : []))
-        .catch(() => setDeskMembers([]));
-      api.getDeskBrands(formData.desk_id)
-        .then((data) => {
-          const list = Array.isArray(data) ? data : [];
-          if (list.length > 0) {
-            setDeskBrandsForForm(list);
-            // Clear brand if not in desk brands
-            setFormData((prev) => {
-              if (prev.brand_id && !list.some((b: Brand) => b.id === prev.brand_id)) {
-                return { ...prev, brand_id: '' };
-              }
-              return prev;
-            });
-          } else {
-            setDeskBrandsForForm(null);
-          }
-        })
-        .catch(() => setDeskBrandsForForm(null));
-    } else {
-      setDeskMembers([]);
-      setDeskBrandsForForm(null);
-    }
-    if (isEditingRef.current) {
-      isEditingRef.current = false;
-    } else {
-      setFormData((prev) => ({ ...prev, responsable_user_id: '', responsable_ids: [] }));
-    }
-  }, [formData.desk_id]);
-
-  // Horas estimadas automáticas (Steven): suma de cantidad × tiempo estándar de cada tipo
-  // de entregable. Se recalcula mientras nadie escriba las horas a mano.
-  const [estimadoManual, setEstimadoManual] = useState(false);
-  const estimadoAuto = React.useMemo(() => {
-    const min = formData.entregables.reduce((acc, e) => {
-      const dt = deliverableTypes.find((d) => d.id === e.tipo_entregable_id);
-      return acc + (dt?.minutos_estimados ? Number(dt.minutos_estimados) * (e.cantidad || 1) : 0);
-    }, 0);
-    return min > 0 ? Math.round((min / 60) * 4) / 4 : null;
-  }, [formData.entregables, deliverableTypes]);
-  useEffect(() => {
-    if (estimadoManual || estimadoAuto == null) return;
-    const v = String(estimadoAuto);
-    setFormData((prev) => (prev.estimated_hours === v ? prev : { ...prev, estimated_hours: v }));
-  }, [estimadoAuto, estimadoManual]);
-
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [tasksRes, brandsData, desksData, usersData, taskTypesData, deliverableTypesData] = await Promise.all([
+      const [tasksRes, brandsData, desksData, usersData] = await Promise.all([
         api.getTasks({
           limit: pageSize,
           offset: page * pageSize,
@@ -746,16 +653,12 @@ export default function Tasks() {
         api.getBrands(),
         api.getDesks(),
         api.getProfiles(),
-        api.getTaskTypes(),
-        api.getDeliverableTypes(),
       ]);
       setTasks((tasksRes.tasks || []) as Task[]);
       setTotalTasks(tasksRes.total ?? 0);
       if (Array.isArray(brandsData)) setBrands(brandsData.filter((b: { activo?: unknown }) => b.activo !== 0 && b.activo !== false));
       if (Array.isArray(desksData)) setDesks(desksData.filter((d: { activo?: unknown }) => d.activo !== 0 && d.activo !== false));
       if (Array.isArray(usersData)) setUsers(usersData);
-      if (Array.isArray(taskTypesData)) setTaskTypes(taskTypesData.filter((t: { activo?: unknown }) => t.activo !== 0 && t.activo !== false));
-      if (Array.isArray(deliverableTypesData)) setDeliverableTypes(deliverableTypesData.filter((t: { activo?: unknown }) => t.activo !== 0 && t.activo !== false));
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Error al cargar datos');
@@ -765,252 +668,21 @@ export default function Tasks() {
     }
   };
 
-  /**
-   * Persiste la tarea (PATCH si editamos, POST si es nueva). Se llama desde
-   * handleSubmit y también desde el RescheduleDialog (cuando el motivo del
-   * reagendamiento ya está incluido en taskData).
-   */
-  const persistTask = async (taskData: any) => {
-    setSaving(true);
-    try {
-      if (selectedTask) {
-        const result: any = await api.patchTask(selectedTask.id, taskData);
-        if (result?.error) throw new Error(result.error);
-        // Save custom field values
-        const cfEntries = Object.entries(customFieldValues).filter(([, v]) => v !== '' && v != null);
-        if (cfEntries.length > 0) {
-          await api.saveTaskCustomFields(selectedTask.id, cfEntries.map(([field_id, value]) => ({ field_id, value }))).catch(() => {});
-        }
-        toast.success('Tarea actualizada');
-        setDialogOpen(false);
-        resetForm();
-      } else {
-        const insertedTask: any = await api.createTask(taskData);
-        if (insertedTask?.error) throw new Error(insertedTask.error);
-
-        if (pendingFiles.length > 0 && insertedTask?.id) {
-          try {
-            await api.assignFilesToTask(pendingFiles.map(f => f.id), insertedTask.id);
-          } catch { /* silent */ }
-          setPendingFiles([]);
-        }
-
-        // Attach pending Drive files
-        if (pendingDriveFiles.length > 0 && insertedTask?.id) {
-          for (const df of pendingDriveFiles) {
-            try {
-              await api.attachDriveFile(insertedTask.id, df);
-            } catch { /* silent */ }
-          }
-          setPendingDriveFiles([]);
-        }
-
-        // Save custom field values
-        if (insertedTask?.id) {
-          const cfEntries = Object.entries(customFieldValues).filter(([, v]) => v !== '' && v != null);
-          if (cfEntries.length > 0) {
-            await api.saveTaskCustomFields(insertedTask.id, cfEntries.map(([field_id, value]) => ({ field_id, value }))).catch(() => {});
-          }
-        }
-
-        toast.success('Tarea creada');
-        // Recordar seleccion para la proxima "Nueva Tarea"
-        try {
-          localStorage.setItem('nueva_tarea_defaults', JSON.stringify({
-            brand_id: formData.brand_id, desk_id: formData.desk_id,
-            departamento: formData.departamento, department_id: formData.department_id,
-            project_id: formData.project_id, task_type_id: formData.task_type_id,
-            prioridad: formData.prioridad,
-          }));
-        } catch {}
-
-        if (formData.responsable_user_id) {
-          const assignedUser = users.find(u => u.id === formData.responsable_user_id);
-          const brandName = brands.find(b => b.id === formData.brand_id)?.nombre || 'Sin marca';
-
-          if (assignedUser) {
-            const profileEmail = (assignedUser as any).email;
-            if (profileEmail) {
-              try {
-                await sendTaskNotification({
-                  taskId: insertedTask.id,
-                  taskTitle: formData.titulo_tarea,
-                  brandName,
-                  fechaEntrega: formData.fecha_entrega,
-                  prioridad: formData.prioridad,
-                  recipientEmail: profileEmail,
-                  recipientName: assignedUser.nombre,
-                  detalle: formData.detalle || undefined,
-                  fechaInicio: formData.fecha_inicio || undefined,
-                  archivosAdjuntos: formData.enlaces ? formData.enlaces.split('\n').filter(Boolean) : undefined,
-                });
-                toast.success('Notificación enviada al responsable');
-              } catch (emailError) {
-                console.error('Error sending email:', emailError);
-                toast.info('Tarea creada, pero no se pudo enviar la notificación por email');
-              }
-            }
-          }
-        }
-
-        // Close dialog and reset form after creation
-        setDialogOpen(false);
-        resetForm();
-        // Si la tarea nació desde un punto de minuta: vincularla y volver a la minuta.
-        if (insertedTask?.id) await tareaDesdeMinuta.alCrearTarea(insertedTask.id);
-      }
-
-      fetchData();
-    } catch (error: any) {
-      toast.error('Error al guardar', { description: error.message });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /**
-   * Arma el payload desde el form y decide si necesita motivo de reagendamiento.
-   * Si cambia la fecha de entrega en una tarea existente, abre el RescheduleDialog
-   * (con el comentario opcional). Si no, persiste directo.
-   */
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const validEntregables = formData.entregables.filter(e => e.tipo_entregable_id);
-    // Obligatorio: al menos un tipo de entregable con su cantidad (pedido de Steven 10-jul)
-    if (validEntregables.length === 0) {
-      toast.error('Indica el tipo de entregable', { description: 'El tipo y el número de entregables son obligatorios.' });
-      return;
-    }
-    if (validEntregables.some(e => !e.cantidad || e.cantidad < 1)) {
-      toast.error('Indica el número de entregables', { description: 'Cada tipo de entregable necesita su cantidad.' });
-      return;
-    }
-    const taskData: any = {
-      titulo_tarea: formData.titulo_tarea,
-      detalle: formData.detalle || null,
-      brand_id: formData.brand_id,
-      desk_id: formData.desk_id || null,
-      responsable_user_id: formData.responsable_ids[0] || formData.responsable_user_id || null,
-      responsable_ids: formData.responsable_ids.length > 0 ? formData.responsable_ids : (formData.responsable_user_id ? [formData.responsable_user_id] : []),
-      departamento: formData.departamento || null,
-      department_id: formData.department_id || null,
-      project_id: formData.project_id || null,
-      prioridad: formData.prioridad,
-      estado: formData.estado,
-      fecha_inicio: formData.fecha_inicio || null,
-      fecha_entrega: formData.fecha_entrega,
-      ...(selectedTask?.client_board_id ? { fecha_cliente: formData.fecha_cliente || null } : {}),
-      cantidad_entregables: validEntregables.length > 0 ? validEntregables.reduce((sum, e) => sum + e.cantidad, 0) : formData.cantidad_entregables,
-      enlaces: formData.enlaces ? formData.enlaces.split('\n').filter(Boolean) : null,
-      task_type_id: formData.task_type_id || null,
-      tipo_entregable_id: validEntregables[0]?.tipo_entregable_id || formData.tipo_entregable_id || null,
-      entregables: validEntregables.map(e => ({ tipo_entregable_id: e.tipo_entregable_id, cantidad: e.cantidad })),
-      estimated_hours: formData.estimated_hours ? parseFloat(formData.estimated_hours) : null,
-      recurrence_type: formData.recurrence_type || 'none',
-      recurrence_interval: formData.recurrence_type === 'custom' ? formData.recurrence_interval : null,
-      recurrence_end_date: formData.recurrence_end_date || null,
-    };
-
-    // Si estamos editando y cambió la fecha de entrega, pedir el motivo antes de guardar
-    if (selectedTask) {
-      const oldFecha = selectedTask.fecha_entrega ? String(selectedTask.fecha_entrega).slice(0, 10) : null;
-      const newFecha = formData.fecha_entrega ? String(formData.fecha_entrega).slice(0, 10) : null;
-      if (oldFecha !== newFecha) {
-        setPendingReschedule({ taskData, oldFecha, newFecha });
-        return;
-      }
-    }
-
-    await persistTask(taskData);
-  };
-
-  const resetForm = () => {
-    const defaultDeskId = filterDesk !== 'all' ? filterDesk : (pinnedDeskId || '');
-    setEstimadoManual(false);
-    // Recordar los ultimos valores usados al crear (pedido de Jonathan):
-    // marca/mesa/depto/proyecto/tipo/prioridad se pre-llenan de la ultima tarea creada.
-    let saved: any = {};
-    try { saved = JSON.parse(localStorage.getItem('nueva_tarea_defaults') || '{}'); } catch {}
-    setFormData({
-      titulo_tarea: '',
-      detalle: '',
-      brand_id: saved.brand_id || '',
-      project_id: saved.project_id || '',
-      desk_id: defaultDeskId || saved.desk_id || '',
-      responsable_user_id: '',
-      responsable_ids: [],
-      departamento: saved.departamento || '',
-      department_id: saved.department_id || '',
-      prioridad: saved.prioridad || 'media',
-      estado: 'backlog',
-      fecha_inicio: '',
-      fecha_entrega: '',
-      fecha_cliente: '',
-      cantidad_entregables: 1,
-      enlaces: '',
-      task_type_id: saved.task_type_id || '',
-      tipo_entregable_id: '',
-      entregables: [{ tipo_entregable_id: '', cantidad: 1 }],
-      estimated_hours: '',
-      recurrence_type: 'none',
-      recurrence_interval: 7,
-      recurrence_end_date: '',
-    });
-    setSelectedTask(null);
-    setPendingFiles([]);
-    setPendingDriveFiles([]);
-    setShowDrivePicker(false);
-    setCustomFieldValues({});
+  const abrirNuevaTarea = () => {
+    setTareaEditando(null);
+    setPrellenado(undefined);
+    setDialogOpen(true);
   };
 
   // "Nueva tarea" desde un punto de minuta: formulario prellenado por URL.
   const tareaDesdeMinuta = useTareaDesdeMinuta((form) => {
-    resetForm();
-    setFormData((prev) => ({ ...prev, ...form }));
+    setTareaEditando(null);
+    setPrellenado(form);
     setDialogOpen(true);
   });
 
   const openEditDialog = (task: Task) => {
-    setSelectedTask(task);
-    setEstimadoManual(task.estimated_hours != null && Number(task.estimated_hours) > 0);
-    isEditingRef.current = true;
-
-    // Build entregables from multi-type list or fallback to legacy single type
-    const entregables = task.deliverable_types_list && task.deliverable_types_list.length > 0
-      ? task.deliverable_types_list.map(dt => ({
-          tipo_entregable_id: dt.tipo_entregable_id,
-          cantidad: dt.cantidad,
-        }))
-      : task.tipo_entregable_id
-        ? [{ tipo_entregable_id: task.tipo_entregable_id, cantidad: task.cantidad_entregables || 1 }]
-        : [{ tipo_entregable_id: '', cantidad: 1 }];
-
-    setFormData({
-      titulo_tarea: task.titulo_tarea,
-      detalle: task.detalle || '',
-      brand_id: task.brand_id,
-      desk_id: task.desk_id || '',
-      responsable_user_id: task.responsable_user_id || '',
-      responsable_ids: task.responsables?.map(r => r.user_id) || (task.responsable_user_id ? [task.responsable_user_id] : []),
-      departamento: task.departamento || '',
-      department_id: task.department_id || '',
-      project_id: task.project_id || '',
-      prioridad: task.prioridad,
-      estado: task.estado,
-      fecha_inicio: task.fecha_inicio ? task.fecha_inicio.substring(0, 10) : '',
-      fecha_entrega: task.fecha_entrega ? task.fecha_entrega.substring(0, 10) : '',
-      fecha_cliente: task.fecha_cliente ? String(task.fecha_cliente).substring(0, 10) : '',
-      cantidad_entregables: task.cantidad_entregables,
-      enlaces: task.enlaces?.join('\n') || '',
-      task_type_id: task.task_type_id || '',
-      tipo_entregable_id: task.tipo_entregable_id || '',
-      entregables,
-      estimated_hours: task.estimated_hours != null ? String(task.estimated_hours) : '',
-      recurrence_type: task.recurrence_type || 'none',
-      recurrence_interval: task.recurrence_interval || 7,
-      recurrence_end_date: task.recurrence_end_date ? task.recurrence_end_date.substring(0, 10) : '',
-    });
+    setTareaEditando(task);
     setDialogOpen(true);
   };
 
@@ -1531,485 +1203,10 @@ export default function Tasks() {
             </div>
             </div>
             {(isAdmin || isEjecutivo || isEquipo) && (
-          <Dialog open={dialogOpen} onOpenChange={(open) => {
-            setDialogOpen(open);
-            if (!open) { resetForm(); tareaDesdeMinuta.cancelar(); }
-          }}>
-            <DialogTrigger asChild>
-              <Button className="gradient-primary w-full sm:w-auto" onClick={() => resetForm()}>
+              <Button className="gradient-primary w-full sm:w-auto" onClick={abrirNuevaTarea}>
                 <Plus className="h-4 w-4 mr-2" />
                 Nueva Tarea
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-y-auto" aria-describedby="task-form-desc">
-              <DialogHeader>
-                <DialogTitle>
-                  {selectedTask ? 'Editar Tarea' : 'Nueva Tarea'}
-                </DialogTitle>
-                <DialogDescription id="task-form-desc">{selectedTask ? 'Modifica los datos de la tarea.' : 'Crea una nueva tarea con marca, responsable y fechas.'}</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="col-span-1 sm:col-span-2 space-y-2">
-                    <Label htmlFor="titulo">Título <span className="text-destructive font-semibold">*</span></Label>
-                    <Input
-                      id="titulo"
-                      value={formData.titulo_tarea}
-                      onChange={(e) => setFormData({ ...formData, titulo_tarea: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="brand">Marca <span className="text-destructive font-semibold">*</span></Label>
-                    {(() => {
-                      const availableBrands = deskBrandsForForm ? brands.filter(b => deskBrandsForForm.some(db => db.id === b.id)) : brands;
-                      return (
-                        <Select
-                          value={formData.brand_id}
-                          onValueChange={(value) => setFormData({ ...formData, brand_id: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={availableBrands.length ? 'Seleccionar marca' : 'No hay marcas. Crea una en Admin → Marcas'} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableBrands.length === 0 ? (
-                              <div className="px-2 py-3 text-sm text-muted-foreground">
-                                {deskBrandsForForm ? 'Sin marcas asignadas a esta mesa' : 'No hay marcas. Crea una en Admin → Marcas'}
-                              </div>
-                            ) : (
-                              availableBrands.map((brand) => (
-                                <SelectItem key={brand.id} value={brand.id}>
-                                  {brand.nombre}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="desk">Mesa</Label>
-                    <Select
-                      value={formData.desk_id}
-                      onValueChange={(value) => setFormData({ ...formData, desk_id: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={desks.length ? 'Seleccionar mesa' : 'No hay mesas. Crea una en Admin → Mesas'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {desks.length === 0 ? (
-                          <div className="px-2 py-3 text-sm text-muted-foreground">No hay mesas. Crea una en Admin → Mesas</div>
-                        ) : (
-                          desks.map((desk) => (
-                            <SelectItem key={desk.id} value={desk.id}>
-                              {desk.nombre}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Responsables (equipo de la mesa)</Label>
-                    {!formData.desk_id ? (
-                      <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">Selecciona una mesa primero</p>
-                    ) : deskMembers.length === 0 ? (
-                      <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">No hay equipo en esta mesa</p>
-                    ) : (
-                      <div className="border rounded-md p-2 space-y-1 max-h-40 overflow-y-auto">
-                        {deskMembers.map((user) => (
-                          <label key={user.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer text-sm">
-                            <Checkbox
-                              checked={formData.responsable_ids.includes(user.id)}
-                              onCheckedChange={(checked) => {
-                                const ids = checked
-                                  ? [...formData.responsable_ids, user.id]
-                                  : formData.responsable_ids.filter(id => id !== user.id);
-                                // Al elegir al primer responsable, la tarea toma su departamento (Administración > Usuarios)
-                                const primeroResp = deskMembers.find((u) => u.id === ids[0]) as { department_id?: string | null } | undefined;
-                                const depto = checked && ids.length === 1 && primeroResp?.department_id ? primeroResp.department_id : formData.department_id;
-                                setFormData({ ...formData, responsable_ids: ids, responsable_user_id: ids[0] || '', department_id: depto });
-                              }}
-                            />
-                            {user.nombre}
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="departamento">Departamento</Label>
-                    <DepartmentSelect
-                      value={formData.department_id}
-                      onChange={(depId) => setFormData({ ...formData, department_id: depId || '' })}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="project">Proyecto</Label>
-                    <ProjectSelect
-                      brandId={formData.brand_id}
-                      value={formData.project_id}
-                      onChange={(pid) => setFormData({ ...formData, project_id: pid || '' })}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="task_type">Tipo de Tarea</Label>
-                    <Select
-                      value={formData.task_type_id}
-                      onValueChange={(value) => setFormData({ ...formData, task_type_id: value === '__none__' ? '' : value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Sin tipo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Sin tipo</SelectItem>
-                        {taskTypes.map((tt) => (
-                          <SelectItem key={tt.id} value={tt.id}>{tt.nombre}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Tipos de Entregable <span className="text-destructive font-semibold">*</span></Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => setFormData({
-                          ...formData,
-                          entregables: [...formData.entregables, { tipo_entregable_id: '', cantidad: 1 }]
-                        })}
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        Agregar
-                      </Button>
-                    </div>
-                    {formData.entregables.map((ent, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <div className="flex-1">
-                          <Select
-                            value={ent.tipo_entregable_id || '__none__'}
-                            onValueChange={(value) => {
-                              const updated = [...formData.entregables];
-                              updated[idx] = { ...updated[idx], tipo_entregable_id: value === '__none__' ? '' : value };
-                              setFormData({ ...formData, entregables: updated });
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Sin tipo" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">Sin tipo</SelectItem>
-                              {deliverableTypes.map((dt) => (
-                                <SelectItem key={dt.id} value={dt.id}>{dt.nombre}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="w-20">
-                          <Input
-                            type="number"
-                            min={1}
-                            value={ent.cantidad}
-                            onChange={(e) => {
-                              const updated = [...formData.entregables];
-                              updated[idx] = { ...updated[idx], cantidad: parseInt(e.target.value) || 1 };
-                              setFormData({ ...formData, entregables: updated });
-                            }}
-                            placeholder="Cant."
-                          />
-                        </div>
-                        {formData.entregables.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
-                            onClick={() => {
-                              const updated = formData.entregables.filter((_, i) => i !== idx);
-                              setFormData({ ...formData, entregables: updated });
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="prioridad">Prioridad</Label>
-                    <Select
-                      value={formData.prioridad}
-                      onValueChange={(value: 'alta' | 'media' | 'baja') => 
-                        setFormData({ ...formData, prioridad: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="alta">Alta</SelectItem>
-                        <SelectItem value="media">Media</SelectItem>
-                        <SelectItem value="baja">Baja</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="estado">Estado</Label>
-                    <Select
-                      value={formData.estado}
-                      onValueChange={(value: Task['estado']) => 
-                        setFormData({ ...formData, estado: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="backlog">Pendiente</SelectItem>
-                        <SelectItem value="en_proceso">En Proceso</SelectItem>
-                        <SelectItem value="revision_interna">Revisión interna</SelectItem>
-                        <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
-                        <SelectItem value="ajustes">Ajustes</SelectItem>
-                        <SelectItem value="entregado">Entregado</SelectItem>
-                        <SelectItem value="bloqueado">Bloqueado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="fecha_inicio">Fecha Inicio</Label>
-                    <Input
-                      id="fecha_inicio"
-                      type="date"
-                      value={formData.fecha_inicio}
-                      onChange={(e) => setFormData({ ...formData, fecha_inicio: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="fecha_entrega">Fecha Entrega <span className="text-destructive font-semibold">*</span></Label>
-                    <Input
-                      id="fecha_entrega"
-                      type="date"
-                      value={formData.fecha_entrega}
-                      onChange={(e) => setFormData({ ...formData, fecha_entrega: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  {selectedTask?.client_board_id && (
-                    <div className="space-y-2">
-                      <Label htmlFor="fecha_cliente">Fecha Cliente <span className="text-xs text-muted-foreground font-normal">(la que ve en su tablero)</span></Label>
-                      <Input
-                        id="fecha_cliente"
-                        type="date"
-                        value={formData.fecha_cliente}
-                        onChange={(e) => setFormData({ ...formData, fecha_cliente: e.target.value })}
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="estimated_hours">Horas Estimadas</Label>
-                    <Input
-                      id="estimated_hours"
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      placeholder="Ej: 4.5"
-                      value={formData.estimated_hours}
-                      onChange={(e) => { setEstimadoManual(true); setFormData({ ...formData, estimated_hours: e.target.value }); }}
-                    />
-                    {estimadoAuto != null && (
-                      <p className="text-[11px] text-muted-foreground">
-                        {estimadoManual
-                          ? <>Por tipo de entregable serían {estimadoAuto} h. <button type="button" className="underline" onClick={() => setEstimadoManual(false)}>Usar ese cálculo</button></>
-                          : <>Calculado por tipo de entregable ({formData.entregables.filter((e) => e.tipo_entregable_id).map((e) => { const dt = deliverableTypes.find((d) => d.id === e.tipo_entregable_id); return dt?.minutos_estimados ? `${e.cantidad} × ${dt.nombre} (${dt.minutos_estimados} min)` : null; }).filter(Boolean).join(' + ')}). Puedes editarlo.</>}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Recurrencia</Label>
-                    <Select
-                      value={formData.recurrence_type}
-                      onValueChange={(value) => setFormData({ ...formData, recurrence_type: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Ninguna</SelectItem>
-                        <SelectItem value="daily">Diaria</SelectItem>
-                        <SelectItem value="weekly">Semanal</SelectItem>
-                        <SelectItem value="biweekly">Quincenal</SelectItem>
-                        <SelectItem value="monthly">Mensual</SelectItem>
-                        <SelectItem value="custom">Personalizada</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {formData.recurrence_type === 'custom' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="recurrence_interval">Intervalo (días)</Label>
-                      <Input
-                        id="recurrence_interval"
-                        type="number"
-                        min="1"
-                        value={formData.recurrence_interval}
-                        onChange={(e) => setFormData({ ...formData, recurrence_interval: parseInt(e.target.value) || 1 })}
-                      />
-                    </div>
-                  )}
-
-                  {formData.recurrence_type !== 'none' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="recurrence_end_date">Fin Recurrencia (opcional)</Label>
-                      <Input
-                        id="recurrence_end_date"
-                        type="date"
-                        value={formData.recurrence_end_date}
-                        onChange={(e) => setFormData({ ...formData, recurrence_end_date: e.target.value })}
-                      />
-                    </div>
-                  )}
-
-                  <div className="col-span-1 sm:col-span-2 space-y-2">
-                    <Label htmlFor="detalle">Detalle</Label>
-                    <RichTextEditor
-                      content={formData.detalle}
-                      onChange={(html) => setFormData({ ...formData, detalle: html })}
-                      placeholder="Escribe el detalle de la tarea... Usa encabezados, listas, checklists, etc."
-                      minHeight="120px"
-                    />
-                  </div>
-
-                  <div className="col-span-1 sm:col-span-2 space-y-2">
-                    <Label htmlFor="enlaces">Enlaces (uno por línea)</Label>
-                    <Textarea
-                      id="enlaces"
-                      value={formData.enlaces}
-                      onChange={(e) => setFormData({ ...formData, enlaces: e.target.value })}
-                      rows={2}
-                      placeholder="https://..."
-                    />
-                  </div>
-
-                  <div className="col-span-1 sm:col-span-2">
-                    <CustomFieldsForm
-                      taskId={selectedTask?.id}
-                      brandId={formData.brand_id}
-                      values={customFieldValues}
-                      onChange={(fieldId, value) => setCustomFieldValues(prev => ({ ...prev, [fieldId]: value }))}
-                    />
-                  </div>
-
-                  <div className="col-span-1 sm:col-span-2">
-                    {selectedTask ? (
-                      <TaskFiles
-                        taskId={selectedTask.id}
-                        canEdit={canEditTask(selectedTask)}
-                      />
-                    ) : (
-                      <div className="space-y-3">
-                        <FileUploader
-                          taskId={null}
-                          files={pendingFiles}
-                          onFilesChange={setPendingFiles}
-                          canEdit
-                        />
-
-                        {/* Drive files section for new tasks */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
-                              <FolderOpen className="h-4 w-4" />
-                              Google Drive
-                              {pendingDriveFiles.length > 0 && (
-                                <span className="text-xs bg-blue-500/10 text-blue-600 rounded-full px-1.5">{pendingDriveFiles.length}</span>
-                              )}
-                            </h4>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 gap-1 text-xs"
-                              onClick={() => setShowDrivePicker(!showDrivePicker)}
-                            >
-                              <FolderOpen className="h-3 w-3" />
-                              {showDrivePicker ? 'Cerrar' : 'Drive'}
-                            </Button>
-                          </div>
-
-                          {/* Pending drive files list */}
-                          {pendingDriveFiles.length > 0 && (
-                            <div className="space-y-1">
-                              {pendingDriveFiles.map((df) => (
-                                <div key={df.id} className="flex items-center gap-2 p-2 rounded-md bg-blue-50 dark:bg-blue-500/10 group text-sm">
-                                  {df.iconLink && <img src={df.iconLink} alt="" className="h-4 w-4" />}
-                                  <span className="text-xs truncate flex-1">{df.name}</span>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-6 w-6 shrink-0"
-                                    onClick={() => setPendingDriveFiles(prev => prev.filter(f => f.id !== df.id))}
-                                  >
-                                    <X className="h-3.5 w-3.5 text-destructive" />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Inline Drive browser - wrapped to prevent form submission */}
-                          {showDrivePicker && (
-                            <div
-                              className="border rounded-lg overflow-hidden max-h-[300px] overflow-y-auto"
-                              onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); } }}
-                            >
-                              <DriveBrowser
-                                mode="picker"
-                                onSelect={(file) => {
-                                  if (!pendingDriveFiles.find(f => f.id === file.id)) {
-                                    setPendingDriveFiles(prev => [...prev, file]);
-                                  }
-                                }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" disabled={saving}>
-                    {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                    {selectedTask ? 'Guardar Cambios' : 'Crear Tarea'}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
             )}
           </div>
         </div>
@@ -2879,7 +2076,7 @@ export default function Tasks() {
                 {(isAdmin || isEjecutivo || isEquipo) && (
                   <TableRow
                     className="border-border hover:bg-muted/50 cursor-pointer group"
-                    onClick={() => { resetForm(); setDialogOpen(true); }}
+                    onClick={abrirNuevaTarea}
                   >
                     <TableCell colSpan={30} className="py-2 text-muted-foreground text-sm">
                       <div className="flex items-center gap-2 group-hover:text-primary transition-colors">
@@ -3299,22 +2496,18 @@ export default function Tasks() {
         </DialogContent>
       </Dialog>
 
-      {/* Reschedule dialog — pide motivo cuando cambia la fecha de entrega de una tarea existente */}
-      <RescheduleDialog
-        open={!!pendingReschedule}
-        fechaAnterior={pendingReschedule?.oldFecha ?? null}
-        fechaNueva={pendingReschedule?.newFecha ?? null}
-        onConfirm={async (motivo: MotivoReschedule, comentario: string) => {
-          if (!pendingReschedule) return;
-          const merged = {
-            ...pendingReschedule.taskData,
-            motivo_reschedule: motivo,
-            comentario_reschedule: comentario || null,
-          };
-          setPendingReschedule(null);
-          await persistTask(merged);
+      {/* Formulario de tarea (crear / editar) — compartido con Minutas */}
+      <TaskFormDialog
+        open={dialogOpen}
+        onOpenChange={(open) => { setDialogOpen(open); if (!open) tareaDesdeMinuta.cancelar(); }}
+        tarea={tareaEditando}
+        prellenado={prellenado}
+        mesaPorDefecto={filterDesk !== 'all' ? filterDesk : (pinnedDeskId || '')}
+        puedeEditarArchivos={tareaEditando ? canEditTask(tareaEditando) : true}
+        onGuardada={({ id, creada }) => {
+          fetchData();
+          if (creada) tareaDesdeMinuta.alCrearTarea(id);
         }}
-        onCancel={() => setPendingReschedule(null)}
       />
 
       {/* Bulk Actions bar — aparece al seleccionar tareas */}

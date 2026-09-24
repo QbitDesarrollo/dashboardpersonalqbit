@@ -75,13 +75,13 @@ export function RescheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleCancel(); }}>
-      <DialogContent className="max-w-md" aria-describedby="reschedule-desc">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
             ¿Por qué se mueve la fecha?
           </DialogTitle>
-          <DialogDescription id="reschedule-desc">
+          <DialogDescription>
             {fmt(fechaAnterior)} <span className="mx-1">→</span> <strong>{fmt(fechaNueva)}</strong>
           </DialogDescription>
         </DialogHeader>
