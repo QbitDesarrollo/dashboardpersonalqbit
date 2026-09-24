@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { esperarBorrador, pedirBorrador, type BorradorIa, type EstadoIa } from '@/lib/minutasIaApi';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -16,9 +17,14 @@ interface Props {
   onBorrador: (borrador: BorradorIa) => void;
 }
 
-/** Paste (or load) a meeting transcript and get a minuta draft to review before saving. */
+/**
+ * Paste the meeting transcript and/or what the client sent (email, to-do list) and get a minuta draft
+ * to review before saving. Each source goes separately so the AI knows who said what.
+ */
 export function GenerarConIa({ abierto, onOpenChange, fecha, estado, onBorrador }: Props) {
   const [transcripcion, setTranscripcion] = useState('');
+  const [notasCliente, setNotasCliente] = useState('');
+  const [indicaciones, setIndicaciones] = useState('');
   const [generando, setGenerando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const quedan = Math.max(estado.limite - estado.usados, 0);
@@ -37,7 +43,9 @@ export function GenerarConIa({ abierto, onOpenChange, fecha, estado, onBorrador 
     setGenerando(true);
     setError(null);
     try {
-      const { id } = await pedirBorrador({ transcripcion: transcripcion.trim(), fecha });
+      const { id } = await pedirBorrador({
+        transcripcion: transcripcion.trim(), notas_cliente: notasCliente.trim(), indicaciones: indicaciones.trim(), fecha,
+      });
       onBorrador(await esperarBorrador(id));
       toast.success('Borrador listo: revisa los puntos antes de guardar.');
       onOpenChange(false);
@@ -50,11 +58,11 @@ export function GenerarConIa({ abierto, onOpenChange, fecha, estado, onBorrador 
 
   return (
     <Dialog open={abierto} onOpenChange={(v) => { if (!generando) onOpenChange(v); }}>
-      <DialogContent className="max-w-2xl w-[95vw]">
+      <DialogContent className="max-w-2xl w-[95vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-primary" />Generar la minuta con IA</DialogTitle>
           <DialogDescription>
-            Pega la transcripción de la reunión. La IA propone título, resumen y puntos; tú los revisas antes de guardar. La transcripción no se guarda.
+            Pega la transcripción, lo que mandó el cliente, o ambos. La IA propone título, resumen y puntos; tú los revisas antes de guardar. Nada de esto se guarda.
           </DialogDescription>
         </DialogHeader>
 
@@ -78,11 +86,35 @@ export function GenerarConIa({ abierto, onOpenChange, fecha, estado, onBorrador 
           </div>
           <Textarea
             id="ia-transcripcion"
-            rows={12}
+            rows={8}
             className="font-mono text-xs"
             placeholder="Even: Buenas, revisemos el avance del home…"
             value={transcripcion}
             onChange={(e) => setTranscripcion(e.target.value)}
+            disabled={generando}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="ia-notas">Lo que mandó el cliente</Label>
+          <Textarea
+            id="ia-notas"
+            rows={5}
+            placeholder="Pega su correo, su lista de pendientes o su minuta, tal cual."
+            value={notasCliente}
+            onChange={(e) => setNotasCliente(e.target.value)}
+            disabled={generando}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="ia-indicaciones">Indicaciones para la IA</Label>
+          <Input
+            id="ia-indicaciones"
+            maxLength={500}
+            placeholder="Ej.: Solo lo del portal; lo de redes va en otra minuta."
+            value={indicaciones}
+            onChange={(e) => setIndicaciones(e.target.value)}
             disabled={generando}
           />
           <p className="text-xs text-muted-foreground">Te quedan {quedan} de {estado.limite} hoy.</p>
@@ -97,7 +129,7 @@ export function GenerarConIa({ abierto, onOpenChange, fecha, estado, onBorrador 
 
         <DialogFooter>
           <Button variant="outline" disabled={generando} onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button disabled={!transcripcion.trim() || generando || !estado.disponible || quedan === 0} onClick={generar}>
+          <Button disabled={(!transcripcion.trim() && !notasCliente.trim()) || generando || !estado.disponible || quedan === 0} onClick={generar}>
             <Sparkles className="h-4 w-4" />Generar borrador
           </Button>
         </DialogFooter>

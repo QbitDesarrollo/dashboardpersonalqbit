@@ -21,10 +21,11 @@ describe('minutasIaApi', () => {
 
   it('pide el borrador con la transcripción y la fecha', async () => {
     fetchMock.mockReturnValue(respuesta(202, { id: 'job1' }));
-    expect(await pedirBorrador({ transcripcion: 'Hola', fecha: '2026-09-24' })).toEqual({ id: 'job1' });
+    const datos = { transcripcion: 'Hola', notas_cliente: '- Banner', indicaciones: 'Solo web', fecha: '2026-09-24' };
+    expect(await pedirBorrador(datos)).toEqual({ id: 'job1' });
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toMatch(/\/api\/data\/minutas\/ia\/borradores$/);
-    expect(init).toMatchObject({ method: 'POST', body: JSON.stringify({ transcripcion: 'Hola', fecha: '2026-09-24' }) });
+    expect(init).toMatchObject({ method: 'POST', body: JSON.stringify(datos) });
   });
 
   it('espera hasta que el borrador está listo', async () => {

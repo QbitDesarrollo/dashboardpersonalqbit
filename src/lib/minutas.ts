@@ -75,7 +75,7 @@ export function aPuntosNuevos(borrador: { clave?: string; titulo: string; descri
 /** Puntos que propuso la IA, listos para revisarlos en el editor. La cita no se guarda: solo sirve para verificar. */
 export function puntosDesdeIa(
   puntos: PuntoIa[],
-): { clave: string; titulo: string; descripcion: string; responsable: string; fecha: string; cita: string }[] {
+): { clave: string; titulo: string; descripcion: string; responsable: string; fecha: string; cita: string; origen: PuntoIa['origen'] }[] {
   return puntos.map((p) => ({
     clave: crypto.randomUUID(),
     titulo: p.titulo,
@@ -83,6 +83,7 @@ export function puntosDesdeIa(
     responsable: p.responsable_cliente ? 'cliente' : '',
     fecha: p.fecha_compromiso ?? '',
     cita: p.cita,
+    origen: p.origen,
   }));
 }
 

@@ -60,4 +60,12 @@ describe('EditorPuntos', () => {
     expect(screen.getByText('«que el video no suene»')).toBeInTheDocument();
     expect(screen.getAllByText(/^Dicho en la reunión:/)).toHaveLength(1);
   });
+
+  it('si el punto salió de lo que mandó el cliente, la cita lo dice', () => {
+    render(<Harness inicial={[
+      { clave: 'a', titulo: 'Agregar incidencias', descripcion: '', responsable: '', fecha: '', cita: 'Agregar incidencias', origen: 'cliente' },
+    ]} />);
+    expect(screen.getByText(/^Según lo que mandó el cliente:/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Dicho en la reunión:/)).not.toBeInTheDocument();
+  });
 });

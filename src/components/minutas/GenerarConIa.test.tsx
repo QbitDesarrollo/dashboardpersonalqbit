@@ -29,9 +29,20 @@ describe('GenerarConIa', () => {
     fireEvent.change(screen.getByLabelText('Transcripción de la reunión'), { target: { value: '  Even: revisamos el home.  ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
     await waitFor(() => expect(onBorrador).toHaveBeenCalledWith(BORRADOR));
-    expect(ia.pedirBorrador).toHaveBeenCalledWith({ transcripcion: 'Even: revisamos el home.', fecha: '2026-09-24' });
+    expect(ia.pedirBorrador).toHaveBeenCalledWith({ transcripcion: 'Even: revisamos el home.', notas_cliente: '', indicaciones: '', fecha: '2026-09-24' });
     expect(ia.esperarBorrador).toHaveBeenCalledWith('job1');
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('genera solo con lo que mandó el cliente y las indicaciones del equipo', async () => {
+    const { onBorrador } = montar();
+    fireEvent.change(screen.getByLabelText('Lo que mandó el cliente'), { target: { value: 'Even,\n- Agregar incidencias\nGracias' } });
+    fireEvent.change(screen.getByLabelText('Indicaciones para la IA'), { target: { value: ' Solo lo del portal ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
+    await waitFor(() => expect(onBorrador).toHaveBeenCalledWith(BORRADOR));
+    expect(ia.pedirBorrador).toHaveBeenCalledWith({
+      transcripcion: '', notas_cliente: 'Even,\n- Agregar incidencias\nGracias', indicaciones: 'Solo lo del portal', fecha: '2026-09-24',
+    });
   });
 
   it('mientras genera avisa cuánto suele tardar', async () => {

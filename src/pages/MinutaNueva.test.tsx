@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import MinutaNueva from './MinutaNueva';
 import * as minutasApi from '@/lib/minutasApi';
 import * as minutasIa from '@/lib/minutasIaApi';
+import type { BorradorIa } from '@/lib/minutasIaApi';
 
 const navigate = vi.fn();
 vi.mock('react-router-dom', async (orig) => ({ ...(await orig<typeof import('react-router-dom')>()), useNavigate: () => navigate }));
@@ -73,11 +74,11 @@ describe('MinutaNueva', () => {
   });
 
   describe('con IA', () => {
-    const BORRADOR = {
+    const BORRADOR: BorradorIa = {
       titulo: 'Revisión de avance: home', resumen: 'Lanzamiento el 26 de noviembre.',
       puntos: [
-        { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, fecha_compromiso: '2026-10-03', cita: 'que no suene', tareas_sugeridas: [] },
-        { titulo: 'Fichas técnicas', descripcion: '', responsable_cliente: true, fecha_compromiso: null, cita: 'te las mando el lunes', tareas_sugeridas: [] },
+        { titulo: 'Video en el home', descripcion: 'Sin sonido.', responsable_cliente: false, origen: 'reunion', fecha_compromiso: '2026-10-03', cita: 'que no suene', tareas_sugeridas: [] },
+        { titulo: 'Fichas técnicas', descripcion: '', responsable_cliente: true, origen: 'ambos', fecha_compromiso: null, cita: 'te las mando el lunes', tareas_sugeridas: [] },
       ],
     };
     const renderNueva = () => render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><MinutaNueva /></MemoryRouter>);
@@ -97,7 +98,7 @@ describe('MinutaNueva', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Generar borrador' }));
 
       await waitFor(() => expect(screen.getByLabelText('Título')).toHaveValue('Revisión de avance: home'));
-      expect(minutasIa.pedirBorrador).toHaveBeenCalledWith({ transcripcion: 'Even: revisamos el home.', fecha: '2026-09-24' });
+      expect(minutasIa.pedirBorrador).toHaveBeenCalledWith({ transcripcion: 'Even: revisamos el home.', notas_cliente: '', indicaciones: '', fecha: '2026-09-24' });
       expect(screen.getByLabelText('Resumen y acuerdos')).toHaveValue('Lanzamiento el 26 de noviembre.');
       expect(screen.getByLabelText('Título del punto 1')).toHaveValue('Video en el home');
       expect(screen.getByLabelText('Fecha del punto 1')).toHaveValue('2026-10-03');
