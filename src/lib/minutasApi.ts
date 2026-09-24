@@ -20,6 +20,14 @@ export interface TareaVinculada {
   responsable: Persona | null;
 }
 
+export interface Nota {
+  id: string;
+  tipo: 'nota' | 'ajuste';
+  texto: string;
+  created_at: string;
+  autor: Persona | null;
+}
+
 export interface Punto {
   id: string;
   numero: number;
@@ -39,6 +47,7 @@ export interface Punto {
   motivo_descarte: string | null;
   evidencias: Evidencia[];
   tareas: TareaVinculada[];
+  notas: Nota[];
 }
 
 export interface Progreso { total: number; cerrados: number; enCurso: number }
@@ -84,7 +93,7 @@ export interface MinutaNueva {
   items?: PuntoNuevo[];
 }
 
-export type AccionPunto = 'iniciar' | 'completar' | 'aprobar' | 'reabrir' | 'descartar' | 'restaurar';
+export type AccionPunto = 'iniciar' | 'completar' | 'aprobar' | 'reabrir' | 'descartar' | 'restaurar' | 'pedir_ajuste';
 
 /** Llama a la API y lanza un Error con el mensaje del servidor si la respuesta no es OK. */
 async function llamar<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
@@ -158,4 +167,8 @@ export function vincularTarea(itemId: string, taskId: string): Promise<Minuta> {
 
 export function desvincularTarea(itemId: string, taskId: string): Promise<Minuta> {
   return llamar<Minuta>(`/api/data/minuta-items/${itemId}/tareas/${taskId}`, 'DELETE');
+}
+
+export function agregarNota(itemId: string, texto: string): Promise<Minuta> {
+  return llamar<Minuta>(`/api/data/minuta-items/${itemId}/notas`, 'POST', { texto });
 }

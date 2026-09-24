@@ -39,6 +39,7 @@ describe('minutasApi', () => {
     ['quitarEvidencia', ['e1'], 'DELETE', '/minuta-evidencias/e1', undefined],
     ['vincularTarea', ['i1', 't1'], 'POST', '/minuta-items/i1/tareas', { task_id: 't1' }],
     ['desvincularTarea', ['i1', 't1'], 'DELETE', '/minuta-items/i1/tareas/t1', undefined],
+    ['agregarNota', ['i1', 'Quiere una versión en azul.'], 'POST', '/minuta-items/i1/notas', { texto: 'Quiere una versión en azul.' }],
   ] as const)('%s usa el método y la ruta correctos', async (fn, args, method, ruta, body) => {
     fetchMock.mockReturnValue(respuesta(200, { ok: true }));
     await (api as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[fn](...args);

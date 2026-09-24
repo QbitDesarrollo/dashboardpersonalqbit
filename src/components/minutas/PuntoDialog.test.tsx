@@ -25,7 +25,7 @@ const base: Punto = {
   id: 'i1', numero: 2, titulo: 'Video en el home', descripcion: null, responsable: null, responsable_cliente: false,
   fecha_compromiso: null, estado: 'en_curso', visible_cliente: true, resolucion: null, completado_por: null,
   completado_en: null, aprobado_via: null, aprobado_por_nombre: null, aprobado_en: null, motivo_descarte: null,
-  evidencias: [], tareas: [],
+  evidencias: [], tareas: [], notas: [],
 };
 const minutaCon = (p: Partial<Punto>) => ({ id: 'm3', numero: 3, codigo: 'M-03', brand_id: 'b1', brand_nombre: 'Dinatek', project_id: 'p1', items: [{ ...base, ...p }] }) as unknown as Minuta;
 

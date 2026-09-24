@@ -14,7 +14,7 @@ vi.mock('jspdf-autotable', () => ({ default: vi.fn() }));
 const punto = (p: Partial<Punto>): Punto => ({
   id: 'i', numero: 1, titulo: 'Filtro', descripcion: null, responsable: null, responsable_cliente: false, fecha_compromiso: null,
   estado: 'pendiente', visible_cliente: true, resolucion: null, completado_por: null, completado_en: null, aprobado_via: null,
-  aprobado_por_nombre: null, aprobado_en: null, motivo_descarte: null, evidencias: [], tareas: [], ...p,
+  aprobado_por_nombre: null, aprobado_en: null, motivo_descarte: null, evidencias: [], tareas: [], notas: [], ...p,
 });
 
 const minuta = {

@@ -93,3 +93,18 @@ export function estadoCliente(p: { estado: EstadoPunto; responsable_cliente: boo
   }
   return ESTADO_CLIENTE[p.estado];
 }
+
+// Mismas etiquetas que Proyectos para los estados de tarea.
+const ESTADO_TAREA: Record<string, string> = {
+  backlog: 'Pendiente', en_proceso: 'En proceso', en_revision: 'En revisión', revision_interna: 'Revisión interna',
+  revision_cliente: 'Revisión cliente', ajustes: 'Ajustes', aprobado: 'Aprobado', entregado: 'Entregado', bloqueado: 'Bloqueado',
+};
+
+export function etiquetaTarea(estado: string): string {
+  return ESTADO_TAREA[estado] ?? estado;
+}
+
+/** Fecha de un timestamp en hora de Guayaquil: "24 sep 2026". */
+export function fechaLocal(iso: string): string {
+  return new Date(iso).toLocaleDateString('es-EC', { timeZone: 'America/Guayaquil', day: 'numeric', month: 'short', year: 'numeric' });
+}

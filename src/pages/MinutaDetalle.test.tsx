@@ -23,7 +23,7 @@ const punto = (p: Partial<Punto>): Punto => ({
   id: 'i1', numero: 1, titulo: 'Filtro por marca', descripcion: 'Sobre todo en celular', responsable: { id: 'u2', nombre: 'Diego Ruiz' },
   responsable_cliente: false, fecha_compromiso: '2026-09-19', estado: 'en_curso', visible_cliente: true, resolucion: null,
   completado_por: null, completado_en: null, aprobado_via: null, aprobado_por_nombre: null, aprobado_en: null,
-  motivo_descarte: null, evidencias: [], tareas: [], ...p,
+  motivo_descarte: null, evidencias: [], tareas: [], notas: [], ...p,
 });
 
 const minuta: Minuta = {
