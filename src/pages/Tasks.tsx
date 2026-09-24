@@ -48,6 +48,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { cn, getInitials } from '@/lib/utils';
+import { getDaysRemaining, getDepartmentColor, getPriorityColor, getStatusColor, getStatusLabel, parseLocalDate } from '@/lib/tareasLista';
 import {
   Plus,
   Search,
@@ -100,89 +101,9 @@ import { DepartmentBadge, useDepartments } from '@/components/tasks/DepartmentSe
 import { TaskFormDialog } from '@/components/tasks/form/TaskFormDialog';
 import { FiltroProyecto } from '@/components/tasks/FiltroProyecto';
 import { HandoffDialog } from '@/components/tasks/HandoffDialog';
-
-interface Task {
-  id: string;
-  check_done: boolean;
-  brand_id: string;
-  desk_id: string | null;
-  titulo_tarea: string;
-  detalle: string | null;
-  cantidad_entregables: number;
-  responsable_user_id: string | null;
-  departamento: string | null;
-  department_id: string | null;
-  department_nombre?: string | null;
-  department_color?: string | null;
-  project_id?: string | null;
-  prioridad: 'alta' | 'media' | 'baja';
-  estado: 'backlog' | 'en_proceso' | 'en_revision' | 'revision_interna' | 'revision_cliente' | 'ajustes' | 'aprobado' | 'entregado' | 'bloqueado';
-  ajustes_count?: number;
-  fecha_inicio: string | null;
-  fecha_entrega: string;
-  fecha_cliente?: string | null;
-  client_board_id?: string | null;
-  folder_id?: string | null;
-  folder_nombre?: string | null;
-  enlaces: string[] | null;
-  estado_envio: 'pendiente' | 'enviado';
-  qa_checklist: any;
-  created_at: string;
-  updated_at: string;
-  tiempo_trabajado: number;
-  timer_activo: boolean;
-  timer_inicio: string | null;
-  sprint_id?: string | null;
-  story_points?: number | null;
-  feature_id?: string | null;
-  is_favorite?: boolean;
-  brands?: { nombre: string };
-  desks?: { nombre: string };
-  profiles?: { nombre: string };
-  responsables?: { user_id: string; nombre: string; avatar_url?: string | null }[];
-  feature?: { name: string } | null;
-  sprint?: { name: string } | null;
-  google_event_id?: string | null;
-  task_type_id?: string | null;
-  task_type?: { nombre: string } | null;
-  tipo_entregable_id?: string | null;
-  deliverable_type?: { nombre: string } | null;
-  created_by?: string | null;
-  created_by_profile?: { nombre: string; avatar_url?: string | null } | null;
-  created_by_rol?: string | null;
-  is_read?: boolean;
-  read_count?: number;
-  deliverable_types_list?: { tipo_entregable_id: string; nombre: string; cantidad: number }[];
-  estimated_hours?: number | null;
-  recurrence_type?: 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'custom';
-  recurrence_interval?: number | null;
-  recurrence_end_date?: string | null;
-  recurrence_parent_id?: string | null;
-  subtask_count?: number;
-  subtask_done_count?: number;
-  files_count?: number;
-  cambios_cliente?: number;
-  cambios_internos?: number;
-  tiempo_por_persona?: { user_id: string; nombre: string; avatar_url: string | null; segundos: number }[];
-  seguidores?: { user_id: string; nombre: string; avatar_url: string | null }[];
-  me_sigue?: boolean;
-}
-
-interface Brand {
-  id: string;
-  nombre: string;
-}
-
-interface Desk {
-  id: string;
-  nombre: string;
-}
-
-interface Profile {
-  id: string;
-  nombre: string;
-  avatar_url?: string | null;
-}
+import type { Brand, ColKey, Desk, Profile, Task } from '@/components/tasks/lista/tipos';
+import { FilaTarea, type AccionesFila } from '@/components/tasks/lista/FilaTarea';
+import { useAccionesEstables } from '@/hooks/useAccionesEstables';
 
 export default function Tasks() {
   const [searchParams] = useSearchParams();
@@ -400,7 +321,6 @@ export default function Tasks() {
     }
   };
 
-  type ColKey = 'marca' | 'mesa' | 'depto' | 'responsable' | 'entregables' | 'timer' | 'archivos' | 'tipo' | 'prioridad' | 'estado' | 'entrega' | 'dias' | 'enlace' | 'autor' | 'creado';
   const ALL_COLUMNS: { key: ColKey; label: string }[] = [
     { key: 'marca', label: 'Marca' },
     { key: 'mesa', label: 'Mesa' },
@@ -640,37 +560,50 @@ export default function Tasks() {
     }
   };
 
+  // Brands, desks and people do not depend on the filters: load them once.
+  useEffect(() => {
+    Promise.all([api.getBrands(), api.getDesks(), api.getProfiles()])
+      .then(([brandsData, desksData, usersData]) => {
+        if (Array.isArray(brandsData)) setBrands(brandsData.filter((b: { activo?: unknown }) => b.activo !== 0 && b.activo !== false));
+        if (Array.isArray(desksData)) setDesks(desksData.filter((d: { activo?: unknown }) => d.activo !== 0 && d.activo !== false));
+        if (Array.isArray(usersData)) setUsers(usersData);
+      })
+      .catch((error) => {
+        console.error('Error fetching catalogs:', error);
+        toast.error('Error al cargar datos');
+      });
+  }, []);
+
+  // Only the latest request may update the list: a slow answer for an older filter is discarded.
+  const ultimoPedido = useRef(0);
   const fetchData = async () => {
+    const pedido = ++ultimoPedido.current;
     try {
       setLoading(true);
-      const [tasksRes, brandsData, desksData, usersData] = await Promise.all([
-        api.getTasks({
-          limit: pageSize,
-          offset: page * pageSize,
-          responsable_user_id: filterResponsable,
-          brand_id: filterBrand !== 'all' ? filterBrand : (pinnedBrandId || 'all'),
-          desk_id: filterDesk !== 'all' ? filterDesk : (pinnedDeskId || undefined),
-          estado: filterStatus,
-          prioridad: filterPriority,
-          search: debouncedSearch || undefined,
-          project_id: filterProject,
-          orden: 'entrega',
-        }),
-        api.getBrands(),
-        api.getDesks(),
-        api.getProfiles(),
-      ]);
+      const tasksRes = await api.getTasks({
+        limit: pageSize,
+        offset: page * pageSize,
+        responsable_user_id: filterResponsable,
+        brand_id: filterBrand !== 'all' ? filterBrand : (pinnedBrandId || 'all'),
+        desk_id: filterDesk !== 'all' ? filterDesk : (pinnedDeskId || undefined),
+        estado: filterStatus,
+        prioridad: filterPriority,
+        search: debouncedSearch || undefined,
+        project_id: filterProject,
+        orden: 'entrega',
+      });
+      if (pedido !== ultimoPedido.current) return;
       setTasks((tasksRes.tasks || []) as Task[]);
       setTotalTasks(tasksRes.total ?? 0);
-      if (Array.isArray(brandsData)) setBrands(brandsData.filter((b: { activo?: unknown }) => b.activo !== 0 && b.activo !== false));
-      if (Array.isArray(desksData)) setDesks(desksData.filter((d: { activo?: unknown }) => d.activo !== 0 && d.activo !== false));
-      if (Array.isArray(usersData)) setUsers(usersData);
     } catch (error) {
+      if (pedido !== ultimoPedido.current) return;
       console.error('Error fetching data:', error);
       toast.error('Error al cargar datos');
     } finally {
-      setLoading(false);
-      setPrimeraCarga(false);
+      if (pedido === ultimoPedido.current) {
+        setLoading(false);
+        setPrimeraCarga(false);
+      }
     }
   };
 
@@ -690,7 +623,7 @@ export default function Tasks() {
       if (result?.error) throw new Error(result.error);
       if (result?.recurrence_spawned) {
         toast.success('Estado actualizado', {
-          description: 'Se creó la próxima ocurrencia de la tarea recurrente. Buscala en la lista.',
+          description: 'Se creó la próxima ocurrencia de la tarea recurrente. Búscala en la lista.',
           duration: 7000,
         });
       } else {
@@ -741,45 +674,6 @@ export default function Tasks() {
     })();
     return matchesBrand && matchesDesk && matchesPinnedDesk && matchesPinnedBrand && matchesFolder;
   });
-
-  const getPriorityColor = (prioridad: string) => {
-    switch (prioridad) {
-      case 'alta': return 'bg-priority-high text-white';
-      case 'media': return 'bg-priority-medium text-black';
-      case 'baja': return 'bg-priority-low text-white';
-      default: return 'bg-muted text-muted-foreground';
-    }
-  };
-
-  const getStatusColor = (estado: string) => {
-    const colors: Record<string, string> = {
-      backlog: 'bg-status-backlog text-white',
-      en_proceso: 'bg-status-in-progress text-white',
-      en_revision: 'bg-status-in-review text-black',
-      ajustes: 'bg-orange-600 text-white',
-      revision_interna: 'bg-amber-500 text-white',
-      revision_cliente: 'bg-purple-500 text-white',
-      aprobado: 'bg-status-approved text-white',
-      entregado: 'bg-status-delivered text-white',
-      bloqueado: 'bg-status-blocked text-white',
-    };
-    return colors[estado] || 'bg-muted text-muted-foreground';
-  };
-
-  const getStatusLabel = (estado: string) => {
-    const labels: Record<string, string> = {
-      backlog: 'Pendiente',
-      en_proceso: 'En Proceso',
-      en_revision: 'En Revisión',
-      ajustes: 'Ajustes',
-      revision_interna: 'Revisión interna',
-      revision_cliente: 'Revisión cliente',
-      aprobado: 'Aprobado',
-      entregado: 'Entregado',
-      bloqueado: 'Bloqueado',
-    };
-    return labels[estado] || estado;
-  };
 
   const statusOrder: Task['estado'][] = ['en_proceso', 'ajustes', 'revision_interna', 'revision_cliente', 'en_revision', 'backlog', 'bloqueado', 'entregado'];
 
@@ -847,24 +741,6 @@ export default function Tasks() {
   const getMonthHeaderColor = (monthKey: string) => {
     const idx = monthKey.length > 0 ? (monthKey.charCodeAt(0) + (monthKey.length || 0)) % 12 : 0;
     return MONTH_HEADER_COLORS[idx] || 'bg-muted';
-  };
-
-  const getDepartmentColor = (departamento: string | null) => {
-    if (!departamento) return 'bg-muted text-muted-foreground';
-    const d = departamento.toUpperCase().trim();
-    const map: Record<string, string> = {
-      MESA: 'bg-blue-500/90 text-white',
-      DISEÑO: 'bg-purple-500/90 text-white',
-      DISENO: 'bg-purple-500/90 text-white',
-      PRODUCCIÓN: 'bg-amber-500/90 text-white',
-      PRODUCCION: 'bg-amber-500/90 text-white',
-      CUENTAS: 'bg-emerald-500/90 text-white',
-      DESARROLLO: 'bg-cyan-500/90 text-white',
-      MARKETING: 'bg-pink-500/90 text-white',
-      QA: 'bg-orange-500/90 text-white',
-      ADMIN: 'bg-slate-500/90 text-white',
-    };
-    return map[d] || 'bg-primary/80 text-primary-foreground';
   };
 
   const activeDeskId = filterDesk !== 'all' ? filterDesk : (pinnedDeskId || null);
@@ -1091,23 +967,8 @@ export default function Tasks() {
     }
   };
 
-  const parseLocalDate = (dateStr: string | null | undefined): Date => {
-    if (!dateStr) return new Date(NaN);
-    // Handle ISO format "2026-02-16T00:00:00.000Z" and plain "2026-02-16"
-    const clean = dateStr.substring(0, 10);
-    const [y, m, d] = clean.split('-').map(Number);
-    return new Date(y, m - 1, d);
-  };
-
-  const getDaysRemaining = (fechaEntrega: string) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const entrega = parseLocalDate(fechaEntrega);
-    return Math.ceil((entrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  };
-
   const isAssignedTo = (task: Task) =>
-    task.responsable_user_id === profile?.id || task.responsables?.some(r => r.user_id === profile?.id);
+    task.responsable_user_id === profile?.id || !!task.responsables?.some(r => r.user_id === profile?.id);
 
   const canEditTask = (task: Task) => {
     if (isAdmin) return true;
@@ -1143,6 +1004,30 @@ export default function Tasks() {
       setDeleteTaskId(null);
     }
   };
+
+  // Stable row handlers: rows are memoized and must not redraw just because the page rendered.
+  const accionesFila = useAccionesEstables<AccionesFila>({
+    alternarExpandir: toggleTaskExpand,
+    alternarSeleccion: toggleSelectTask,
+    alternarFavorita: toggleFavorite,
+    abrirDetalle: (task) => { setSelectedTask(task); setDetailDialogOpen(true); },
+    editar: openEditDialog,
+    eliminar: handleDeleteTask,
+    cambiarEstado: updateTaskStatus,
+    cambiarPrioridad: updateTaskPriority,
+    recargar: fetchData,
+    abrirSubtarea: (subId) => {
+      api.getTask(subId).then((t: any) => {
+        if (t && t.id) {
+          setSelectedTask(t as Task);
+          setDetailDialogOpen(true);
+        }
+      }).catch(() => toast.error('No se pudo cargar la subtarea'));
+    },
+    empezarArrastre: (taskId) => { dragTaskId.current = taskId; setIsDraggingTask(true); },
+    terminarArrastre: () => { dragTaskId.current = null; setIsDraggingTask(false); setDragOverFolder(null); },
+  });
+  const filasArrastrables = (isAdmin || isEjecutivo) && !!activeDeskId && folders.length > 0;
 
   // Solo la PRIMERA carga reemplaza la pantalla. Si se usara `loading` a secas,
   // cada busqueda o cambio de filtro desmontaria la pagina completa: el input
@@ -1677,378 +1562,24 @@ export default function Tasks() {
                         </TableCell>
                       </TableRow>
                       {/* Group rows */}
-                      {!collapsedGroups[groupKey] && tasksInGroup.map((task) => {
-                        const dias = getDaysRemaining(task.fecha_entrega);
-                        const subtasks = subtasksCache[task.id] || [];
-                        const isExpanded = expandedTaskIds.has(task.id);
-                        return (
-                          <React.Fragment key={task.id}>
-                          <TableRow
-                            className={cn('border-border hover:bg-muted/50', (isAdmin || isEjecutivo) && activeDeskId && folders.length > 0 && 'cursor-grab active:cursor-grabbing')}
-                            draggable={(isAdmin || isEjecutivo) && !!activeDeskId && folders.length > 0}
-                            onDragStart={(e) => { dragTaskId.current = task.id; setIsDraggingTask(true); e.dataTransfer.effectAllowed = 'move'; }}
-                            onDragEnd={() => { dragTaskId.current = null; setIsDraggingTask(false); setDragOverFolder(null); }}
-                          >
-                            <TableCell className="w-8 px-0.5">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => toggleTaskExpand(task.id)}
-                              >
-                                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                              </Button>
-                            </TableCell>
-                            <TableCell className="w-10 px-1 text-center hidden md:table-cell">
-                              <Checkbox
-                                checked={selectedIds.has(task.id)}
-                                onCheckedChange={() => toggleSelectTask(task.id)}
-                                aria-label="Seleccionar tarea"
-                                className="h-4 w-4"
-                              />
-                            </TableCell>
-                            <TableCell className="w-7 px-0.5 hidden md:table-cell">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
-                                onClick={() => toggleFavorite(task)}
-                              >
-                                <Star className={cn("h-4 w-4", task.is_favorite && "fill-current")} />
-                              </Button>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1.5">
-                                {!task.is_read && (
-                                  <span className="h-2 w-2 rounded-full bg-primary shrink-0" title="No leída" />
-                                )}
-                                <span
-                                  className="font-medium text-foreground cursor-pointer hover:text-primary hover:underline"
-                                  onClick={() => { setSelectedTask(task); setDetailDialogOpen(true); }}
-                                >
-                                  {task.titulo_tarea}
-                                </span>
-                                {(task.subtask_count ?? 0) > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleTaskExpand(task.id)}
-                                    className={cn(
-                                      "inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border shrink-0 hover:opacity-80 transition-opacity",
-                                      (task.subtask_done_count ?? 0) === (task.subtask_count ?? 0)
-                                        ? "bg-green-100 text-green-700 border-green-200"
-                                        : (task.subtask_done_count ?? 0) > 0
-                                        ? "bg-blue-100 text-blue-700 border-blue-200"
-                                        : "bg-muted text-muted-foreground border-border"
-                                    )}
-                                    title={`${task.subtask_done_count ?? 0} de ${task.subtask_count} subtareas completadas. Click para expandir.`}
-                                  >
-                                    <span>📋</span>
-                                    <span>{task.subtask_done_count ?? 0}/{task.subtask_count}</span>
-                                  </button>
-                                )}
-                                {task.recurrence_type && task.recurrence_type !== 'none' && (
-                                  <Repeat className="h-3.5 w-3.5 text-blue-500 shrink-0" title="Tarea recurrente" />
-                                )}
-                                {task.estimated_hours != null && task.estimated_hours > 0 && (
-                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0" title="Horas estimadas">
-                                    <Clock className="h-3 w-3" />{task.estimated_hours}h
-                                  </span>
-                                )}
-                              </div>
-                            </TableCell>
-                            {visibleCols.marca && <TableCell className="hidden md:table-cell"><span className="text-sm block max-w-[80px] truncate" title={task.brands?.nombre || ''}>{task.brands?.nombre || '-'}</span></TableCell>}
-                            {visibleCols.mesa && <TableCell className="hidden md:table-cell"><span className="text-sm block max-w-[80px] truncate" title={task.desks?.nombre || ''}>{task.desks?.nombre || '-'}</span></TableCell>}
-                            {visibleCols.depto && (
-                              <TableCell className="hidden md:table-cell">
-                                {task.department_nombre ? (
-                                  <DepartmentBadge nombre={task.department_nombre} color={task.department_color} />
-                                ) : task.departamento ? (
-                                  <Badge className={cn("text-[10px] font-semibold uppercase", getDepartmentColor(task.departamento))}>
-                                    {task.departamento}
-                                  </Badge>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">—</span>
-                                )}
-                              </TableCell>
-                            )}
-                            {visibleCols.responsable && (
-                              <TableCell className="hidden md:table-cell">
-                                {(task.responsables && task.responsables.length > 0) ? (
-                                  <div className="flex flex-col gap-0.5">
-                                    {task.responsables.map((r) => (
-                                      <ResponsableMetrics
-                                        key={r.user_id}
-                                        userId={r.user_id}
-                                        userName={r.nombre || 'Sin nombre'}
-                                        avatarUrl={r.avatar_url}
-                                        allTasks={tasks}
-                                        compact
-                                      />
-                                    ))}
-                                  </div>
-                                ) : task.responsable_user_id ? (
-                                  <ResponsableMetrics
-                                    userId={task.responsable_user_id}
-                                    userName={users.find(u => u.id === task.responsable_user_id)?.nombre || 'Sin asignar'}
-                                    avatarUrl={users.find(u => u.id === task.responsable_user_id)?.avatar_url}
-                                    allTasks={tasks}
-                                    compact
-                                  />
-                                ) : (
-                                  <span className="text-sm text-muted-foreground">Sin asignar</span>
-                                )}
-                                {task.read_count != null && task.read_count > 0 && (
-                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 mt-0.5" title={`${task.read_count} persona(s) han visto esta tarea`}>
-                                    <Eye className="h-3 w-3" />
-                                    {task.read_count} visto{task.read_count > 1 ? 's' : ''}
-                                  </span>
-                                )}
-                              </TableCell>
-                            )}
-                            {visibleCols.entregables && (
-                              <TableCell className="text-center hidden md:table-cell">
-                                <div className="flex items-center justify-center gap-1">
-                                  <Package className="h-4 w-4 text-muted-foreground" />
-                                  <span className="font-medium">{task.cantidad_entregables}</span>
-                                </div>
-                              </TableCell>
-                            )}
-                            {visibleCols.timer && (
-                              <TableCell>
-                                <TaskTimer
-                                  taskId={task.id}
-                                  initialTime={task.tiempo_trabajado}
-                                  isActive={task.timer_activo}
-                                  startTime={task.timer_inicio}
-                                  canEdit={canOperateTask(task)}
-                                  compact
-                                  warnEnabled={isAssignedTo(task)}
-                                  taskTitle={task.titulo_tarea}
-                                  onUpdate={fetchData}
-                                />
-                              </TableCell>
-                            )}
-                            {visibleCols.archivos && (
-                              <TableCell className="hidden md:table-cell">
-                                <TaskFiles
-                                  taskId={task.id}
-                                  canEdit={canEditTask(task)}
-                                  compact
-                                  conteoInicial={task.files_count != null ? Number(task.files_count) : undefined}
-                                />
-                              </TableCell>
-                            )}
-                            {visibleCols.tipo && (
-                              <TableCell className="px-1 hidden md:table-cell">
-                                <span className="text-xs text-muted-foreground">{task.task_type?.nombre || '—'}</span>
-                              </TableCell>
-                            )}
-                            {visibleCols.prioridad && (
-                              <TableCell className="px-1 hidden md:table-cell">
-                                {canEditTask(task) ? (
-                                  <Select
-                                    value={task.prioridad}
-                                    onValueChange={(value: Task['prioridad']) => updateTaskPriority(task.id, value)}
-                                  >
-                                    <SelectTrigger className={cn("h-8 w-full min-w-[90px] text-xs font-semibold border-0 rounded-md justify-center [&>svg]:ml-1", getPriorityColor(task.prioridad))}>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="alta">ALTA</SelectItem>
-                                      <SelectItem value="media">MEDIA</SelectItem>
-                                      <SelectItem value="baja">BAJA</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <div className={cn("h-8 flex items-center justify-center rounded-md text-xs font-semibold", getPriorityColor(task.prioridad))}>
-                                    {task.prioridad.toUpperCase()}
-                                  </div>
-                                )}
-                              </TableCell>
-                            )}
-                            {visibleCols.estado && (
-                              <TableCell className="px-1">
-                                {canOperateTask(task) ? (
-                                  <Select
-                                    value={task.estado}
-                                    onValueChange={(value: Task['estado']) => updateTaskStatus(task.id, value)}
-                                  >
-                                    <SelectTrigger title={(task.ajustes_count || 0) > 0 ? `Volvió a ajustes ${task.ajustes_count} ${task.ajustes_count === 1 ? 'vez' : 'veces'}` : undefined} className={cn("h-8 w-full min-w-[110px] text-xs font-semibold border-0 rounded-md justify-center [&>svg]:ml-1 relative", getStatusColor(task.estado))}>
-                                      {(task.ajustes_count || 0) > 0 && (
-                                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-orange-600 text-white text-[9px] font-bold flex items-center justify-center border border-background">
-                                          {task.ajustes_count}
-                                        </span>
-                                      )}
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="backlog">Pendiente</SelectItem>
-                                      <SelectItem value="en_proceso">En Proceso</SelectItem>
-                                      <SelectItem value="revision_interna">Revisión interna</SelectItem>
-                        <SelectItem value="revision_cliente">Revisión cliente</SelectItem>
-                        <SelectItem value="ajustes">Ajustes</SelectItem>
-                                      <SelectItem value="entregado">Entregado</SelectItem>
-                                      <SelectItem value="bloqueado">Bloqueado</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <div className={cn("h-8 flex items-center justify-center rounded-md text-xs font-semibold relative", getStatusColor(task.estado))}>
-                                    {getStatusLabel(task.estado)}
-                                  </div>
-                                )}
-                              </TableCell>
-                            )}
-                            {visibleCols.entrega && (
-                              <TableCell className="hidden md:table-cell">
-                                <div className="flex items-center gap-1 text-sm whitespace-nowrap">
-                                  {task.fecha_entrega ? (
-                                    <>
-                                      <span className={cn(
-                                        (task.estado === 'entregado' || task.estado === 'aprobado') ? 'text-muted-foreground' :
-                                        dias < 0 ? 'text-destructive font-medium' : 'text-muted-foreground'
-                                      )}>
-                                        {parseLocalDate(task.fecha_entrega).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
-                                      </span>
-                                      {/* Urgencia (antes columna "Días"): solo cuando importa */}
-                                      {!(task.estado === 'entregado' || task.estado === 'aprobado') && dias <= 2 && (
-                                        <span className={cn(
-                                          'text-[10px] font-semibold px-1 py-0.5 rounded leading-none',
-                                          dias < 0 ? 'bg-destructive/15 text-destructive' :
-                                          dias === 0 ? 'bg-warning/20 text-warning' :
-                                          'bg-info/20 text-info'
-                                        )} title={dias < 0 ? `${Math.abs(dias)} día(s) de atraso` : dias === 0 ? 'Vence hoy' : `Vence en ${dias} día(s)`}>
-                                          {dias < 0 ? `+${Math.abs(dias)}d` : dias === 0 ? 'Hoy' : `${dias}d`}
-                                        </span>
-                                      )}
-                                    </>
-                                  ) : <span className="text-muted-foreground italic">Sin fecha</span>}
-                                </div>
-                              </TableCell>
-                            )}
-                            {visibleCols.dias && (
-                              <TableCell className="hidden md:table-cell">
-                                {(task.estado === 'entregado' || task.estado === 'aprobado') ? (
-                                  <span className="text-sm font-medium px-2 py-0.5 rounded bg-success/20 text-success">Listo</span>
-                                ) : (
-                                  <span className={cn(
-                                    "text-sm font-medium px-2 py-0.5 rounded",
-                                    dias < 0 ? "bg-destructive/20 text-destructive" :
-                                    dias === 0 ? "bg-warning/20 text-warning" :
-                                    dias <= 2 ? "bg-info/20 text-info" :
-                                    "text-muted-foreground"
-                                  )}>
-                                    {dias < 0 ? `${Math.abs(dias)}d atrás` : dias === 0 ? 'Hoy' : `${dias}d`}
-                                  </span>
-                                )}
-                              </TableCell>
-                            )}
-                            {visibleCols.enlace && (
-                              <TableCell className="hidden md:table-cell">
-                                {task.enlaces && task.enlaces.length > 0 ? (
-                                  <a
-                                    href={task.enlaces[0]}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline inline-flex items-center gap-0.5"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <Link2 className="h-3.5 w-3.5" />
-                                  </a>
-                                ) : (
-                                  <span className="text-muted-foreground">—</span>
-                                )}
-                              </TableCell>
-                            )}
-                            {visibleCols.autor && (
-                              <TableCell className="hidden md:table-cell">
-                                <div className="flex items-center gap-1.5">
-                                  <Avatar className="h-5 w-5">
-                                    {task.created_by_profile?.avatar_url ? (
-                                      <AvatarImage src={task.created_by_profile.avatar_url} alt={task.created_by_profile.nombre} className="object-cover" />
-                                    ) : null}
-                                    <AvatarFallback className="bg-primary/20 text-primary text-[8px] font-semibold">
-                                      {getInitials(task.created_by_profile?.nombre || '?')}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <span className="text-xs text-muted-foreground truncate max-w-[100px]" title={task.created_by_profile?.nombre || ''}>
-                                    {task.created_by_profile?.nombre || '—'}
-                                  </span>
-                                </div>
-                              </TableCell>
-                            )}
-                            {visibleCols.creado && (
-                              <TableCell className="hidden md:table-cell">
-                                <span className="text-xs text-muted-foreground">
-                                  {task.created_at ? new Date(task.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
-                                </span>
-                              </TableCell>
-                            )}
-                            <TableCell className="hidden md:table-cell px-1">
-                              <div className="flex items-center gap-0.5">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => {
-                                    setSelectedTask(task);
-                                    setDetailDialogOpen(true);
-                                  }}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                {canEditTask(task) && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => openEditDialog(task)}
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                )}
-                                {canDeleteTasks && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-destructive hover:text-destructive"
-                                    onClick={() => handleDeleteTask(task.id)}
-                                    disabled={deleteTaskId === task.id}
-                                  >
-                                    {deleteTaskId === task.id ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Trash2 className="h-4 w-4" />
-                                    )}
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                          {/* Subtasks expanded row - SubtaskList component (rich UI) */}
-                          {isExpanded && (
-                            <TableRow className="bg-muted/30 border-l-4 border-l-primary/50">
-                              <TableCell colSpan={30} className="py-3 px-4">
-                                <div className="pl-6">
-                                  <SubtaskList
-                                    taskId={task.id}
-                                    deskId={task.desk_id || undefined}
-                                    onUpdate={fetchData}
-                                    onOpenSubtask={(subId) => {
-                                      api.getTask(subId).then((t: any) => {
-                                        if (t && t.id) {
-                                          setSelectedTask(t as Task);
-                                          setDetailDialogOpen(true);
-                                        }
-                                      }).catch(() => toast.error('No se pudo cargar la subtarea'));
-                                    }}
-                                  />
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </React.Fragment>
-                        );
-                      })}
+                      {!collapsedGroups[groupKey] && tasksInGroup.map((task) => (
+                        <FilaTarea
+                          key={task.id}
+                          task={task}
+                          columnas={visibleCols}
+                          seleccionada={selectedIds.has(task.id)}
+                          expandida={expandedTaskIds.has(task.id)}
+                          eliminando={deleteTaskId === task.id}
+                          arrastrable={filasArrastrables}
+                          puedeEditar={canEditTask(task)}
+                          puedeOperar={canOperateTask(task)}
+                          puedeEliminar={canDeleteTasks}
+                          asignada={isAssignedTo(task)}
+                          usuarios={users}
+                          todasLasTareas={tasks}
+                          acciones={accionesFila}
+                        />
+                      ))}
                       {!collapsedGroups[groupKey] && (isAdmin || isEjecutivo || isEquipo) && (
                         <TableRow className="border-border bg-muted/20">
                           <TableCell colSpan={30} className="py-1.5">
