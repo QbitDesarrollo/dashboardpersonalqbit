@@ -28,7 +28,9 @@ export function reiniciarAvisoDeSesion() { tokenAvisado = null; }
 // Las sesiones duran 7 días. Cuando vencen, la API responde 401 a todo: se borra la sesión
 // y se avisa una sola vez por sesión, en vez de seguir disparando peticiones rechazadas.
 function revisarSesion(res: Response, path: string, token: string | null) {
-  if (res.status !== 401 || !token || path.startsWith('/api/auth/') || token === tokenAvisado) return;
+  // Only the API's auth check marks its 401s. Other 401s (e.g. "Google no conectado") are not about the session.
+  if (res.status !== 401 || res.headers.get('X-Tiusdei-Sesion') !== 'invalida') return;
+  if (!token || path.startsWith('/api/auth/') || token === tokenAvisado) return;
   tokenAvisado = token;
   localStorage.removeItem('tiusdei_token');
   window.dispatchEvent(new Event(SESION_EXPIRADA));

@@ -103,6 +103,8 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  // The web app reads it to know a 401 means the session is invalid (see middleware/auth.ts).
+  exposedHeaders: ['X-Tiusdei-Sesion'],
   maxAge: 86400,
 }));
 

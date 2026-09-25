@@ -9,17 +9,26 @@ export interface AuthRequest extends Request {
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
+/**
+ * 401 because the session itself is missing or invalid. The header lets the web app tell it
+ * apart from other 401s (e.g. "Google no conectado") and only then close the session.
+ */
+function sesionInvalida(res: Response, error: string): void {
+  res.setHeader('X-Tiusdei-Sesion', 'invalida');
+  res.status(401).json({ error });
+}
+
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Token de autenticación requerido' });
+    sesionInvalida(res, 'Token de autenticación requerido');
     return;
   }
 
   const token = authHeader.split(' ')[1];
   if (!token || token.length > 2048) {
-    res.status(401).json({ error: 'Token inválido' });
+    sesionInvalida(res, 'Token inválido');
     return;
   }
 
@@ -33,7 +42,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
     };
 
     if (!payload.sub || !payload.role) {
-      res.status(401).json({ error: 'Token malformado' });
+      sesionInvalida(res, 'Token malformado');
       return;
     }
 
@@ -41,7 +50,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
     req.userRole = payload.role;
     next();
   } catch (error) {
-    res.status(401).json({ error: 'Token inválido o expirado' });
+    sesionInvalida(res, 'Token inválido o expirado');
   }
 }
 

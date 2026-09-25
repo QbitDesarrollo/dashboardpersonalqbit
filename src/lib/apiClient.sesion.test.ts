@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { apiRequest, SESION_EXPIRADA, reiniciarAvisoDeSesion } from './apiClient';
 
-const respuesta = (status: number) => Promise.resolve(new Response('{"error":"Token inválido o expirado"}', { status }));
+// The auth middleware marks its own 401s; other 401s (e.g. "Google no conectado") are not about the session.
+const respuesta = (status: number) => Promise.resolve(new Response('{"error":"Token inválido o expirado"}', { status, headers: status === 401 ? { 'X-Tiusdei-Sesion': 'invalida' } : {} }));
+const googleNoConectado = () => Promise.resolve(new Response('{"error":"Google no conectado"}', { status: 401 }));
 
 describe('apiRequest · sesión vencida', () => {
   const fetchMock = vi.fn();
@@ -36,6 +38,13 @@ describe('apiRequest · sesión vencida', () => {
   it('una contraseña equivocada en el login no se toma como sesión vencida', async () => {
     fetchMock.mockImplementation(() => respuesta(401));
     await apiRequest('/api/auth/login', { method: 'POST' });
+    expect(alVencer).not.toHaveBeenCalled();
+    expect(localStorage.getItem('tiusdei_token')).toBe('token-vencido');
+  });
+
+  it('un 401 de una integración (Google no conectado) no cierra la sesión', async () => {
+    fetchMock.mockImplementation(googleNoConectado);
+    await apiRequest('/api/data/google-calendar/events?date=2026-09-25');
     expect(alVencer).not.toHaveBeenCalled();
     expect(localStorage.getItem('tiusdei_token')).toBe('token-vencido');
   });
