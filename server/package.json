@@ -28,6 +28,8 @@
     "hpp": "^0.2.3",
     "https-proxy-agent": "^9.0.0",
     "jsonwebtoken": "^9.0.2",
+    "jspdf": "^4.1.0",
+    "jspdf-autotable": "^5.0.7",
     "multer": "^2.0.2",
     "mysql2": "^3.17.1",
     "nodemailer": "^6.9.16",

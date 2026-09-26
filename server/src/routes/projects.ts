@@ -18,7 +18,7 @@ async function ensureExec(req: AuthRequest, res: any): Promise<boolean> {
 
 // Salud automática (si no fue seteada a mano): roja si hay tareas vencidas sin entregar,
 // amarilla si hay alguna por vencer pronto o el proyecto pasó su fecha_fin, verde si todo en orden.
-function autoSalud(row: any): 'verde' | 'amarillo' | 'rojo' {
+export function autoSalud(row: any): 'verde' | 'amarillo' | 'rojo' {
   if (Number(row.vencidas) > 0) return 'rojo';
   const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
   if (row.fecha_fin) {
@@ -29,11 +29,19 @@ function autoSalud(row: any): 'verde' | 'amarillo' | 'rojo' {
   return 'verde';
 }
 
-const STATS_SQL = `
+export const STATS_SQL = `
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS total_tareas,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado IN ('entregado','aprobado')) AS tareas_listas,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado NOT IN ('entregado','aprobado','revision_cliente') AND t.fecha_entrega IS NOT NULL AND t.fecha_entrega < CURDATE()) AS vencidas,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado NOT IN ('entregado','aprobado') AND t.fecha_entrega IS NOT NULL AND t.fecha_entrega BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY)) AS por_vencer`;
+
+const SIN_LIDER = 'Elige el líder del proyecto.';
+
+/** Every project needs a leader (they receive and approve its reports): it must be an existing person. */
+async function liderValido(id: unknown): Promise<boolean> {
+  if (typeof id !== 'string' || !id) return false;
+  return !!(await queryOne('SELECT id FROM profiles WHERE id = ?', [id]));
+}
 
 function shape(r: any) {
   const total = Number(r.total_tareas) || 0;
@@ -105,12 +113,15 @@ projectsRouter.post('/projects', requireAuth, async (req: AuthRequest, res) => {
     if (!brandId || !nombre) return res.status(400).json({ error: 'brand_id y nombre requeridos' });
     const brand = await queryOne<any>('SELECT id FROM brands WHERE id = ?', [brandId]);
     if (!brand) return res.status(400).json({ error: 'Marca no encontrada' });
+    // Quick creation from the client board sends no leader: its creator leads it until someone changes it.
+    const liderId = 'lider_user_id' in b ? b.lider_user_id : req.userId;
+    if (!(await liderValido(liderId))) return res.status(400).json({ error: SIN_LIDER });
     const id = uuid();
     await query(
       `INSERT INTO projects (id, brand_id, nombre, descripcion, estado, fecha_inicio, fecha_fin, lider_user_id, desk_id, color, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, brandId, nombre, b.descripcion || null, b.estado || 'en_curso', b.fecha_inicio || null, b.fecha_fin || null,
-       b.lider_user_id || null, b.desk_id || null, b.color || null, req.userId ?? null]
+       liderId, b.desk_id || null, b.color || null, req.userId ?? null]
     );
     const r = await queryOne<any>(
       `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, ${STATS_SQL}
@@ -127,6 +138,7 @@ projectsRouter.patch('/projects/:id', requireAuth, async (req: AuthRequest, res)
     const existing = await queryOne<any>('SELECT id FROM projects WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'No encontrado' });
     const b = req.body || {};
+    if ('lider_user_id' in b && !(await liderValido(b.lider_user_id))) return res.status(400).json({ error: SIN_LIDER });
     const map: Record<string, string> = {
       nombre: 'nombre', descripcion: 'descripcion', estado: 'estado', salud: 'salud',
       fecha_inicio: 'fecha_inicio', fecha_fin: 'fecha_fin', lider_user_id: 'lider_user_id',

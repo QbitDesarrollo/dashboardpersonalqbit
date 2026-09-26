@@ -3,13 +3,19 @@
 export interface SaludIa { listo: boolean; detalle: string }
 /** Sources for a draft: the meeting transcript and/or what the client sent; `indicaciones` come from the team. */
 export interface DatosMinutaIa { transcripcion: string; notas_cliente: string; indicaciones: string; fecha: string }
+/** Steps of a weekly project report (see codex-runner/reportes/). */
+export type TipoTrabajo = 'reporte-descripciones' | 'reporte-avances' | 'reporte-resumen';
+
 export interface RunnerIa {
   salud(): Promise<SaludIa>;
   generar(datos: DatosMinutaIa): Promise<unknown>;
+  trabajo(tipo: TipoTrabajo, entrada: unknown, indicaciones?: string): Promise<unknown>;
 }
 
 /** Errors whose message can be shown to the user as-is. */
 export class ErrorRunner extends Error {}
+/** Codex is busy with another job: worth waiting and trying again. */
+export class ErrorRunnerOcupado extends ErrorRunner {}
 
 const SIN_CONFIGURAR = 'La IA no está configurada en el servidor.';
 const NO_RESPONDE = 'El servicio de IA no responde.';
@@ -40,6 +46,17 @@ export function crearRunnerHttp({ url, token, limiteMs = 200_000 }: { url: strin
       } catch (e) {
         return { listo: false, detalle: e instanceof ErrorRunner ? e.message : NO_RESPONDE };
       }
+    },
+
+    async trabajo(tipo, entrada, indicaciones = '') {
+      if (!configurado) throw new ErrorRunner(SIN_CONFIGURAR);
+      const res = await pedir('/trabajo', { method: 'POST', body: JSON.stringify({ tipo, entrada, indicaciones }) }, 280_000);
+      if (res.status === 401) throw new ErrorRunner(TOKEN_RECHAZADO);
+      const body = await res.json().catch(() => null);
+      const mensaje = typeof body?.error === 'string' ? body.error : NO_RESPONDE;
+      if (res.status === 429) throw new ErrorRunnerOcupado(mensaje);
+      if (!res.ok) throw new ErrorRunner(mensaje);
+      return body;
     },
 
     async generar(datos) {

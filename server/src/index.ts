@@ -60,6 +60,9 @@ import { minutasRouter } from './routes/minutas.js';
 import { crearRouterMinutasIa } from './routes/minutas-ia.js';
 import { mcpMinutasRouter } from './routes/mcp-minutas.js';
 import { crearRunnerHttp } from './minutas/ia/runner.js';
+import { crearRouterReportes } from './routes/reportes.js';
+import { iniciarProgramadorReportes } from './reportes/programador.js';
+import { sendEmail } from './services/email.js';
 import { publicClientRouter } from './routes/public-client.js';
 import { initErrorCapture, errorLogMiddleware } from './utils/errorLog.js';
 import { setSocketIO } from './services/whatsapp.js';
@@ -220,10 +223,19 @@ app.use('/api/data', errorLogsRouter);
 app.use('/api/data', agentRouter);
 app.use('/api/data', clientBoardsRouter);
 app.use('/api/data', projectsRouter);
-app.use('/api/data', crearRouterMinutasIa(crearRunnerHttp({
+// One Codex runner for minutas and weekly project reports (it runs one job at a time).
+const runnerIa = crearRunnerHttp({
   url: process.env.CODEX_RUNNER_URL ?? '',
   token: process.env.CODEX_RUNNER_TOKEN ?? '',
-})));
+});
+const depsReportes = {
+  runner: runnerIa,
+  correo: { enviar: sendEmail },
+  dirPdf: path.join(process.cwd(), 'uploads', 'reportes'),
+  frontendUrl: process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec',
+};
+app.use('/api/data', crearRouterMinutasIa(runnerIa));
+app.use('/api/data', crearRouterReportes(depsReportes));
 app.use('/api/data', minutasRouter);
 app.use('/api/data', apiTokensRouter);
 app.use('/api', mcpMinutasRouter);
@@ -276,5 +288,6 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   setTimeout(() => runRecordatorios(), 2 * 60 * 1000);
   runEodTimerAlert();
   runTimeEntryAutoClose().catch(() => {}); // run once on boot
+  iniciarProgramadorReportes(depsReportes); // Reportes semanales de proyecto (REPORTES-PLAN.md)
   console.log('[TIUSDEI API] WebSocket (comentarios en tiempo real) activo');
 });

@@ -23,10 +23,13 @@ const transporter = nodemailer.createTransport({
 
 export interface EmailOptions {
   to: string;
+  /** Comma-separated addresses in copy. */
+  cc?: string;
   subject: string;
   html: string;
   text?: string;
   from?: string;
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
 }
 
 // --- Mailgun HTTP API (sin dependencia npm) ---
@@ -40,24 +43,27 @@ const MAILGUN_BASE = process.env.MAILGUN_REGION === 'eu'
 async function sendViaMailgun(options: EmailOptions): Promise<boolean> {
   if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN) return false;
   try {
-    const form = new URLSearchParams();
+    // Attachments need multipart; plain messages keep the urlencoded body they always used.
+    const adjuntos = options.attachments ?? [];
+    const form = adjuntos.length ? new FormData() : new URLSearchParams();
     form.append('from', options.from || MAILGUN_FROM);
     form.append('to', options.to);
+    if (options.cc) form.append('cc', options.cc);
     form.append('subject', options.subject);
     form.append('html', options.html);
     if (options.text) form.append('text', options.text);
     // Tracking: useful in production, no harm in disabling later
     form.append('o:tracking-clicks', 'htmlonly');
     form.append('o:tracking-opens', 'yes');
+    for (const a of adjuntos) (form as FormData).append('attachment', new Blob([new Uint8Array(a.content)], { type: a.contentType }), a.filename);
 
     const auth = Buffer.from(`api:${MAILGUN_API_KEY}`).toString('base64');
     const resp = await fetch(`${MAILGUN_BASE}/${MAILGUN_DOMAIN}/messages`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: form.toString(),
+      headers: adjuntos.length
+        ? { 'Authorization': `Basic ${auth}` }
+        : { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: adjuntos.length ? (form as FormData) : form.toString(),
     });
     if (!resp.ok) {
       const bodyText = await resp.text().catch(() => '');
@@ -77,9 +83,11 @@ async function sendViaSmtp(options: EmailOptions): Promise<boolean> {
     await transporter.sendMail({
       from: options.from || DEFAULT_FROM,
       to: options.to,
+      cc: options.cc,
       subject: options.subject,
       html: options.html,
       text: options.text,
+      attachments: options.attachments?.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })),
     });
     console.log(`[EMAIL][smtp] Enviado a ${options.to}: ${options.subject}`);
     return true;
@@ -547,4 +555,59 @@ export async function clientActivityEmail(data: {
     cta: { text: 'Ver en Tiusdei', url: data.url },
   });
   return { to: '', subject: `[Cliente] ${data.clienteNombre} ${data.accion}`, html, text };
+}
+
+// ========== Weekly project reports ==========
+
+/** To the project leader: the draft is ready to review. */
+export async function reporteListoEmail(data: {
+  recipientName: string; proyecto: string; periodo: string; resumen: string; proyectoUrl: string;
+}): Promise<EmailOptions> {
+  const { html, text } = await renderEmail({
+    accent: 'blue',
+    preheader: 'Reporte semanal listo para revisar',
+    headline: data.proyecto,
+    greeting: `Hola ${data.recipientName},`,
+    intro: `El reporte del proyecto <strong>${escapeHtml(data.proyecto)}</strong> (${escapeHtml(data.periodo)}) ya está listo como borrador. Revísalo en Tiusdei: puedes regenerarlo con indicaciones, aprobarlo y enviarlo.`,
+    quote: data.resumen,
+    cta: { text: 'Revisar el reporte', url: data.proyectoUrl },
+  });
+  return { to: '', subject: `[Reporte listo] ${data.proyecto} · ${data.periodo}`, html, text };
+}
+
+/** To the project leader: generation failed after its retries. */
+export async function reporteFallidoEmail(data: {
+  recipientName: string; proyecto: string; periodo: string; proyectoUrl: string;
+}): Promise<EmailOptions> {
+  const { html, text } = await renderEmail({
+    accent: 'red',
+    preheader: 'No se pudo generar el reporte',
+    headline: data.proyecto,
+    greeting: `Hola ${data.recipientName},`,
+    intro: `Hubo un problema generando el reporte del proyecto <strong>${escapeHtml(data.proyecto)}</strong> (${escapeHtml(data.periodo)}). Se intentó tres veces. Desde Tiusdei puedes volver a generarlo.`,
+    cta: { text: 'Ir al proyecto', url: data.proyectoUrl },
+  });
+  return { to: '', subject: `[Reporte con problemas] ${data.proyecto} · ${data.periodo}`, html, text };
+}
+
+/** To the chosen recipients: the approved report, with the PDF attached by the caller. */
+export async function reporteEnvioEmail(data: {
+  saludo: string; proyecto: string; periodo: string; lider: string; mensaje: string;
+  indicadores: { completadas: number; atrasadas: number; avance: number }; tiusdeiUrl: string;
+}): Promise<EmailOptions> {
+  const { html, text } = await renderEmail({
+    accent: 'green',
+    preheader: 'Reporte semanal de proyecto',
+    headline: data.proyecto,
+    greeting: data.saludo,
+    intro: `Aquí está el reporte semanal del proyecto <strong>${escapeHtml(data.proyecto)}</strong> (${escapeHtml(data.periodo)}), generado por Tiusdei y aprobado por <strong>${escapeHtml(data.lider)}</strong>. Va adjunto en PDF.`,
+    quote: data.mensaje || undefined,
+    details: [
+      { label: 'Completadas', value: String(data.indicadores.completadas) },
+      { label: 'Atrasadas', value: String(data.indicadores.atrasadas), highlight: data.indicadores.atrasadas > 0 },
+      { label: 'Avance del proyecto', value: `${data.indicadores.avance}%` },
+    ],
+    cta: { text: 'Abrir Tiusdei', url: data.tiusdeiUrl },
+  });
+  return { to: '', subject: `Reporte semanal · ${data.proyecto} · ${data.periodo}`, html, text };
 }

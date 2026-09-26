@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import http from 'http';
 import type { AddressInfo } from 'net';
-import { crearRunnerHttp, ErrorRunner } from '../src/minutas/ia/runner.js';
+import { crearRunnerHttp, ErrorRunner, ErrorRunnerOcupado } from '../src/minutas/ia/runner.js';
 
 const TOKEN = 't'.repeat(40);
 let servidor: http.Server | null = null;
@@ -59,5 +59,23 @@ describe('crearRunnerHttp', () => {
     const runner = crearRunnerHttp({ url: '', token: '' });
     expect(await runner.salud()).toEqual({ listo: false, detalle: 'La IA no está configurada en el servidor.' });
     await expect(runner.generar({ transcripcion: 'Hola', fecha: '2026-09-24' })).rejects.toEqual(new ErrorRunner('La IA no está configurada en el servidor.'));
+  });
+
+  it('pide un trabajo de reportes con su tipo, datos e indicaciones', async () => {
+    const { url, recibido } = await runnerFalso(200, { tareas: [] });
+    const r = await crearRunnerHttp({ url, token: TOKEN }).trabajo('reporte-avances', { tareas: [{ id: 't1' }] }, 'Menos técnico');
+    expect(r).toEqual({ tareas: [] });
+    expect(recibido).toEqual({ auth: `Bearer ${TOKEN}`, url: 'POST /trabajo', body: { tipo: 'reporte-avances', entrada: { tareas: [{ id: 't1' }] }, indicaciones: 'Menos técnico' } });
+  });
+
+  it('distingue "Codex está ocupado" de un error, para esperar y reintentar', async () => {
+    const ocupado = await runnerFalso(429, { error: 'Codex está ocupado con otro trabajo. Intenta en un minuto.' });
+    await expect(crearRunnerHttp({ url: ocupado.url, token: TOKEN }).trabajo('reporte-resumen', {})).rejects.toBeInstanceOf(ErrorRunnerOcupado);
+    await new Promise<void>((r) => servidor!.close(() => r()));
+    servidor = null;
+    const falla = await runnerFalso(502, { error: 'Codex no pudo completar el trabajo.' });
+    const error = await crearRunnerHttp({ url: falla.url, token: TOKEN }).trabajo('reporte-resumen', {}).catch((e) => e);
+    expect(error).toEqual(new ErrorRunner('Codex no pudo completar el trabajo.'));
+    expect(error).not.toBeInstanceOf(ErrorRunnerOcupado);
   });
 });
