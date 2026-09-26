@@ -96,67 +96,141 @@ export interface TareaDelPeriodo {
 export interface TareaAlCorte extends TareaDelPeriodo {
   estado_al_corte: string;
   fecha_al_corte: string | null;
+  /** Last delivery up to the cut; null when the task was closed without a recorded status change. */
+  entrega: CambioEstado | null;
   dias_atraso: number | null;
 }
 
+export interface Periodo { desde: string; hasta: string; parcial?: boolean }
+
 const CERRADA = new Set(['entregado', 'aprobado']);
+/** Waiting on the client: Tiusdei does not count it as overdue. */
+const ESPERA_CLIENTE = 'revision_cliente';
 const entre = (fecha: string, p: { desde: string; hasta: string }) => fecha >= p.desde && fecha <= p.hasta;
-
-/** Status and due date as they were at the end of the period, undoing what changed afterwards. */
-function alCorte(t: TareaDelPeriodo, hasta: string, corte: string): TareaAlCorte {
-  const cambioDespues = t.cambios.find((c) => c.fecha > hasta);
-  const reprogDespues = t.reprogramaciones.find((r) => r.fecha > hasta);
-  const estado = cambioDespues ? cambioDespues.de ?? t.estado : t.estado;
-  const fecha = reprogDespues ? reprogDespues.anterior : t.fecha_entrega;
-  const atrasada = !CERRADA.has(estado) && !!fecha && fecha <= hasta;
-  return { ...t, estado_al_corte: estado, fecha_al_corte: fecha, dias_atraso: atrasada ? diasEntre(fecha!, corte) : null };
-}
-
-/** The delivery (to delivered or approved) that happened inside the period, if any. */
-const entregaEn = (t: TareaDelPeriodo, p: { desde: string; hasta: string }) =>
-  [...t.cambios].reverse().find((c) => entre(c.fecha, p) && c.a && CERRADA.has(c.a) && (!c.de || !CERRADA.has(c.de)));
-
-export interface Indicadores { entregadas: number; atrasadas: number; bloqueadas: number; fechas_movidas: number; proximas: number; abiertas: number }
+const esEntrega = (c: CambioEstado) => !!c.a && CERRADA.has(c.a) && (!c.de || !CERRADA.has(c.de));
 
 /**
- * What a weekly report is about: tasks that moved during the week (delivered, changed status or dates, or got
- * comments), risks at the cut (late or blocked), what is due in the next seven days and the rest of the open work.
+ * First day that counts as "late" for a due date, like Tiusdei's overdue rule (due date before today). For a
+ * finished week that is the Monday after it; for the week in progress it is the day of the cut.
  */
-export function analizarSemana(tareas: TareaDelPeriodo[], periodo: { desde: string; hasta: string }) {
-  const corte = sumarDias(periodo.hasta, 1);
-  const vigentes = tareas.filter((t) => t.creada <= periodo.hasta).map((t) => alCorte(t, periodo.hasta, corte));
-  const abiertas = vigentes.filter((t) => !CERRADA.has(t.estado_al_corte));
-  const seMovio = (t: TareaAlCorte) => t.comentarios > 0 || t.cambios.some((c) => entre(c.fecha, periodo)) || t.reprogramaciones.some((r) => entre(r.fecha, periodo));
-  const movidas = vigentes.filter(seMovio);
-  const atrasadas = abiertas.filter((t) => t.dias_atraso != null).sort((a, b) => b.dias_atraso! - a.dias_atraso!);
-  const bloqueadas = abiertas.filter((t) => t.dias_atraso == null && t.estado_al_corte === 'bloqueado');
-  const proximas = abiertas
-    .filter((t) => t.fecha_al_corte && t.fecha_al_corte > periodo.hasta && t.fecha_al_corte <= sumarDias(periodo.hasta, 7))
-    .sort((a, b) => a.fecha_al_corte!.localeCompare(b.fecha_al_corte!));
+export const limiteDelPeriodo = (p: Periodo) => (p.parcial ? p.hasta : sumarDias(p.hasta, 1));
+
+/**
+ * The change that closed the task for the last time: walking back from the latest change, closed-to-closed moves
+ * (delivered to approved) are skipped; a reopening voids older deliveries.
+ */
+function ultimaEntrega(cambios: CambioEstado[]): CambioEstado | null {
+  for (let i = cambios.length - 1; i >= 0; i--) {
+    const c = cambios[i];
+    if (!c.a || !CERRADA.has(c.a)) return null;
+    if (esEntrega(c)) return c;
+  }
+  return null;
+}
+
+/** Status, due date and last delivery as they were at the end of the period, undoing what changed afterwards. */
+function alCorte(t: TareaDelPeriodo, p: Periodo): TareaAlCorte {
+  const cambioDespues = t.cambios.find((c) => c.fecha > p.hasta);
+  const reprogDespues = t.reprogramaciones.find((r) => r.fecha > p.hasta);
+  const estado = cambioDespues ? cambioDespues.de ?? t.estado : t.estado;
+  const fecha = reprogDespues ? reprogDespues.anterior : t.fecha_entrega;
+  const entrega = CERRADA.has(estado) ? ultimaEntrega(t.cambios.filter((c) => c.fecha <= p.hasta)) : null;
+  const limite = limiteDelPeriodo(p);
+  const atrasada = !CERRADA.has(estado) && estado !== ESPERA_CLIENTE && !!fecha && fecha < limite;
+  return { ...t, estado_al_corte: estado, fecha_al_corte: fecha, entrega, dias_atraso: atrasada ? diasEntre(fecha!, limite) : null };
+}
+
+export interface Indicadores {
+  /** Tasks due this week and how many of them are delivered. */
+  previstas: number;
+  cumplidas: number;
+  /** Open tasks past their due date (any week), as Tiusdei counts overdue tasks. */
+  atrasadas: number;
+  postergadas: number;
+  proxima_semana: number;
+  bloqueadas: number;
+  /** Deliveries made during the week, whatever their due date. */
+  entregadas_semana: number;
+  abiertas: number;
+  /** Open tasks due in the three days after the cut (Tiusdei's yellow). */
+  por_vencer: number;
+}
+
+export interface CambioDeFecha { id: string; titulo: string; responsable: string | null; antes: string | null; ahora: string | null; motivo: string | null; postergada: boolean }
+
+const MOTIVO: Record<string, string> = {
+  INTERNO: 'ajuste del equipo', CLIENTE: 'pedido del cliente', ALCANCE: 'cambio de alcance', FUERZA_MAYOR: 'fuerza mayor',
+};
+const mayuscula = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** The due-date changes of a task during the week collapsed into one: from the first date to the last. */
+function cambioDeFecha(t: TareaAlCorte, p: Periodo): CambioDeFecha | null {
+  const rs = t.reprogramaciones.filter((r) => entre(r.fecha, p));
+  if (!rs.length) return null;
+  const antes = rs[0].anterior;
+  const ahora = rs[rs.length - 1].nueva;
+  if (antes === ahora) return null;
+  const motivos = [...new Set(rs.map((r) => MOTIVO[r.motivo]).filter(Boolean))];
+  const comentarios = rs.map((r) => r.comentario?.trim()).filter(Boolean).map((c) => `“${c!.slice(0, 80)}”`);
+  const motivo = [motivos.length ? mayuscula(motivos.join(', ')) : '', ...comentarios].filter(Boolean).join(' · ') || null;
+  const postergada = !!antes && (!ahora || ahora > antes);
+  return { id: t.id, titulo: t.titulo, responsable: t.responsable, antes, ahora, motivo, postergada };
+}
+const diasMovida = (c: CambioDeFecha) => (c.antes && c.ahora ? diasEntre(c.antes, c.ahora) : Infinity);
+
+const porFecha = (a: TareaAlCorte, b: TareaAlCorte) =>
+  (a.fecha_al_corte ?? '9999').localeCompare(b.fecha_al_corte ?? '9999') || a.titulo.localeCompare(b.titulo);
+
+/**
+ * What a weekly report is about, measured by due date over the calendar week (Monday to Sunday): the tasks due
+ * this week and how they ended, the late ones from earlier weeks, other deliveries made this week, the date
+ * changes, what is due next week and the rest of the open work.
+ */
+export function analizarSemana(tareas: TareaDelPeriodo[], periodo: Periodo) {
+  const semana = { desde: periodo.desde, hasta: sumarDias(periodo.desde, 6) };
+  const proxima = { desde: sumarDias(semana.hasta, 1), hasta: sumarDias(semana.hasta, 7) };
+  const limite = limiteDelPeriodo(periodo);
+  const vigentes = tareas.filter((t) => t.creada <= periodo.hasta).map((t) => alCorte(t, periodo));
+  const cerrada = (t: TareaAlCorte) => CERRADA.has(t.estado_al_corte);
+  const abiertas = vigentes.filter((t) => !cerrada(t));
+  const fecha = (t: TareaAlCorte) => t.fecha_al_corte;
+
+  const entregas = vigentes.filter((t) => fecha(t) && entre(fecha(t)!, semana)).sort(porFecha);
+  const atrasadasAnteriores = abiertas.filter((t) => t.dias_atraso != null && fecha(t)! < semana.desde).sort(porFecha);
+  const otrasEntregas = vigentes
+    .filter((t) => t.entrega && entre(t.entrega.fecha, periodo) && !(fecha(t) && entre(fecha(t)!, semana)))
+    .sort((a, b) => a.entrega!.fecha.localeCompare(b.entrega!.fecha));
+  const proximaSemana = abiertas.filter((t) => fecha(t) && entre(fecha(t)!, proxima)).sort(porFecha);
+  const listadas = new Set([...entregas, ...atrasadasAnteriores, ...proximaSemana].map((t) => t.id));
+  const otrasAbiertas = abiertas.filter((t) => !listadas.has(t.id)).sort(porFecha);
+  const cambiosFecha = vigentes
+    .map((t) => cambioDeFecha(t, periodo))
+    .filter((c): c is CambioDeFecha => !!c)
+    .sort((a, b) => Number(b.postergada) - Number(a.postergada)
+      || (a.postergada ? diasMovida(b) - diasMovida(a) : (a.ahora ?? '9999').localeCompare(b.ahora ?? '9999')));
+
   const indicadores: Indicadores = {
-    entregadas: vigentes.filter((t) => entregaEn(t, periodo)).length,
-    atrasadas: atrasadas.length,
+    previstas: entregas.length,
+    cumplidas: entregas.filter(cerrada).length,
+    atrasadas: abiertas.filter((t) => t.dias_atraso != null).length,
+    postergadas: cambiosFecha.filter((c) => c.postergada).length,
+    proxima_semana: proximaSemana.length,
     bloqueadas: abiertas.filter((t) => t.estado_al_corte === 'bloqueado').length,
-    fechas_movidas: vigentes.filter((t) => t.reprogramaciones.some((r) => entre(r.fecha, periodo))).length,
-    proximas: proximas.length,
+    entregadas_semana: vigentes.filter((t) => t.entrega && entre(t.entrega.fecha, periodo)).length,
     abiertas: abiertas.length,
+    por_vencer: abiertas.filter((t) => fecha(t) && fecha(t)! >= limite && fecha(t)! <= sumarDias(limite, 3)).length,
   };
   return {
-    movidas,
-    riesgos: [...atrasadas, ...bloqueadas],
-    proximas,
-    resto: abiertas.filter((t) => !seMovio(t)),
-    entregadas_antes: vigentes.filter((t) => CERRADA.has(t.estado_al_corte) && !seMovio(t)).length,
-    indicadores,
+    semana, proxima, entregas, atrasadas_anteriores: atrasadasAnteriores, otras_entregas: otrasEntregas,
+    cambios_fecha: cambiosFecha, proxima_semana: proximaSemana, otras_abiertas: otrasAbiertas, indicadores,
   };
 }
 
-/** Share of tasks done at a date (%), counting only the tasks that existed then. */
-export function avanceAl(tareas: Pick<TareaDelPeriodo, 'creada' | 'estado' | 'cambios' | 'reprogramaciones' | 'fecha_entrega'>[], fecha: string): number {
+/** Tasks done at a date, counting only the tasks that existed then. */
+export function avanceAl(tareas: TareaDelPeriodo[], fecha: string): { listas: number; total: number; porcentaje: number } {
   const existentes = tareas.filter((t) => t.creada <= fecha);
-  if (!existentes.length) return 0;
-  const listas = existentes.filter((t) => CERRADA.has(alCorte(t as TareaDelPeriodo, fecha, sumarDias(fecha, 1)).estado_al_corte)).length;
-  return Math.round((listas / existentes.length) * 100);
+  const listas = existentes.filter((t) => CERRADA.has(alCorte(t, { desde: fecha, hasta: fecha }).estado_al_corte)).length;
+  return { listas, total: existentes.length, porcentaje: existentes.length ? Math.round((listas / existentes.length) * 100) : 0 };
 }
 
 export const ETIQUETA_ESTADO: Record<string, string> = {
@@ -166,51 +240,44 @@ export const ETIQUETA_ESTADO: Record<string, string> = {
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 export const fechaCorta = (fecha: string) => { const [, m, d] = fecha.split('-').map(Number); return `${d} ${MESES[m - 1]}`; };
-const etiqueta = (e: string | null) => (e ? ETIQUETA_ESTADO[e] ?? e : '?');
 const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`;
 
-const MOTIVO: Record<string, string> = {
-  INTERNO: 'por un ajuste del equipo', CLIENTE: 'por pedido del cliente', ALCANCE: 'por cambio de alcance', FUERZA_MAYOR: 'por fuerza mayor',
-};
-
-/** What happened to a task during the period, one fixed sentence per fact (no AI involved). */
-export function eventosDeTarea(t: TareaDelPeriodo, periodo: { desde: string; hasta: string }): string[] {
-  const eventos: string[] = [];
-  const entrega = entregaEn(t, periodo);
-  const limite = alCorte(t, periodo.hasta, sumarDias(periodo.hasta, 1)).fecha_al_corte;
-  if (entrega) {
-    const diferencia = limite ? diasEntre(entrega.fecha, limite) : null;
-    const cuando = diferencia == null ? '' : diferencia > 0 ? ` · ${dias(diferencia)} antes de lo previsto` : diferencia < 0 ? ` · ${dias(-diferencia)} tarde` : ' · a tiempo';
-    eventos.push(`Entregada el ${fechaCorta(entrega.fecha)}${entrega.por ? ` por ${entrega.por}` : ''}${cuando}`);
-  } else {
-    const cambios = t.cambios.filter((c) => entre(c.fecha, periodo));
-    if (cambios.length) {
-      const ultimo = cambios[cambios.length - 1];
-      const ruta = [etiqueta(cambios[0].de), ...cambios.map((c) => etiqueta(c.a))].join(' → ');
-      eventos.push(`${ruta} (${fechaCorta(ultimo.fecha)}${ultimo.por ? `, ${ultimo.por}` : ''})`);
-    }
+/** How a task stood at the cut, in one fixed sentence (no AI involved). */
+export function resultado(t: TareaAlCorte): string {
+  if (CERRADA.has(t.estado_al_corte)) {
+    if (!t.entrega) return 'Entregada (sin fecha registrada)';
+    const d = t.fecha_al_corte ? diasEntre(t.entrega.fecha, t.fecha_al_corte) : null;
+    const cuando = d == null ? '' : d > 0 ? ` · ${dias(d)} antes` : d < 0 ? ` · ${dias(-d)} tarde` : ' · a tiempo';
+    return `Entregada el ${fechaCorta(t.entrega.fecha)}${cuando}`;
   }
-  for (const r of t.reprogramaciones.filter((x) => entre(x.fecha, periodo))) {
-    const desdeHasta = r.anterior && r.nueva ? `del ${fechaCorta(r.anterior)} al ${fechaCorta(r.nueva)}` : r.nueva ? `al ${fechaCorta(r.nueva)}` : 'sin fecha';
-    const comentario = r.comentario?.trim() ? ` · “${r.comentario.trim().slice(0, 80)}”` : '';
-    eventos.push(`Fecha movida ${desdeHasta}${MOTIVO[r.motivo] ? ` · ${MOTIVO[r.motivo]}` : ''}${comentario}`);
-  }
-  return eventos;
+  const estado = ETIQUETA_ESTADO[t.estado_al_corte] ?? t.estado_al_corte;
+  return t.dias_atraso != null ? `${estado} · ${dias(t.dias_atraso)} de atraso` : estado;
 }
 
 const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
-const lista = (partes: string[]) => (partes.length > 1 ? `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}` : partes[0]);
 
-/** The traffic light of the week: red with late deliveries, yellow with blocks or several moved dates, green otherwise. */
-export function semaforo(i: Indicadores): { color: 'verde' | 'amarillo' | 'rojo'; frase: string } {
-  const partes = [
-    i.atrasadas && plural(i.atrasadas, 'entrega atrasada', 'entregas atrasadas'),
-    i.bloqueadas && plural(i.bloqueadas, 'tarea bloqueada', 'tareas bloqueadas'),
-    i.fechas_movidas && plural(i.fechas_movidas, 'fecha movida', 'fechas movidas'),
+/**
+ * The traffic light, with Tiusdei's own rule for project health so both always agree: red with overdue tasks or
+ * the project's end date already past, yellow when something is due in the next three days, green otherwise.
+ * When someone set another color by hand in Tiusdei, the note says so.
+ */
+export function semaforo(
+  i: Pick<Indicadores, 'atrasadas' | 'por_vencer'>,
+  proyecto: { estado?: string | null; fecha_fin?: string | null; salud_manual?: string | null },
+  limite: string,
+): { color: 'verde' | 'amarillo' | 'rojo'; frase: string; nota: string | null } {
+  const finPasado = proyecto.estado === 'en_curso' && !!proyecto.fecha_fin && proyecto.fecha_fin < limite;
+  const riesgos = [
+    i.atrasadas > 0 && plural(i.atrasadas, 'tarea vencida sin entregar', 'tareas vencidas sin entregar'),
+    finPasado && `la fecha de cierre del proyecto (${fechaCorta(proyecto.fecha_fin!)}) ya pasó`,
   ].filter(Boolean) as string[];
-  if (i.atrasadas > 0) return { color: 'rojo', frase: `En riesgo: ${lista(partes)}.` };
-  if (i.bloqueadas > 0 || i.fechas_movidas >= 2) return { color: 'amarillo', frase: `Atención: ${lista(partes)}.` };
-  return { color: 'verde', frase: 'Vamos bien: sin atrasos ni bloqueos.' };
+  const luz = riesgos.length
+    ? { color: 'rojo' as const, frase: `En riesgo: ${riesgos.join(' y ')}.` }
+    : i.por_vencer > 0
+      ? { color: 'amarillo' as const, frase: `Atención: ${i.por_vencer === 1 ? '1 entrega vence' : `${i.por_vencer} entregas vencen`} en los próximos 3 días.` }
+      : { color: 'verde' as const, frase: 'Vamos bien: nada vencido ni por vencer.' };
+  const manual = proyecto.salud_manual;
+  return { ...luz, nota: manual && manual !== luz.color ? `En Tiusdei el proyecto está marcado en ${manual} a mano.` : null };
 }
 
 /** Greedy batches under a size budget; an item bigger than the budget goes alone. */

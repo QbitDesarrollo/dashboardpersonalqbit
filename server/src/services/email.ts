@@ -593,7 +593,8 @@ export async function reporteFallidoEmail(data: {
 /** To the chosen recipients: the approved report, with the PDF attached by the caller. */
 export async function reporteEnvioEmail(data: {
   saludo: string; proyecto: string; periodo: string; lider: string; mensaje: string; semaforo: string;
-  indicadores: { entregadas: number; atrasadas: number; avance: number; avance_semana: number }; tiusdeiUrl: string;
+  indicadores: { previstas: number; cumplidas: number; atrasadas: number };
+  avance: { porcentaje: number; listas: number; total: number }; tiusdeiUrl: string;
 }): Promise<EmailOptions> {
   const { html, text } = await renderEmail({
     accent: 'green',
@@ -604,9 +605,9 @@ export async function reporteEnvioEmail(data: {
     quote: data.mensaje || undefined,
     details: [
       { label: 'Estado', value: escapeHtml(data.semaforo), highlight: data.indicadores.atrasadas > 0 },
-      { label: 'Avance del proyecto', value: `${data.indicadores.avance}% (${data.indicadores.avance_semana >= 0 ? '+' : ''}${data.indicadores.avance_semana} esta semana)` },
-      { label: 'Entregadas en la semana', value: String(data.indicadores.entregadas) },
-      { label: 'Atrasadas', value: String(data.indicadores.atrasadas), highlight: data.indicadores.atrasadas > 0 },
+      { label: 'Avance general del proyecto', value: `${data.avance.porcentaje}% (${data.avance.listas} de ${data.avance.total} tareas)` },
+      { label: 'Entregas de la semana', value: `${data.indicadores.cumplidas} de ${data.indicadores.previstas}` },
+      { label: 'Vencidas sin entregar', value: String(data.indicadores.atrasadas), highlight: data.indicadores.atrasadas > 0 },
     ],
     cta: { text: 'Abrir Tiusdei', url: data.tiusdeiUrl },
   });

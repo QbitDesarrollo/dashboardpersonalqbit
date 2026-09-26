@@ -106,7 +106,7 @@ describe('generar, regenerar, aprobar', () => {
     const r = await generado();
     expect(r).toMatchObject({ estado: 'borrador', periodo_desde: '2026-09-21', periodo_hasta: '2026-09-27' });
     expect(r.contenido.resumen_ejecutivo).toBe('Semana tranquila.');
-    expect(r.contenido.movidas[0]).toMatchObject({ titulo: 'Momento de ofrecer cita', avance: 'Se avanzó.' });
+    expect(r.contenido.proxima_semana[0]).toMatchObject({ titulo: 'Momento de ofrecer cita', vence: '2026-10-02', resultado: 'En proceso' });
     const lista = await llamar(u(`/projects/${proyectoId}/reportes`), lider);
     expect(lista.body.map((x: any) => [x.periodo_desde, x.estado])).toEqual([['2026-09-21', 'borrador']]);
   });
@@ -153,6 +153,10 @@ describe('enviar', () => {
     expect(correo.cc).toBe(await email(diego.id));
     expect(correo.subject).toBe('Reporte semanal · Bot Proyecta · 21 sep – 27 sep 2026');
     expect(correo.html).toContain('Hola Ana Mora,');
+    expect(correo.html).toContain('Avance general del proyecto');
+    expect(correo.html).toContain('0% (0 de 1 tareas)');
+    expect(correo.html).toContain('Entregas de la semana');
+    expect(correo.html).toContain('Vencidas sin entregar');
     expect(correo.attachments?.[0]).toMatchObject({ filename: 'Reporte Bot Proyecta 2026-09-21 a 2026-09-27.pdf', contentType: 'application/pdf' });
     const detalle = await llamar(u(`/reportes/${r.id}`), lider);
     expect(detalle.body.envios).toHaveLength(1);

@@ -11,14 +11,28 @@ Diferencias con el plan, decididas al construir:
 - El avance (%) del reporte usa los mismos números que la pantalla de Proyectos (cuenta subtareas).
 - "Generar ahora" lo pueden usar el líder y admin; no manda el correo de "listo" (lo pidió la misma persona).
 
-## Formato del reporte (rehecho con Even el 26-sep, tras ver el primero)
-El primero listaba todo lo abierto del proyecto con una frase por tarea (7 páginas) y mezclaba estados de hoy con una semana pasada. El formato vigente responde "¿cómo vamos esta semana?":
-1. **De un vistazo** (página 1): semáforo con su frase (rojo si hay atrasos; amarillo si hay bloqueos o 2+ fechas movidas; verde si no), avance del proyecto y cuánto avanzó en la semana, entregadas / atrasadas / fechas movidas / vencen en 7 días, resumen ejecutivo corto y hasta 3 logros, decisiones y riesgos.
-2. **Esta semana**: solo las tareas que se movieron (entregadas, cambios de estado, fechas movidas, comentarios). Los hechos van con frases fijas, sin IA: "Entregada el 18 sep por Oriana · 7 días antes de lo previsto", "Fecha movida del 20 al 27 sep · por pedido del cliente" (motivo de `task_reschedules`; sin clasificar no se menciona). La IA solo resume los comentarios.
-3. **Riesgos al cierre**, **Próxima semana** y **Resto del proyecto** (tarea, responsable y estado; bloqueado y en curso primero).
-- Estados y fechas se toman **al cierre de la semana** (historial de estados y de fechas), no los de hoy.
-- Semanas elegibles en la pantalla: esta semana hasta hoy (parcial) y las 11 anteriores, alineadas al día de entrega. El reporte automático reemplaza la semana parcial.
-- Sin códigos internos (BOT-012, [v1.1]…) en lo que redacta la IA. La capa "de qué trata" ya no se usa.
+## Formato del reporte (versión 3, rehecho con Even el 26-sep)
+Historia: la versión 1 listaba todo el proyecto (7 páginas); la 2 armaba "esta semana" con cualquier tarea que tuvo movimiento (62 filas, incluidas tareas que vencían la semana siguiente), contaba como alerta traer fechas hacia adelante y daba números sin contexto. La vigente responde "¿qué se hizo esta semana y cómo está el proyecto?".
+
+**Reglas**
+- La semana es la **semana calendario** (lunes a domingo) y se mide por **fecha de entrega**, no por movimiento ni por fecha de creación. Una semana en curso se corta hoy, pero sus entregas siguen siendo las de lunes a domingo.
+- Estados y fechas se toman **al cierre** (historial de estados y de fechas), no los de hoy.
+- **Vencida** = sin entregar y con fecha anterior al corte, igual que Tiusdei (`revision_cliente` no cuenta: espera al cliente). En la semana en curso, lo que vence hoy todavía no está vencido.
+- **Semáforo** con la regla de la pantalla de Proyectos (`autoSalud`): rojo si hay vencidas o la fecha de cierre del proyecto pasó; amarillo si algo vence en los 3 días siguientes; verde si no. Si alguien fijó la salud a mano, el reporte lo aclara ("En Tiusdei el proyecto está marcado en verde a mano").
+- **Entrega**: el último cambio que cerró la tarea hasta el corte; si después se reabrió, esa entrega ya no vale. Si se cerró sin quedar en el historial (el MCP antes del 24-sep no lo registraba), dice "Entregada (sin fecha registrada)" en vez de inventar una fecha.
+- **Postergada** = la fecha terminó más adelante que al empezar la semana. Traer una fecha hacia adelante no es riesgo. Varios cambios de una tarea en la semana se muestran como uno (de la primera fecha a la última); si vuelve a la misma, no aparece.
+- Solo tareas principales; el avance general cuenta también subtareas, como la pantalla de Proyectos.
+
+**PDF**
+1. **De un vistazo**: semáforo con su frase (y la nota si hay salud manual), avance general ("36% · 33 de 92 tareas terminadas · al empezar la semana: 16%"), y cuatro cuadros: entregas de la semana (cumplidas de previstas), vencidas sin entregar, postergadas y vencen la próxima semana. Resumen ejecutivo y hasta 3 logros, decisiones y riesgos.
+2. Una tabla por pregunta, cada una con una línea que explica qué contiene: **Entregas de la semana**, **Atrasadas de semanas anteriores**, **Otras entregas de la semana** (vencían en otra semana o sin fecha), **Cambios de fecha** (antes, ahora, motivo; postergadas primero), **Próxima semana** (calendario) y **Otras tareas abiertas**. Las vacías no se muestran, salvo entregas y próxima semana, que lo dicen.
+3. Una fila por tarea con resultado en frase fija: "Entregada el 22 sep · 1 día tarde" (ámbar), "En proceso · 4 días de atraso" (rojo), "Entregada el 23 sep · a tiempo" (verde). Ninguna fila se parte entre páginas.
+
+**IA**
+- Codex recibe `hechos_clave`: los números ya redactados por Tiusdei ("De las 36 tareas que vencían esta semana, 20 están entregadas."). El prompt le prohíbe calcular cifras propias y le exige decir a qué se refiere cada número.
+- Los resúmenes de comentarios ya no se imprimen bajo cada fila: alimentan el resumen, los logros, las decisiones y los riesgos.
+- Sin códigos internos (BOT-012, [v1.1]…) en lo que redacta la IA.
+- Semanas elegibles en la pantalla: esta semana hasta hoy (parcial) y las 11 anteriores. El reporte automático reemplaza la semana parcial. Un reporte de una versión anterior pide regenerarse.
 
 ## Qué es
 

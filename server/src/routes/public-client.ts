@@ -3,6 +3,7 @@ import { createNotification } from '../utils/notifications.js';
 import { sendEmail, clientActivityEmail } from '../services/email.js';
 import { ensureRealImage } from '../utils/imageSafety.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
+import { logActivity } from '../utils/activity.js';
 import rateLimit from 'express-rate-limit';
 import multerPC from 'multer';
 import pathPC from 'path';
@@ -265,6 +266,8 @@ publicClientRouter.patch('/public/client/:token/tasks/:taskId/status', publicLim
       }
     }
     await query('UPDATE tasks SET estado = ? WHERE id = ?', [nuevo, taskId]);
+    // The client has no Tiusdei user: the change is recorded without one, so reports still know when it happened.
+    await logActivity('task', taskId, 'status_change', 'estado', t.estado, nuevo, null);
     // Deja constancia en el hilo como comentario del cliente
     const accionTxt = t.estado === 'revision_cliente' && nuevo === 'aprobado' ? '✅ Aprobó la tarea.'
       : t.estado === 'revision_cliente' && nuevo === 'en_proceso' ? '🔄 Pidió cambios (volvió a En proceso).'

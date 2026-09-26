@@ -20,7 +20,7 @@ const agrupar = <T>(filas: (T & { task_id: string })[]) => {
 
 export async function datosDelReporte(projectId: string, periodo: { desde: string; hasta: string; parcial?: boolean }): Promise<DatosReporte> {
   const p = await queryOne<any>(
-    `SELECT p.id, p.nombre, p.salud, p.estado, p.fecha_fin, b.nombre AS marca, pr.nombre AS lider, ${STATS_SQL}
+    `SELECT p.id, p.nombre, p.salud, p.estado, p.fecha_fin, DATE_FORMAT(p.fecha_fin, '%Y-%m-%d') AS fin, b.nombre AS marca, pr.nombre AS lider, ${STATS_SQL}
        FROM projects p LEFT JOIN brands b ON b.id = p.brand_id LEFT JOIN profiles pr ON pr.id = p.lider_user_id
       WHERE p.id = ?`,
     [projectId],
@@ -85,7 +85,10 @@ export async function datosDelReporte(projectId: string, periodo: { desde: strin
   }));
 
   return {
-    proyecto: { id: p.id, nombre: p.nombre, marca: p.marca ?? '', lider: p.lider ?? '', salud: p.salud || autoSalud(p) },
+    proyecto: {
+      id: p.id, nombre: p.nombre, marca: p.marca ?? '', lider: p.lider ?? '', salud: p.salud || autoSalud(p),
+      salud_manual: p.salud || null, estado: p.estado ?? null, fecha_fin: p.fin ?? null,
+    },
     periodo,
     tareas: todas.filter((t) => t.principal).map(({ principal: _p, ...t }) => t),
     todas: todas.map(({ principal: _p, ...t }) => t),

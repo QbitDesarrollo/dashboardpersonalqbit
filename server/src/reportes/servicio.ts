@@ -79,6 +79,7 @@ export async function enviarReporte(r: FilaReporte, userId: string, para: string
     mensaje: c.mensaje_correo,
     semaforo: c.semaforo.frase,
     indicadores: c.indicadores,
+    avance: c.avance,
     tiusdeiUrl: deps.frontendUrl,
   });
   const ok = await deps.correo.enviar({

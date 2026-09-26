@@ -44,7 +44,7 @@ describe('datosDelReporte', () => {
     await query('UPDATE tasks SET project_id = ? WHERE id = ?', [otro, ajena]);
 
     const d = await datosDelReporte(proyectoId, PERIODO);
-    expect(d.proyecto).toMatchObject({ id: proyectoId, nombre: 'Bot Proyecta', marca: 'Alba del Bosque', lider: 'Even Fierro' });
+    expect(d.proyecto).toMatchObject({ id: proyectoId, nombre: 'Bot Proyecta', marca: 'Alba del Bosque', lider: 'Even Fierro', salud_manual: null, fecha_fin: null });
     expect(d.tareas.map((t) => t.titulo).sort()).toEqual(['Menú de incidencias', 'Momento de ofrecer cita']);
     expect(d.todas).toHaveLength(3);
     expect(d.tareas.find((t) => t.id === t1)).toEqual({
@@ -53,6 +53,12 @@ describe('datosDelReporte', () => {
       reprogramaciones: [{ fecha: '2026-09-21', anterior: '2026-09-20', nueva: '2026-10-02', motivo: 'CLIENTE', comentario: null, por: 'Ana Mora' }],
     });
     expect(d.tareas.find((t) => t.id === t2)!.cambios).toEqual([{ fecha: '2026-09-24', de: 'en_proceso', a: 'entregado', por: 'Oriana Barcia' }]);
+  });
+
+  it('trae lo que el semáforo necesita del proyecto: estado, fecha de cierre y la salud fijada a mano', async () => {
+    await query("UPDATE projects SET salud = 'verde', estado = 'en_curso', fecha_fin = '2026-10-02' WHERE id = ?", [proyectoId]);
+    const d = await datosDelReporte(proyectoId, PERIODO);
+    expect(d.proyecto).toMatchObject({ salud: 'verde', salud_manual: 'verde', estado: 'en_curso', fecha_fin: '2026-10-02' });
   });
 
   it('solo toma los comentarios del periodo según la hora de Ecuador, y los cuenta en la tarea', async () => {
