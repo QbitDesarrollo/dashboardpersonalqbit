@@ -98,7 +98,7 @@ export default function Proyectos() {
               <Card key={p.id} className="hover:border-primary/40 transition-colors cursor-pointer" onClick={() => setSelected(p)}>
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="font-semibold flex items-center gap-2"><span className={cn('inline-block h-2.5 w-2.5 rounded-full', SALUD_DOT[p.salud])} title={SALUD_LABEL[p.salud]} />{p.nombre}</div>
                       <div className="text-xs text-muted-foreground">
                         {p.brand_nombre}
