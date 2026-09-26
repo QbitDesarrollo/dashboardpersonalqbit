@@ -37,6 +37,11 @@ describe('DetalleProyecto', () => {
     expect(toast.success).toHaveBeenCalledWith('Líder actualizado');
   });
 
+  it('"Ver en Tareas" lleva a Tareas filtrado por la marca y el proyecto', async () => {
+    mostrar(proyecto({}));
+    expect(await screen.findByRole('link', { name: 'Ver en Tareas' })).toHaveAttribute('href', '/tareas?brand=b1&project=p1');
+  });
+
   it('el líder ve la sección de reportes, pero no cambia el líder', async () => {
     auth = { profile: { id: 'u1', rol: 'equipo' }, isAdmin: false, isEjecutivo: false };
     mostrar(proyecto({}), 'r5');

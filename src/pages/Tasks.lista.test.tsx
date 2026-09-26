@@ -305,6 +305,29 @@ describe('Tasks · recuerda los filtros', () => {
     expect(primeraCarga()).toMatchObject({ responsable_user_id: 'u2', brand_id: 'b1' });
   });
 
+  it('"Ver en Tareas" de un proyecto abre solo con ese proyecto, sin lo recordado ni el filtro predeterminado', async () => {
+    localStorage.setItem('tareas_filtros:u1', JSON.stringify({ brand: 'b2', status: 'backlog', responsable: 'u9' }));
+    m.getSavedFilters.mockResolvedValue([{ id: 'f1', name: 'Pronaca', is_default: 1, filter_config: { brand_id: 'b2' } }]);
+    m.getProjects.mockResolvedValue([{ id: 'p1', nombre: 'Portal' }]);
+    renderTasks('/tareas?brand=b1&project=p1');
+    await screen.findByText('Carrusel de lanzamiento');
+    expect(primeraCarga()).toMatchObject({ brand_id: 'b1', project_id: 'p1' });
+    expect(primeraCarga().estado).not.toBe('backlog');
+    expect(primeraCarga().responsable_user_id).not.toBe('u9');
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(m.getTasks).toHaveBeenLastCalledWith(expect.objectContaining({ brand_id: 'b1', project_id: 'p1' }));
+  });
+
+  it('el enlace de un proyecto tampoco se pisa con el filtro predeterminado cuando no hay nada recordado', async () => {
+    m.getSavedFilters.mockResolvedValue([{ id: 'f1', name: 'Pronaca', is_default: 1, filter_config: { brand_id: 'b2' } }]);
+    m.getProjects.mockResolvedValue([{ id: 'p1', nombre: 'Portal' }]);
+    renderTasks('/tareas?brand=b1&project=p1');
+    await screen.findByText('Carrusel de lanzamiento');
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(m.getTasks).not.toHaveBeenCalledWith(expect.objectContaining({ brand_id: 'b2' }));
+    expect(m.getTasks).toHaveBeenLastCalledWith(expect.objectContaining({ brand_id: 'b1', project_id: 'p1' }));
+  });
+
   it('con filtros recordados no aplica el filtro guardado como predeterminado', async () => {
     localStorage.setItem('tareas_filtros:u1', JSON.stringify({ brand: 'b1' }));
     m.getSavedFilters.mockResolvedValue([{ id: 'f1', name: 'Pronaca', is_default: 1, filter_config: { brand_id: 'b2' } }]);

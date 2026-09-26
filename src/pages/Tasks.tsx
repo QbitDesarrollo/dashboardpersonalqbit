@@ -120,9 +120,14 @@ export default function Tasks() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  // Filters this person left on last time (localStorage). A ?responsable= link wins over them.
+  // Filters this person left on last time (localStorage). A ?responsable= link wins over them, and a
+  // project link (?brand=&project=, "Ver en Tareas") opens with that project only.
   const [recordados] = useState(() => leerFiltros(profile?.id));
-  const inicial = recordados ?? SIN_FILTROS;
+  const [desdeEnlace] = useState(() => {
+    const project = searchParams.get('project');
+    return project ? { ...SIN_FILTROS, brand: searchParams.get('brand') || 'all', project } : null;
+  });
+  const inicial = desdeEnlace ?? recordados ?? SIN_FILTROS;
   const [filterBrand, setFilterBrand] = useState<string>(inicial.brand);
   const [filterProject, setFilterProject] = useState<string>(inicial.project);
   const [filterDesk, setFilterDesk] = useState<string>(inicial.desk);
@@ -527,7 +532,7 @@ export default function Tasks() {
   const appliedDefaultRef = useRef(false);
   useEffect(() => {
     // Remembered filters are what the person chose last; the default saved filter only applies without them.
-    if (appliedDefaultRef.current || recordados || savedFilters.length === 0) return;
+    if (appliedDefaultRef.current || recordados || desdeEnlace || savedFilters.length === 0) return;
     const def = savedFilters.find((f) => (f as { is_default?: number }).is_default);
     if (!def?.filter_config || typeof def.filter_config !== 'object') return;
     appliedDefaultRef.current = true;

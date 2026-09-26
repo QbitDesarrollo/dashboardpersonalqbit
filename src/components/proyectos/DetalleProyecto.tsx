@@ -105,7 +105,7 @@ export function DetalleProyecto({ project, personas, onBack, reporteInicial }: P
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Tareas del proyecto</h2>
-          <Button variant="outline" size="sm" asChild><Link to={`/tareas?project=${p.id}`}><Link2 className="h-4 w-4" />Ver en Tareas</Link></Button>
+          <Button variant="outline" size="sm" asChild><Link to={`/tareas?brand=${p.brand_id}&project=${p.id}`}><Link2 className="h-4 w-4" />Ver en Tareas</Link></Button>
         </div>
         {data.tasks.length === 0 ? <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Sin tareas en este proyecto todavía. Asígnalas desde la vista de Tareas o el detalle de cada tarea.</CardContent></Card>
           : STATUS_ORDER.filter((st) => grouped[st]?.length).map((st) => (
