@@ -27,7 +27,7 @@ export function PuntoDialog({ minuta, punto, personas, vista, abierto, onOpenCha
   const estado = estadoPunto(punto);
   return (
     <Dialog open={abierto} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl w-[95vw] max-h-[92vh] overflow-y-auto p-0 gap-0">
+      <DialogContent className="max-w-3xl w-[95vw] max-h-[92vh] grid-cols-[minmax(0,1fr)] overflow-y-auto p-0 gap-0">
         <DialogHeader className="px-5 pt-5 pb-3 space-y-2 text-left">
           <DialogDescription className="font-mono text-xs uppercase tracking-wide">
             {minuta.codigo} · Punto {minuta.numero}.{punto.numero} · {TITULO_VISTA[vista]}
