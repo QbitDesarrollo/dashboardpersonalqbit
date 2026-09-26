@@ -316,10 +316,11 @@ export function filtrarCitas(items: Destacado[], validos: Set<string>): Destacad
     .filter((d) => d.task_ids.length > 0 && d.texto.trim());
 }
 
-const PERMITIDO: Record<'regenerar' | 'aprobar' | 'enviar', { estados: EstadoReporte[]; mensaje: string }> = {
+const PERMITIDO: Record<'regenerar' | 'aprobar' | 'enviar' | 'eliminar', { estados: EstadoReporte[]; mensaje: string }> = {
   regenerar: { estados: ['borrador', 'fallido'], mensaje: 'Solo se regenera un borrador.' },
   aprobar: { estados: ['borrador'], mensaje: 'Solo se aprueba un borrador listo.' },
   enviar: { estados: ['aprobado'], mensaje: 'Primero aprueba el reporte.' },
+  eliminar: { estados: ['programado', 'borrador', 'aprobado', 'fallido'], mensaje: 'Espera a que termine de generarse para eliminarlo.' },
 };
 
 export function puede(accion: keyof typeof PERMITIDO, estado: EstadoReporte): void {

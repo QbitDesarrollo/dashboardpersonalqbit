@@ -90,6 +90,12 @@ export async function listarReportes(projectId: string): Promise<FilaReporte[]> 
   return filas.map(normalizar);
 }
 
+/** Deletes a report (its sends go with it) unless it is being generated right now; false if it could not. */
+export async function eliminar(id: string): Promise<boolean> {
+  const r: any = await query("DELETE FROM proyecto_reportes WHERE id = ? AND estado <> 'generando'", [id]);
+  return Number(r.affectedRows) === 1;
+}
+
 /** Moves a report to "generating" only from the given states; false if someone else took it. */
 export async function marcarGenerando(id: string, desde: EstadoReporte[]): Promise<boolean> {
   const r: any = await query(

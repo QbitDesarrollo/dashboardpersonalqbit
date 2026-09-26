@@ -58,6 +58,13 @@ const saludo = (nombres: string[]) => {
   return 'Hola a todos,';
 };
 
+/** Deletes a report in any state but "generating", with its saved PDF and its sends. */
+export async function eliminarReporte(r: FilaReporte): Promise<void> {
+  puede('eliminar', r.estado);
+  if (!(await repo.eliminar(r.id))) throw new ErrorReporte(409, 'Espera a que termine de generarse para eliminarlo.');
+  if (r.pdf_path) fs.rmSync(r.pdf_path, { force: true });
+}
+
 /** Sends an approved report to Tiusdei users, with copies and the PDF attached, and records the send. */
 export async function enviarReporte(r: FilaReporte, userId: string, para: string[], cc: string[], deps: DepsReportes): Promise<void> {
   puede('enviar', r.estado);

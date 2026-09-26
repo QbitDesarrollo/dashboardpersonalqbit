@@ -139,6 +139,32 @@ describe('generar, regenerar, aprobar', () => {
   });
 });
 
+describe('eliminar', () => {
+  it('el líder borra un reporte que salió mal y desaparece del historial', async () => {
+    const r = await generado();
+    expect(await llamar(u(`/reportes/${r.id}`), lider, 'DELETE')).toMatchObject({ status: 200, body: { ok: true } });
+    expect((await llamar(u(`/reportes/${r.id}`), lider)).status).toBe(404);
+    expect((await llamar(u(`/projects/${proyectoId}/reportes`), lider)).body).toEqual([]);
+  });
+
+  it('un aprobado también se borra, con su PDF guardado y sus envíos', async () => {
+    const r = await generado();
+    await llamar(u(`/reportes/${r.id}/aprobar`), lider, 'POST');
+    await llamar(u(`/reportes/${r.id}/enviar`), lider, 'POST', { para: [ana.id], cc: [] });
+    expect((await llamar(u(`/reportes/${r.id}`), admin, 'DELETE')).status).toBe(200);
+    expect(fs.existsSync(path.join(dirPdf, `${r.id}.pdf`))).toBe(false);
+    expect(await query<any[]>('SELECT id FROM proyecto_reporte_envios WHERE reporte_id = ?', [r.id])).toEqual([]);
+  });
+
+  it('no se borra mientras se genera, ni lo borra quien no es líder ni admin', async () => {
+    const r = await generado();
+    expect((await llamar(u(`/reportes/${r.id}`), ana, 'DELETE')).status).toBe(403);
+    await query("UPDATE proyecto_reportes SET estado = 'generando' WHERE id = ?", [r.id]);
+    expect(await llamar(u(`/reportes/${r.id}`), lider, 'DELETE')).toMatchObject({ status: 409, body: { error: 'Espera a que termine de generarse para eliminarlo.' } });
+    expect((await llamar(u(`/reportes/${r.id}`), lider)).status).toBe(200);
+  });
+});
+
 describe('enviar', () => {
   it('solo se envía aprobado, a personas de Tiusdei, con copia y el PDF adjunto; queda registrado', async () => {
     const diego = await crearUsuario('Diego Ruiz', 'equipo');

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Loader2 } from 'lucide-react';
+import { ExternalLink, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { fechaCorta } from '@/lib/minutas';
-import { aprobarReporte, enviarReporte, esperarReporte, leerReporte, pdfReporte, regenerarReporte, type Reporte } from '@/lib/reportesApi';
+import { aprobarReporte, eliminarReporte, enviarReporte, esperarReporte, leerReporte, pdfReporte, regenerarReporte, type Reporte } from '@/lib/reportesApi';
 import { cn } from '@/lib/utils';
 import { AccionesReporte } from './AccionesReporte';
 import { ESTADO_REPORTE } from './estadosReporte';
@@ -104,6 +105,21 @@ export function VisorReporte({ reporteId, abierto, onOpenChange, personas, onCam
     }
   };
 
+  const eliminar = async () => {
+    if (!reporte || !window.confirm(`¿Eliminar el reporte ${periodo(reporte)}? No se puede deshacer.`)) return;
+    setOcupado(true);
+    try {
+      await eliminarReporte(reporteId);
+      toast.success('Reporte eliminado');
+      onCambio();
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo eliminar el reporte.');
+    } finally {
+      setOcupado(false);
+    }
+  };
+
   const estado = reporte ? ESTADO_REPORTE[generando ? 'generando' : reporte.estado] : null;
 
   return (
@@ -138,6 +154,11 @@ export function VisorReporte({ reporteId, abierto, onOpenChange, personas, onCam
               </a>
             )}
             {reporte && <AccionesReporte reporte={reporte} personas={personas} ocupado={ocupado || generando} onRegenerar={regenerar} onAprobar={aprobar} onEnviar={enviar} />}
+            {reporte && !generando && reporte.estado !== 'generando' && (
+              <Button variant="ghost" size="sm" disabled={ocupado} onClick={eliminar} className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                <Trash2 className="h-4 w-4" />Eliminar reporte
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>

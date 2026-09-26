@@ -7,7 +7,7 @@ import { VisorReporte } from './VisorReporte';
 
 vi.mock('@/lib/reportesApi', async (orig) => ({
   ...(await orig<typeof import('@/lib/reportesApi')>()),
-  leerReporte: vi.fn(), esperarReporte: vi.fn(), pdfReporte: vi.fn(), regenerarReporte: vi.fn(), aprobarReporte: vi.fn(), enviarReporte: vi.fn(),
+  leerReporte: vi.fn(), esperarReporte: vi.fn(), pdfReporte: vi.fn(), regenerarReporte: vi.fn(), aprobarReporte: vi.fn(), enviarReporte: vi.fn(), eliminarReporte: vi.fn(),
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -29,8 +29,8 @@ beforeEach(() => {
   m.pdfReporte.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
 });
 
-function abrir(onCambio = vi.fn()) {
-  render(<VisorReporte reporteId="r1" abierto onOpenChange={() => {}} personas={PERSONAS} onCambio={onCambio} />);
+function abrir(onCambio = vi.fn(), onOpenChange = vi.fn()) {
+  render(<VisorReporte reporteId="r1" abierto onOpenChange={onOpenChange} personas={PERSONAS} onCambio={onCambio} />);
   return onCambio;
 }
 
@@ -98,5 +98,32 @@ describe('VisorReporte', () => {
     expect(await screen.findByText('Codex no responde.')).toBeInTheDocument();
     expect(screen.queryByTitle('Reporte en PDF')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Volver a generar' })).toBeInTheDocument();
+  });
+
+  it('elimina el reporte después de confirmar, avisa y cierra el visor', async () => {
+    m.leerReporte.mockResolvedValue(reporte({ estado: 'aprobado', aprobado_por_nombre: 'Even Fierro' }));
+    m.eliminarReporte.mockResolvedValue(undefined);
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const onCambio = vi.fn();
+    const onOpenChange = vi.fn();
+    abrir(onCambio, onOpenChange);
+    await screen.findByTitle('Reporte en PDF');
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar reporte' }));
+    expect(m.eliminarReporte).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar reporte' }));
+    await waitFor(() => expect(m.eliminarReporte).toHaveBeenCalledWith('r1'));
+    expect(confirmar).toHaveBeenLastCalledWith('¿Eliminar el reporte 21 sep – 27 sep 2026? No se puede deshacer.');
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Reporte eliminado'));
+    expect(onCambio).toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    confirmar.mockRestore();
+  });
+
+  it('mientras se genera no se puede eliminar', async () => {
+    m.leerReporte.mockResolvedValue(reporte({ estado: 'generando', contenido: null }));
+    m.esperarReporte.mockReturnValue(new Promise(() => {}));
+    abrir();
+    await screen.findByText(/Dame un minuto/);
+    expect(screen.queryByRole('button', { name: 'Eliminar reporte' })).not.toBeInTheDocument();
   });
 });

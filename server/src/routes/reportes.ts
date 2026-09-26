@@ -7,7 +7,7 @@ import { ErrorRunner } from '../minutas/ia/runner.js';
 import { ErrorReporte, puede, semanasDisponibles, type Entrega } from '../reportes/dominio.js';
 import { nombreArchivoPdf } from '../reportes/pdf.js';
 import * as repo from '../reportes/repositorio.js';
-import { aprobarReporte, enviarReporte, generarYGuardar, pdfDelReporte, type DepsReportes } from '../reportes/servicio.js';
+import { aprobarReporte, eliminarReporte, enviarReporte, generarYGuardar, pdfDelReporte, type DepsReportes } from '../reportes/servicio.js';
 
 export type { DepsReportes } from '../reportes/servicio.js';
 
@@ -141,6 +141,13 @@ export function crearRouterReportes(deps: DepsReportes) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(nombreArchivoPdf(r.contenido!))}"`);
     res.send(pdf);
+  }));
+
+  router.delete('/reportes/:id', requireAuth, seguro(async (req, res) => {
+    const r = await reporte(req, res);
+    if (!r) return;
+    await eliminarReporte(r);
+    res.json({ ok: true });
   }));
 
   router.post('/reportes/:id/regenerar', requireAuth, seguro(async (req, res) => {

@@ -47,6 +47,7 @@ export const regenerarReporte = (id: string, indicaciones: string) => llamar<{ i
 export const aprobarReporte = (id: string) => llamar<Reporte>(`/api/data/reportes/${id}/aprobar`, 'POST');
 export const enviarReporte = (id: string, para: string[], cc: string[]) =>
   llamar<{ ok: true; envios: Envio[] }>(`/api/data/reportes/${id}/enviar`, 'POST', { para, cc });
+export const eliminarReporte = async (id: string): Promise<void> => { await llamar<{ ok: true }>(`/api/data/reportes/${id}`, 'DELETE'); };
 export const pendientesReportes = async () => (await llamar<{ pendientes: number }>('/api/data/reportes/pendientes')).pendientes;
 
 /** Polls until the report is no longer being generated. */
