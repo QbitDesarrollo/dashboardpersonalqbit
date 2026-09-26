@@ -1,5 +1,5 @@
 import { crearServidor } from './servidor.mjs';
-import { generarMinuta, verificarSesion } from './codex.mjs';
+import { ejecutarTrabajo, generarMinuta, verificarSesion } from './codex.mjs';
 
 const {
   RUNNER_TOKEN = '', PORT = '3090',
@@ -14,6 +14,7 @@ if (RUNNER_TOKEN.length < 32) {
 const servidor = crearServidor({
   token: RUNNER_TOKEN,
   generar: (datos) => generarMinuta(datos, { bin: CODEX_BIN, modelo: CODEX_MODELO, esfuerzo: CODEX_ESFUERZO }),
+  trabajar: (tipo, datos) => ejecutarTrabajo(tipo, datos, { bin: CODEX_BIN, modelo: CODEX_MODELO, esfuerzo: CODEX_ESFUERZO }),
   verificarSesion: () => verificarSesion({ bin: CODEX_BIN }),
 });
 

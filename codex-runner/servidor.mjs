@@ -5,6 +5,7 @@ const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_BYTES = 1024 * 1024;
 const MAX_NOTAS = 30_000;
 const MAX_INDICACIONES = 500;
+const TIPOS_TRABAJO = new Set(['reporte-descripciones', 'reporte-avances', 'reporte-resumen']);
 
 class ErrorHttp extends Error {
   constructor(status, mensaje) { super(mensaje); this.status = status; }
@@ -33,10 +34,10 @@ function responder(res, status, datos) {
 }
 
 /**
- * HTTP runner for Tiusdei. Only answers requests carrying the shared token and
- * runs one minuta at a time (Codex is a single subscription, used a few times a week).
+ * HTTP runner for Tiusdei. Only answers requests carrying the shared token and runs one Codex job at a time,
+ * whether a minuta or a report step (Codex is a single subscription).
  */
-export function crearServidor({ token, generar, verificarSesion, maxCaracteres = 120_000, log = console }) {
+export function crearServidor({ token, generar, trabajar, verificarSesion, maxCaracteres = 120_000, log = console }) {
   let ocupado = false;
 
   return http.createServer(async (req, res) => {
@@ -66,6 +67,25 @@ export function crearServidor({ token, generar, verificarSesion, maxCaracteres =
           // The detail stays in the runner log; it may mention local paths.
           log.error('[codex-runner] generar falló:', e instanceof Error ? e.message : e);
           throw new ErrorHttp(502, 'Codex no pudo generar la minuta.');
+        } finally {
+          ocupado = false;
+        }
+      }
+
+      if (req.method === 'POST' && req.url === '/trabajo') {
+        const cuerpo = await leerJson(req);
+        const indicaciones = typeof cuerpo.indicaciones === 'string' ? cuerpo.indicaciones : '';
+        if (!TIPOS_TRABAJO.has(cuerpo.tipo)) throw new ErrorHttp(400, 'Tipo de trabajo desconocido.');
+        if (!cuerpo.entrada || typeof cuerpo.entrada !== 'object' || Array.isArray(cuerpo.entrada)) throw new ErrorHttp(400, 'Faltan los datos del trabajo.');
+        if (indicaciones.length > MAX_INDICACIONES) throw new ErrorHttp(400, 'Las indicaciones son demasiado largas (máximo 500 caracteres).');
+        if (ocupado) throw new ErrorHttp(429, 'Codex está ocupado con otro trabajo. Intenta en un minuto.');
+
+        ocupado = true;
+        try {
+          return responder(res, 200, await trabajar(cuerpo.tipo, { entrada: cuerpo.entrada, indicaciones }));
+        } catch (e) {
+          log.error('[codex-runner] trabajo falló:', cuerpo.tipo, e instanceof Error ? e.message : e);
+          throw new ErrorHttp(502, 'Codex no pudo completar el trabajo.');
         } finally {
           ocupado = false;
         }

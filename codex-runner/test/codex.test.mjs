@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { armarPrompt, entradaCodex, generarMinuta, verificarSesion } from '../codex.mjs';
+import { armarPrompt, entradaCodex, generarMinuta, ejecutarTrabajo, TIPOS_TRABAJO, verificarSesion } from '../codex.mjs';
 
 // A fake `codex` binary: writes a fixed JSON wherever `-o` points, like `codex exec` does.
 async function codexFalso(t, cuerpo) {
@@ -64,4 +64,21 @@ test('corta a codex si se pasa del tiempo', async (t) => {
 test('la sesión está lista solo si codex dice que está logueado', async (t) => {
   assert.deepEqual(await verificarSesion({ bin: await codexFalso(t, 'echo "Logged in using ChatGPT"') }), { listo: true, detalle: 'Logged in using ChatGPT' });
   assert.deepEqual(await verificarSesion({ bin: await codexFalso(t, 'echo "Not logged in" >&2; exit 1') }), { listo: false, detalle: 'Not logged in' });
+});
+
+test('los trabajos de reportes usan su propio prompt y reciben los datos en un bloque', async (t) => {
+  const bin = await codexFalso(t, ESCRIBE_JSON);
+  const r = await ejecutarTrabajo('reporte-avances', { entrada: { tareas: [{ id: 't1', titulo: 'Home' }] }, indicaciones: '' }, { bin });
+  assert.equal(r.sandbox, 'read-only');
+  assert.match(r.entrada, /^<datos>\n/);
+  assert.deepEqual(JSON.parse(r.entrada.replace(/^<datos>\n|\n<\/datos>$/g, '')), { tareas: [{ id: 't1', titulo: 'Home' }] });
+  assert.match(r.prompt, /avance/i);
+});
+
+test('el resumen del reporte incluye las indicaciones del líder; un tipo desconocido no corre', async (t) => {
+  const bin = await codexFalso(t, ESCRIBE_JSON);
+  const r = await ejecutarTrabajo('reporte-resumen', { entrada: {}, indicaciones: 'Resalta los atrasos' }, { bin });
+  assert.match(r.prompt, /Resalta los atrasos/);
+  assert.deepEqual(TIPOS_TRABAJO, ['reporte-descripciones', 'reporte-avances', 'reporte-resumen']);
+  await assert.rejects(ejecutarTrabajo('otro', { entrada: {} }, { bin }), /Tipo de trabajo desconocido/);
 });

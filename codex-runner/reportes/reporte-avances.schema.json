@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tareas"],
+  "properties": {
+    "tareas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "avance", "decision", "bloqueo"],
+        "properties": {
+          "id": { "type": "string" },
+          "avance": { "type": "string" },
+          "decision": { "type": "string" },
+          "bloqueo": { "type": "string" }
+        }
+      }
+    }
+  }
+}

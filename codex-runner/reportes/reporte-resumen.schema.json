@@ -1,0 +1,85 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resumen_ejecutivo",
+    "logros",
+    "decisiones",
+    "riesgos",
+    "mensaje_correo"
+  ],
+  "properties": {
+    "resumen_ejecutivo": {
+      "type": "string"
+    },
+    "logros": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "texto",
+          "task_ids"
+        ],
+        "properties": {
+          "texto": {
+            "type": "string"
+          },
+          "task_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "decisiones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "texto",
+          "task_ids"
+        ],
+        "properties": {
+          "texto": {
+            "type": "string"
+          },
+          "task_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "riesgos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "texto",
+          "task_ids"
+        ],
+        "properties": {
+          "texto": {
+            "type": "string"
+          },
+          "task_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "mensaje_correo": {
+      "type": "string"
+    }
+  }
+}

@@ -9,6 +9,7 @@ async function levantar(opciones = {}) {
     token: TOKEN,
     verificarSesion: async () => ({ listo: true, detalle: 'Logged in using ChatGPT' }),
     generar: async (datos) => ({ titulo: `Minuta ${datos.fecha}`, recibido: datos, puntos: [] }),
+    trabajar: async (tipo, datos) => ({ tipo, recibido: datos }),
     log: { error: () => {} },
     ...opciones,
   });
@@ -101,6 +102,48 @@ test('si Codex falla responde 502 sin filtrar el detalle', async (t) => {
   const r = await llamar('/minuta', cuerpo({ transcripcion: 'Hola', fecha: '2026-09-24' }));
   assert.equal(r.status, 502);
   assert.deepEqual(await r.json(), { error: 'Codex no pudo generar la minuta.' });
+});
+
+test('corre un trabajo de reportes con su tipo, sus datos y las indicaciones', async (t) => {
+  const { servidor, llamar } = await levantar();
+  t.after(() => servidor.close());
+  const r = await llamar('/trabajo', cuerpo({ tipo: 'reporte-avances', entrada: { tareas: [{ id: 't1' }] }, indicaciones: 'Menos técnico' }));
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { tipo: 'reporte-avances', recibido: { entrada: { tareas: [{ id: 't1' }] }, indicaciones: 'Menos técnico' } });
+});
+
+test('valida el tipo, los datos y las indicaciones del trabajo', async (t) => {
+  const { servidor, llamar } = await levantar();
+  t.after(() => servidor.close());
+  const tipo = await llamar('/trabajo', cuerpo({ tipo: 'borrar-todo', entrada: {} }));
+  assert.equal(tipo.status, 400);
+  assert.deepEqual(await tipo.json(), { error: 'Tipo de trabajo desconocido.' });
+  const sinDatos = await llamar('/trabajo', cuerpo({ tipo: 'reporte-resumen', entrada: 'texto' }));
+  assert.equal(sinDatos.status, 400);
+  assert.deepEqual(await sinDatos.json(), { error: 'Faltan los datos del trabajo.' });
+  const indicaciones = await llamar('/trabajo', cuerpo({ tipo: 'reporte-resumen', entrada: {}, indicaciones: 'a'.repeat(501) }));
+  assert.equal(indicaciones.status, 400);
+});
+
+test('una minuta y un trabajo no corren a la vez: Codex es uno solo', async (t) => {
+  let soltar;
+  const { servidor, llamar } = await levantar({ generar: () => new Promise((r) => { soltar = () => r({ titulo: 'x', resumen: '', puntos: [] }); }) });
+  t.after(() => servidor.close());
+  const minuta = llamar('/minuta', cuerpo({ transcripcion: 'Uno', fecha: '2026-09-24' }));
+  await new Promise((r) => setTimeout(r, 50));
+  const trabajo = await llamar('/trabajo', cuerpo({ tipo: 'reporte-resumen', entrada: {} }));
+  assert.equal(trabajo.status, 429);
+  assert.deepEqual(await trabajo.json(), { error: 'Codex está ocupado con otro trabajo. Intenta en un minuto.' });
+  soltar();
+  assert.equal((await minuta).status, 200);
+});
+
+test('si un trabajo falla responde 502 sin filtrar el detalle', async (t) => {
+  const { servidor, llamar } = await levantar({ trabajar: async () => { throw new Error('/home/codex-ia/secreto'); } });
+  t.after(() => servidor.close());
+  const r = await llamar('/trabajo', cuerpo({ tipo: 'reporte-descripciones', entrada: { tareas: [] } }));
+  assert.equal(r.status, 502);
+  assert.deepEqual(await r.json(), { error: 'Codex no pudo completar el trabajo.' });
 });
 
 test('responde 404 a cualquier otra ruta', async (t) => {

@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tareas"],
+  "properties": {
+    "tareas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "de_que_trata"],
+        "properties": {
+          "id": { "type": "string" },
+          "de_que_trata": { "type": "string" }
+        }
+      }
+    }
+  }
+}
