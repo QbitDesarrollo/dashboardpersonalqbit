@@ -64,52 +64,153 @@ export function periodoAnterior(config: ConfigReporte, ahora: Date): Entrega {
   return entregaDe(esta.getTime() <= ahora.getTime() ? esta : anterior);
 }
 
+/** The weeks a leader can pick: this one up to today (partial) and the previous full ones, aligned to the delivery day. */
+export function semanasDisponibles(config: Pick<ConfigReporte, 'dia_entrega'>, ahora: Date, cuantas = 8): { desde: string; hasta: string; parcial: boolean }[] {
+  const hoy = fechaIso(new Date(ahora.getTime() - DESFASE_MS));
+  const dia = new Date(`${hoy}T00:00:00Z`).getUTCDay();
+  const inicio = sumarDias(hoy, -((dia - (config.dia_entrega % 7) + 7) % 7));
+  const semanas = [{ desde: inicio, hasta: hoy, parcial: true }];
+  for (let i = 1; i < cuantas; i++) semanas.push({ desde: sumarDias(inicio, -7 * i), hasta: sumarDias(inicio, -7 * i + 6), parcial: false });
+  return semanas;
+}
+
+export interface CambioEstado { fecha: string; de: string | null; a: string | null; por: string | null }
+export interface Reprogramacion { fecha: string; anterior: string | null; nueva: string | null; motivo: string; comentario: string | null; por: string | null }
+
 export interface TareaDelPeriodo {
   id: string;
   titulo: string;
+  /** Status and due date today; the report works out what they were at the cut. */
   estado: string;
   fecha_entrega: string | null;
   responsable: string | null;
   /** Ecuador date the task was created. */
   creada: string;
-  /** Ecuador date it was delivered or approved, if it is. */
-  cerrada: string | null;
-  /** Description as plain text. */
-  detalle: string;
-  /** Subtasks done over total, e.g. "3/5". */
-  subtareas: string | null;
+  /** Every status change and every due-date change, oldest first (Ecuador dates). */
+  cambios: CambioEstado[];
+  reprogramaciones: Reprogramacion[];
+  /** Comments written during the period. */
+  comentarios: number;
 }
 
-export type TareaClasificada = TareaDelPeriodo & { dias_atraso: number | null };
-export type Grupo = 'completadas' | 'atrasadas' | 'bloqueadas' | 'en_curso' | 'pendientes';
-export const GRUPOS: Grupo[] = ['completadas', 'atrasadas', 'bloqueadas', 'en_curso', 'pendientes'];
+export interface TareaAlCorte extends TareaDelPeriodo {
+  estado_al_corte: string;
+  fecha_al_corte: string | null;
+  dias_atraso: number | null;
+}
 
 const CERRADA = new Set(['entregado', 'aprobado']);
+const entre = (fecha: string, p: { desde: string; hasta: string }) => fecha >= p.desde && fecha <= p.hasta;
+
+/** Status and due date as they were at the end of the period, undoing what changed afterwards. */
+function alCorte(t: TareaDelPeriodo, hasta: string, corte: string): TareaAlCorte {
+  const cambioDespues = t.cambios.find((c) => c.fecha > hasta);
+  const reprogDespues = t.reprogramaciones.find((r) => r.fecha > hasta);
+  const estado = cambioDespues ? cambioDespues.de ?? t.estado : t.estado;
+  const fecha = reprogDespues ? reprogDespues.anterior : t.fecha_entrega;
+  const atrasada = !CERRADA.has(estado) && !!fecha && fecha <= hasta;
+  return { ...t, estado_al_corte: estado, fecha_al_corte: fecha, dias_atraso: atrasada ? diasEntre(fecha!, corte) : null };
+}
+
+/** The delivery (to delivered or approved) that happened inside the period, if any. */
+const entregaEn = (t: TareaDelPeriodo, p: { desde: string; hasta: string }) =>
+  [...t.cambios].reverse().find((c) => entre(c.fecha, p) && c.a && CERRADA.has(c.a) && (!c.de || !CERRADA.has(c.de)));
+
+export interface Indicadores { entregadas: number; atrasadas: number; bloqueadas: number; fechas_movidas: number; proximas: number; abiertas: number }
 
 /**
- * Which tasks the report covers and in which single group each one goes: the ones delivered during the
- * period, and every task still open at its end. "Late" counts days up to the cut, the day after the period.
+ * What a weekly report is about: tasks that moved during the week (delivered, changed status or dates, or got
+ * comments), risks at the cut (late or blocked), what is due in the next seven days and the rest of the open work.
  */
-export function clasificarTareas(tareas: TareaDelPeriodo[], periodo: { desde: string; hasta: string }) {
-  const grupos: Record<Grupo, TareaClasificada[]> = { completadas: [], atrasadas: [], bloqueadas: [], en_curso: [], pendientes: [] };
-  const proximo: TareaClasificada[] = [];
+export function analizarSemana(tareas: TareaDelPeriodo[], periodo: { desde: string; hasta: string }) {
   const corte = sumarDias(periodo.hasta, 1);
-  for (const t of tareas) {
-    if (t.creada > periodo.hasta) continue;
-    if (CERRADA.has(t.estado)) {
-      if (t.cerrada && t.cerrada >= periodo.desde && t.cerrada <= periodo.hasta) grupos.completadas.push({ ...t, dias_atraso: null });
-      continue;
+  const vigentes = tareas.filter((t) => t.creada <= periodo.hasta).map((t) => alCorte(t, periodo.hasta, corte));
+  const abiertas = vigentes.filter((t) => !CERRADA.has(t.estado_al_corte));
+  const seMovio = (t: TareaAlCorte) => t.comentarios > 0 || t.cambios.some((c) => entre(c.fecha, periodo)) || t.reprogramaciones.some((r) => entre(r.fecha, periodo));
+  const movidas = vigentes.filter(seMovio);
+  const atrasadas = abiertas.filter((t) => t.dias_atraso != null).sort((a, b) => b.dias_atraso! - a.dias_atraso!);
+  const bloqueadas = abiertas.filter((t) => t.dias_atraso == null && t.estado_al_corte === 'bloqueado');
+  const proximas = abiertas
+    .filter((t) => t.fecha_al_corte && t.fecha_al_corte > periodo.hasta && t.fecha_al_corte <= sumarDias(periodo.hasta, 7))
+    .sort((a, b) => a.fecha_al_corte!.localeCompare(b.fecha_al_corte!));
+  const indicadores: Indicadores = {
+    entregadas: vigentes.filter((t) => entregaEn(t, periodo)).length,
+    atrasadas: atrasadas.length,
+    bloqueadas: abiertas.filter((t) => t.estado_al_corte === 'bloqueado').length,
+    fechas_movidas: vigentes.filter((t) => t.reprogramaciones.some((r) => entre(r.fecha, periodo))).length,
+    proximas: proximas.length,
+    abiertas: abiertas.length,
+  };
+  return {
+    movidas,
+    riesgos: [...atrasadas, ...bloqueadas],
+    proximas,
+    resto: abiertas.filter((t) => !seMovio(t)),
+    entregadas_antes: vigentes.filter((t) => CERRADA.has(t.estado_al_corte) && !seMovio(t)).length,
+    indicadores,
+  };
+}
+
+/** Share of tasks done at a date (%), counting only the tasks that existed then. */
+export function avanceAl(tareas: Pick<TareaDelPeriodo, 'creada' | 'estado' | 'cambios' | 'reprogramaciones' | 'fecha_entrega'>[], fecha: string): number {
+  const existentes = tareas.filter((t) => t.creada <= fecha);
+  if (!existentes.length) return 0;
+  const listas = existentes.filter((t) => CERRADA.has(alCorte(t as TareaDelPeriodo, fecha, sumarDias(fecha, 1)).estado_al_corte)).length;
+  return Math.round((listas / existentes.length) * 100);
+}
+
+export const ETIQUETA_ESTADO: Record<string, string> = {
+  backlog: 'Pendiente', en_proceso: 'En proceso', en_revision: 'Revisión interna', revision_interna: 'Revisión interna',
+  revision_cliente: 'Revisión cliente', ajustes: 'Ajustes', aprobado: 'Aprobado', entregado: 'Entregado', bloqueado: 'Bloqueado',
+};
+
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+export const fechaCorta = (fecha: string) => { const [, m, d] = fecha.split('-').map(Number); return `${d} ${MESES[m - 1]}`; };
+const etiqueta = (e: string | null) => (e ? ETIQUETA_ESTADO[e] ?? e : '?');
+const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`;
+
+const MOTIVO: Record<string, string> = {
+  INTERNO: 'por un ajuste del equipo', CLIENTE: 'por pedido del cliente', ALCANCE: 'por cambio de alcance', FUERZA_MAYOR: 'por fuerza mayor',
+};
+
+/** What happened to a task during the period, one fixed sentence per fact (no AI involved). */
+export function eventosDeTarea(t: TareaDelPeriodo, periodo: { desde: string; hasta: string }): string[] {
+  const eventos: string[] = [];
+  const entrega = entregaEn(t, periodo);
+  const limite = alCorte(t, periodo.hasta, sumarDias(periodo.hasta, 1)).fecha_al_corte;
+  if (entrega) {
+    const diferencia = limite ? diasEntre(entrega.fecha, limite) : null;
+    const cuando = diferencia == null ? '' : diferencia > 0 ? ` · ${dias(diferencia)} antes de lo previsto` : diferencia < 0 ? ` · ${dias(-diferencia)} tarde` : ' · a tiempo';
+    eventos.push(`Entregada el ${fechaCorta(entrega.fecha)}${entrega.por ? ` por ${entrega.por}` : ''}${cuando}`);
+  } else {
+    const cambios = t.cambios.filter((c) => entre(c.fecha, periodo));
+    if (cambios.length) {
+      const ultimo = cambios[cambios.length - 1];
+      const ruta = [etiqueta(cambios[0].de), ...cambios.map((c) => etiqueta(c.a))].join(' → ');
+      eventos.push(`${ruta} (${fechaCorta(ultimo.fecha)}${ultimo.por ? `, ${ultimo.por}` : ''})`);
     }
-    const atrasada = !!t.fecha_entrega && t.fecha_entrega <= periodo.hasta;
-    const fila = { ...t, dias_atraso: atrasada ? diasEntre(t.fecha_entrega!, corte) : null };
-    if (atrasada) grupos.atrasadas.push(fila);
-    else if (t.estado === 'bloqueado') grupos.bloqueadas.push(fila);
-    else if (t.estado === 'backlog') grupos.pendientes.push(fila);
-    else grupos.en_curso.push(fila);
-    if (t.fecha_entrega && t.fecha_entrega > periodo.hasta && t.fecha_entrega <= sumarDias(periodo.hasta, 7)) proximo.push(fila);
   }
-  const indicadores = Object.fromEntries(GRUPOS.map((g) => [g, grupos[g].length])) as Record<Grupo, number>;
-  return { grupos, proximo, indicadores };
+  for (const r of t.reprogramaciones.filter((x) => entre(x.fecha, periodo))) {
+    const desdeHasta = r.anterior && r.nueva ? `del ${fechaCorta(r.anterior)} al ${fechaCorta(r.nueva)}` : r.nueva ? `al ${fechaCorta(r.nueva)}` : 'sin fecha';
+    const comentario = r.comentario?.trim() ? ` · “${r.comentario.trim().slice(0, 80)}”` : '';
+    eventos.push(`Fecha movida ${desdeHasta}${MOTIVO[r.motivo] ? ` · ${MOTIVO[r.motivo]}` : ''}${comentario}`);
+  }
+  return eventos;
+}
+
+const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+const lista = (partes: string[]) => (partes.length > 1 ? `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}` : partes[0]);
+
+/** The traffic light of the week: red with late deliveries, yellow with blocks or several moved dates, green otherwise. */
+export function semaforo(i: Indicadores): { color: 'verde' | 'amarillo' | 'rojo'; frase: string } {
+  const partes = [
+    i.atrasadas && plural(i.atrasadas, 'entrega atrasada', 'entregas atrasadas'),
+    i.bloqueadas && plural(i.bloqueadas, 'tarea bloqueada', 'tareas bloqueadas'),
+    i.fechas_movidas && plural(i.fechas_movidas, 'fecha movida', 'fechas movidas'),
+  ].filter(Boolean) as string[];
+  if (i.atrasadas > 0) return { color: 'rojo', frase: `En riesgo: ${lista(partes)}.` };
+  if (i.bloqueadas > 0 || i.fechas_movidas >= 2) return { color: 'amarillo', frase: `Atención: ${lista(partes)}.` };
+  return { color: 'verde', frase: 'Vamos bien: sin atrasos ni bloqueos.' };
 }
 
 /** Greedy batches under a size budget; an item bigger than the budget goes alone. */
@@ -124,24 +225,6 @@ export function lotesPorTamano<T extends { tamano: number }>(items: T[], presupu
   }
   if (actual.length) lotes.push(actual);
   return lotes;
-}
-
-export const ETIQUETA_ESTADO: Record<string, string> = {
-  backlog: 'Pendiente', en_proceso: 'En proceso', en_revision: 'Revisión interna', revision_interna: 'Revisión interna',
-  revision_cliente: 'Revisión cliente', ajustes: 'Ajustes', aprobado: 'Aprobado', entregado: 'Entregado', bloqueado: 'Bloqueado',
-};
-
-const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-export const fechaCorta = (fecha: string) => { const [, m, d] = fecha.split('-').map(Number); return `${d} ${MESES[m - 1]}`; };
-
-/** Fixed wording for a task with no comments in the period: only what Tiusdei knows, nothing invented. */
-export function lineaSinComentarios(t: TareaDelPeriodo, deQueTrata: string | null): string {
-  const trata = deQueTrata?.trim().replace(/\.+$/, '');
-  return [
-    trata ? `Consiste en ${trata}.` : 'No tiene descripción.',
-    `Está en ${ETIQUETA_ESTADO[t.estado] ?? t.estado}, ${t.responsable ? `a cargo de ${t.responsable}` : 'sin responsable'}, ${t.fecha_entrega ? `con entrega el ${fechaCorta(t.fecha_entrega)}` : 'sin fecha de entrega'}.`,
-    'No hay comentarios del equipo en este periodo.',
-  ].join(' ');
 }
 
 const ENTIDADES: Record<string, string> = { '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };

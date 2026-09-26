@@ -19,13 +19,17 @@ export interface DepsReportes {
   /** Where approved PDFs are kept. */
   dirPdf: string;
   frontendUrl: string;
+  /** Clock (injected in tests). */
+  ahora?: () => Date;
 }
 
 export const periodoTexto = (desde: string, hasta: string) => `${fechaCorta(desde)} – ${fechaCorta(hasta)} ${hasta.slice(0, 4)}`;
 
 /** Gathers the facts, runs the layers and stores the result as a draft. */
 export async function generarYGuardar(r: FilaReporte, deps: DepsReportes, { indicaciones = '', usarAnterior = false } = {}): Promise<void> {
-  const datos = await datosDelReporte(r.project_id, { desde: r.periodo_desde, hasta: r.periodo_hasta });
+  const hoy = new Date(((deps.ahora ?? (() => new Date()))()).getTime() - 5 * 3600_000).toISOString().slice(0, 10);
+  // A week still running (its last day is today or later) is a partial report.
+  const datos = await datosDelReporte(r.project_id, { desde: r.periodo_desde, hasta: r.periodo_hasta, parcial: r.periodo_hasta >= hoy });
   const anterior = usarAnterior && r.contenido
     ? { resumen_ejecutivo: r.contenido.resumen_ejecutivo, destacados: r.contenido.destacados, mensaje_correo: r.contenido.mensaje_correo }
     : undefined;
@@ -73,6 +77,7 @@ export async function enviarReporte(r: FilaReporte, userId: string, para: string
     periodo: periodoTexto(r.periodo_desde, r.periodo_hasta),
     lider: r.aprobado_por_nombre ?? c.proyecto.lider,
     mensaje: c.mensaje_correo,
+    semaforo: c.semaforo.frase,
     indicadores: c.indicadores,
     tiusdeiUrl: deps.frontendUrl,
   });

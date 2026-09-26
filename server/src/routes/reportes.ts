@@ -4,7 +4,7 @@ import { requireAuth, type AuthRequest } from '../middleware/auth.js';
 import { queryOne } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
 import { ErrorRunner } from '../minutas/ia/runner.js';
-import { ErrorReporte, periodoAnterior, puede, type Entrega } from '../reportes/dominio.js';
+import { ErrorReporte, puede, semanasDisponibles, type Entrega } from '../reportes/dominio.js';
 import { nombreArchivoPdf } from '../reportes/pdf.js';
 import * as repo from '../reportes/repositorio.js';
 import { aprobarReporte, enviarReporte, generarYGuardar, pdfDelReporte, type DepsReportes } from '../reportes/servicio.js';
@@ -22,9 +22,8 @@ const configSchema = z.object({
   dia_entrega: z.number().int().min(1).max(7),
   hora_entrega: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
 });
-const generarSchema = z.object({ desde: fecha.optional(), hasta: fecha.optional() })
-  .refine((b) => (!b.desde && !b.hasta) || (b.desde && b.hasta && b.desde <= b.hasta
-    && Date.parse(b.hasta) - Date.parse(b.desde) <= 31 * 86_400_000), 'Periodo inválido (máximo 31 días).');
+const generarSchema = z.object({ desde: fecha.optional() });
+const SEMANAS = 12;
 const envioSchema = z.object({ para: z.array(z.string()).max(50), cc: z.array(z.string()).max(50).default([]) });
 
 const conocido = (e: unknown) => e instanceof ErrorReporte || e instanceof ErrorRunner;
@@ -45,6 +44,7 @@ async function permitido(userId: string, liderId: string | null): Promise<boolea
 
 export function crearRouterReportes(deps: DepsReportes) {
   const router = Router();
+  const ahora = deps.ahora ?? (() => new Date());
 
   /** Loads a project and checks the caller may handle its reports. */
   const proyecto = async (req: AuthRequest, res: Response) => {
@@ -99,17 +99,26 @@ export function crearRouterReportes(deps: DepsReportes) {
     const p = await proyecto(req, res);
     if (!p) return;
     const filas = await repo.listarReportes(p.id);
-    res.json(filas.map(({ contenido, ...f }) => ({ ...f, resumen: contenido?.resumen_ejecutivo ?? null })));
+    res.json(filas.map(({ contenido, ...f }) => ({ ...f, resumen: contenido?.resumen_ejecutivo ?? null, parcial: !!(contenido as { periodo?: { parcial?: boolean } } | null)?.periodo?.parcial })));
+  }));
+
+  /** Weeks aligned to the project's delivery day: this one up to today, then the previous full ones. */
+  const semanas = async (projectId: string) => semanasDisponibles(await repo.leerConfig(projectId), ahora(), SEMANAS);
+
+  router.get('/projects/:id/reportes/semanas', requireAuth, seguro(async (req, res) => {
+    const p = await proyecto(req, res);
+    if (p) res.json(await semanas(p.id));
   }));
 
   router.post('/projects/:id/reportes/generar', requireAuth, seguro(async (req, res) => {
     const p = await proyecto(req, res);
     if (!p || sinLider(p, res)) return;
     const b = generarSchema.safeParse(req.body ?? {});
-    if (!b.success) return res.status(400).json({ error: 'Periodo inválido (máximo 31 días).' });
-    const entrega: Entrega = b.data.desde && b.data.hasta
-      ? { entregarEn: new Date(), desde: b.data.desde, hasta: b.data.hasta }
-      : { ...periodoAnterior(await repo.leerConfig(p.id), new Date()), entregarEn: new Date() };
+    if (!b.success) return res.status(400).json({ error: 'Elige una semana.' });
+    const lista = await semanas(p.id);
+    const semana = b.data.desde ? lista.find((s) => s.desde === b.data.desde) : lista[0];
+    if (!semana) return res.status(400).json({ error: 'Elige una de las semanas disponibles.' });
+    const entrega: Entrega = { entregarEn: ahora(), desde: semana.desde, hasta: semana.hasta };
     const id = await repo.asegurarReporte(p.id, entrega, 'programado');
     const r = (await repo.leerReporte(id))!;
     if (r.estado === 'aprobado') return res.status(409).json({ error: 'Ese periodo ya tiene un reporte aprobado.' });

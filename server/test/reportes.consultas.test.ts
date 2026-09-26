@@ -32,14 +32,12 @@ const comentar = (taskId: string, userId: string, html: string, creado: string) 
 const PERIODO = { desde: '2026-09-21', hasta: '2026-09-27' };
 
 describe('datosDelReporte', () => {
-  it('trae el proyecto y sus tareas principales con fechas de Ecuador, subtareas y el texto plano de la descripción', async () => {
-    const t1 = await tareaDelProyecto('Momento de ofrecer cita', {
-      detalle: '<p>Hola <b>equipo</b></p>', responsable_user_id: ana.id, fecha_entrega: '2026-10-02', created_at: '2026-09-01 03:00:00',
-    });
+  it('trae el proyecto y sus tareas principales con todo su historial de estados y fechas, en fechas de Ecuador', async () => {
+    const t1 = await tareaDelProyecto('Momento de ofrecer cita', { responsable_user_id: ana.id, fecha_entrega: '2026-10-02', created_at: '2026-09-01 03:00:00' });
     await query('INSERT INTO tasks (id, brand_id, titulo_tarea, estado, parent_task_id, project_id) VALUES (?, ?, ?, ?, ?, ?)', [uuid(), marcaId, 'Sub 1', 'entregado', t1, proyectoId]);
-    await query('INSERT INTO tasks (id, brand_id, titulo_tarea, estado, parent_task_id, project_id) VALUES (?, ?, ?, ?, ?, ?)', [uuid(), marcaId, 'Sub 2', 'backlog', t1, proyectoId]);
     const t2 = await tareaDelProyecto('Menú de incidencias', { estado: 'entregado' });
     await query("INSERT INTO activity_log (id, entity_type, entity_id, action, field_name, old_value, new_value, user_id, created_at) VALUES (?, 'task', ?, 'status_change', 'estado', 'en_proceso', 'entregado', ?, '2026-09-24 15:00:00')", [uuid(), t2, oriana.id]);
+    await query("INSERT INTO task_reschedules (id, task_id, fecha_anterior, fecha_nueva, motivo, comentario, changed_by, changed_at) VALUES (?, ?, '2026-09-20', '2026-10-02', 'CLIENTE', NULL, ?, '2026-09-22 03:00:00')", [uuid(), t1, ana.id]);
     const otro = uuid();
     await query('INSERT INTO projects (id, brand_id, nombre) VALUES (?, ?, ?)', [otro, marcaId, 'Otro']);
     const ajena = await crearTarea(marcaId, 'De otro proyecto');
@@ -47,18 +45,17 @@ describe('datosDelReporte', () => {
 
     const d = await datosDelReporte(proyectoId, PERIODO);
     expect(d.proyecto).toMatchObject({ id: proyectoId, nombre: 'Bot Proyecta', marca: 'Alba del Bosque', lider: 'Even Fierro' });
-    // Same numbers as the Proyectos screen, which counts subtasks too: 2 of 4 done.
-    expect(d.avanceProyecto).toEqual({ total: 4, listas: 2 });
     expect(d.tareas.map((t) => t.titulo).sort()).toEqual(['Menú de incidencias', 'Momento de ofrecer cita']);
+    expect(d.todas).toHaveLength(3);
     expect(d.tareas.find((t) => t.id === t1)).toEqual({
-      id: t1, titulo: 'Momento de ofrecer cita', estado: 'en_proceso', fecha_entrega: '2026-10-02', responsable: 'Ana Mora',
-      creada: '2026-08-31', cerrada: null, detalle: 'Hola equipo', subtareas: '1/2',
+      id: t1, titulo: 'Momento de ofrecer cita', estado: 'en_proceso', fecha_entrega: '2026-10-02', responsable: 'Ana Mora', creada: '2026-08-31',
+      cambios: [], comentarios: 0,
+      reprogramaciones: [{ fecha: '2026-09-21', anterior: '2026-09-20', nueva: '2026-10-02', motivo: 'CLIENTE', comentario: null, por: 'Ana Mora' }],
     });
-    expect(d.tareas.find((t) => t.id === t2)).toMatchObject({ cerrada: '2026-09-24', subtareas: null });
-    expect(d.cambios.get(t2)).toEqual([{ fecha: '2026-09-24', de: 'En proceso', a: 'Entregado', por: 'Oriana Barcia' }]);
+    expect(d.tareas.find((t) => t.id === t2)!.cambios).toEqual([{ fecha: '2026-09-24', de: 'en_proceso', a: 'entregado', por: 'Oriana Barcia' }]);
   });
 
-  it('solo toma los comentarios del periodo según la hora de Ecuador', async () => {
+  it('solo toma los comentarios del periodo según la hora de Ecuador, y los cuenta en la tarea', async () => {
     const t1 = await tareaDelProyecto('Momento de ofrecer cita');
     await comentar(t1, ana.id, '<p>Domingo 20 a las 23:00: fuera</p>', '2026-09-21 04:00:00');
     await comentar(t1, ana.id, '<p>Lunes 21 a la 01:00: dentro</p>', '2026-09-21 06:00:00');
@@ -69,15 +66,12 @@ describe('datosDelReporte', () => {
       { fecha: '2026-09-21', autor: 'Ana Mora', texto: 'Lunes 21 a la 01:00: dentro' },
       { fecha: '2026-09-27', autor: 'Oriana Barcia', texto: 'Domingo 27 a las 23:59: dentro' },
     ]);
+    expect(d.tareas[0].comentarios).toBe(2);
   });
 });
 
 describe('cacheIa', () => {
-  it('guarda y lee el "de qué trata" y los avances', async () => {
-    const t1 = await tareaDelProyecto('Momento de ofrecer cita');
-    await cacheIa.guardarResumen(t1, 'h1', 'definir cuándo se ofrece la cita');
-    await cacheIa.guardarResumen(t1, 'h2', 'la versión nueva');
-    expect(await cacheIa.resumenes([t1, uuid()])).toEqual(new Map([[t1, { hash: 'h2', resumen: 'la versión nueva' }]]));
+  it('guarda y lee los avances ya resumidos', async () => {
     expect(await cacheIa.avance('x')).toBeNull();
     await cacheIa.guardarAvance('x', { avance: 'Se definió.', decision: '', bloqueo: '' });
     expect(await cacheIa.avance('x')).toEqual({ avance: 'Se definió.', decision: '', bloqueo: '' });

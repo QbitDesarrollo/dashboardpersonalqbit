@@ -1,7 +1,7 @@
 import { query, queryOne } from '../db/mysql.js';
 import { autoSalud, STATS_SQL } from '../routes/projects.js';
-import { ETIQUETA_ESTADO, textoPlano, type TareaDelPeriodo } from './dominio.js';
-import type { Avance, CambioEstado, Comentario, DatosReporte, DepsGenerador } from './generador.js';
+import { textoPlano, type CambioEstado, type Reprogramacion, type TareaDelPeriodo } from './dominio.js';
+import type { Avance, Comentario, DatosReporte, DepsGenerador } from './generador.js';
 
 /** Reads what a report needs. MySQL stores UTC; Ecuador dates are UTC-5 (no daylight saving). */
 
@@ -12,9 +12,13 @@ const rangoUtc = (p: { desde: string; hasta: string }) => {
   return [`${p.desde} 05:00:00`, fin.toISOString().slice(0, 19).replace('T', ' ')];
 };
 const lista = (ids: string[]) => ids.map(() => '?').join(',');
-const etiqueta = (e: string | null) => (e ? ETIQUETA_ESTADO[e] ?? e : null);
+const agrupar = <T>(filas: (T & { task_id: string })[]) => {
+  const m = new Map<string, T[]>();
+  for (const { task_id, ...resto } of filas) m.set(task_id, [...(m.get(task_id) ?? []), resto as unknown as T]);
+  return m;
+};
 
-export async function datosDelReporte(projectId: string, periodo: { desde: string; hasta: string }): Promise<DatosReporte> {
+export async function datosDelReporte(projectId: string, periodo: { desde: string; hasta: string; parcial?: boolean }): Promise<DatosReporte> {
   const p = await queryOne<any>(
     `SELECT p.id, p.nombre, p.salud, p.estado, p.fecha_fin, b.nombre AS marca, pr.nombre AS lider, ${STATS_SQL}
        FROM projects p LEFT JOIN brands b ON b.id = p.brand_id LEFT JOIN profiles pr ON pr.id = p.lider_user_id
@@ -23,84 +27,74 @@ export async function datosDelReporte(projectId: string, periodo: { desde: strin
   );
   if (!p) throw new Error(`Proyecto ${projectId} no encontrado`);
 
+  // Subtasks count for progress, like the Projects screen; the report lists main tasks only.
   const filas = await query<any[]>(
-    `SELECT t.id, t.titulo_tarea, t.estado, DATE_FORMAT(t.fecha_entrega, '%Y-%m-%d') AS fecha_entrega, r.nombre AS responsable,
-            ${LOCAL('t.created_at')} AS creada, ${LOCAL('t.updated_at')} AS actualizada, t.detalle,
-            (SELECT ${LOCAL('MAX(a.created_at)')} FROM activity_log a
-              WHERE a.entity_type = 'task' AND a.entity_id = t.id AND a.field_name = 'estado' AND a.new_value IN ('entregado','aprobado')) AS cerrada_log,
-            (SELECT COUNT(*) FROM tasks s WHERE s.parent_task_id = t.id) AS sub_total,
-            (SELECT COUNT(*) FROM tasks s WHERE s.parent_task_id = t.id AND (s.check_done = 1 OR s.estado IN ('entregado','aprobado'))) AS sub_listas
+    `SELECT t.id, t.titulo_tarea, t.estado, DATE_FORMAT(t.fecha_entrega, '%Y-%m-%d') AS fecha_entrega, ${LOCAL('t.created_at')} AS creada,
+            COALESCE(r.nombre, (SELECT u.nombre FROM task_responsables x JOIN profiles u ON u.id = x.user_id WHERE x.task_id = t.id LIMIT 1)) AS responsable,
+            (t.parent_task_id IS NULL OR t.parent_task_id = '') AS principal
        FROM tasks t LEFT JOIN profiles r ON r.id = t.responsable_user_id
-      WHERE t.project_id = ? AND (t.parent_task_id IS NULL OR t.parent_task_id = '')`,
+      WHERE t.project_id = ?`,
     [projectId],
   );
-  const tareas: TareaDelPeriodo[] = filas.map((f) => ({
-    id: f.id,
-    titulo: f.titulo_tarea,
-    estado: f.estado,
-    fecha_entrega: f.fecha_entrega ?? null,
-    responsable: f.responsable ?? null,
-    creada: f.creada,
-    // Older tasks have no status history: their last update is the best guess of when they closed.
-    cerrada: f.estado === 'entregado' || f.estado === 'aprobado' ? (f.cerrada_log ?? f.actualizada) : null,
-    detalle: textoPlano(f.detalle),
-    subtareas: Number(f.sub_total) > 0 ? `${Number(f.sub_listas)}/${Number(f.sub_total)}` : null,
-  }));
-
-  const comentarios = new Map<string, Comentario[]>();
+  const ids = filas.map((f) => f.id);
   const cambios = new Map<string, CambioEstado[]>();
-  const ids = tareas.map((t) => t.id);
+  const reprogramaciones = new Map<string, Reprogramacion[]>();
+  const comentarios = new Map<string, Comentario[]>();
   if (ids.length) {
-    const [desde, hasta] = rangoUtc(periodo);
     const cs = await query<any[]>(
+      `SELECT a.entity_id AS task_id, ${LOCAL('a.created_at')} AS fecha, a.old_value AS de, a.new_value AS a, u.nombre AS por
+         FROM activity_log a LEFT JOIN profiles u ON u.id = a.user_id
+        WHERE a.entity_type = 'task' AND a.field_name = 'estado' AND a.entity_id IN (${lista(ids)})
+        ORDER BY a.created_at`,
+      ids,
+    );
+    for (const [id, v] of agrupar<CambioEstado>(cs.map((c) => ({ ...c, por: c.por ?? null })))) cambios.set(id, v);
+    const rs = await query<any[]>(
+      `SELECT r.task_id, ${LOCAL('r.changed_at')} AS fecha, DATE_FORMAT(r.fecha_anterior, '%Y-%m-%d') AS anterior,
+              DATE_FORMAT(r.fecha_nueva, '%Y-%m-%d') AS nueva, r.motivo, r.comentario, u.nombre AS por
+         FROM task_reschedules r LEFT JOIN profiles u ON u.id = r.changed_by
+        WHERE r.task_id IN (${lista(ids)}) ORDER BY r.changed_at`,
+      ids,
+    );
+    for (const [id, v] of agrupar<Reprogramacion>(rs.map((r) => ({ ...r, comentario: r.comentario ?? null, por: r.por ?? null })))) reprogramaciones.set(id, v);
+    const [desde, hasta] = rangoUtc(periodo);
+    const ms = await query<any[]>(
       `SELECT c.task_id, ${LOCAL('c.created_at')} AS fecha, u.nombre AS autor, c.comentario, c.contenido_html
          FROM comments c LEFT JOIN profiles u ON u.id = c.user_id
         WHERE c.task_id IN (${lista(ids)}) AND c.created_at >= ? AND c.created_at < ?
         ORDER BY c.created_at`,
       [...ids, desde, hasta],
     );
-    for (const c of cs) {
+    for (const c of ms) {
       const texto = textoPlano(c.contenido_html || c.comentario);
-      if (!texto) continue;
-      comentarios.set(c.task_id, [...(comentarios.get(c.task_id) ?? []), { fecha: c.fecha, autor: c.autor ?? 'Alguien del equipo', texto }]);
-    }
-    const as = await query<any[]>(
-      `SELECT a.entity_id AS task_id, ${LOCAL('a.created_at')} AS fecha, a.old_value, a.new_value, u.nombre AS por
-         FROM activity_log a LEFT JOIN profiles u ON u.id = a.user_id
-        WHERE a.entity_type = 'task' AND a.field_name = 'estado' AND a.entity_id IN (${lista(ids)}) AND a.created_at >= ? AND a.created_at < ?
-        ORDER BY a.created_at`,
-      [...ids, desde, hasta],
-    );
-    for (const a of as) {
-      cambios.set(a.task_id, [...(cambios.get(a.task_id) ?? []), { fecha: a.fecha, de: etiqueta(a.old_value), a: etiqueta(a.new_value), por: a.por ?? null }]);
+      if (texto) comentarios.set(c.task_id, [...(comentarios.get(c.task_id) ?? []), { fecha: c.fecha, autor: c.autor ?? 'Alguien del equipo', texto }]);
     }
   }
+
+  const todas: (TareaDelPeriodo & { principal: boolean })[] = filas.map((f) => ({
+    id: f.id,
+    titulo: f.titulo_tarea,
+    estado: f.estado,
+    fecha_entrega: f.fecha_entrega ?? null,
+    responsable: f.responsable ?? null,
+    creada: f.creada,
+    cambios: cambios.get(f.id) ?? [],
+    reprogramaciones: reprogramaciones.get(f.id) ?? [],
+    comentarios: comentarios.get(f.id)?.length ?? 0,
+    principal: !!Number(f.principal),
+  }));
 
   return {
     proyecto: { id: p.id, nombre: p.nombre, marca: p.marca ?? '', lider: p.lider ?? '', salud: p.salud || autoSalud(p) },
     periodo,
-    avanceProyecto: { total: Number(p.total_tareas) || 0, listas: Number(p.tareas_listas) || 0 },
-    tareas,
+    tareas: todas.filter((t) => t.principal).map(({ principal: _p, ...t }) => t),
+    todas: todas.map(({ principal: _p, ...t }) => t),
     comentarios,
-    cambios,
   };
 }
 
-/** Codex answers kept between reports (see layers A and B in generador.ts). */
+/** Progress lines already written by Codex for an exact input (layer B in generador.ts). */
 export const cacheIa: DepsGenerador['cache'] = {
-  async resumenes(ids) {
-    if (!ids.length) return new Map();
-    const filas = await query<{ task_id: string; hash_detalle: string; resumen: string }[]>(
-      `SELECT task_id, hash_detalle, resumen FROM tarea_resumenes_ia WHERE task_id IN (${lista(ids)})`, ids,
-    );
-    return new Map(filas.map((f) => [f.task_id, { hash: f.hash_detalle, resumen: f.resumen }]));
-  },
-  async guardarResumen(id, hash, resumen) {
-    await query(
-      'INSERT INTO tarea_resumenes_ia (task_id, hash_detalle, resumen) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE hash_detalle = VALUES(hash_detalle), resumen = VALUES(resumen)',
-      [id, hash, resumen],
-    );
-  },
   async avance(hash) {
     const fila = await queryOne<{ salida: Avance | string }>('SELECT salida FROM reporte_avances_ia WHERE hash_entrada = ?', [hash]);
     if (!fila) return null;

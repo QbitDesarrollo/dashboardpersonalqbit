@@ -106,6 +106,7 @@ export default function Proyectos() {
                           : p.lider_activo === false ? <> · <span className="font-medium text-amber-600">Líder desactivado</span></>
                           : <> · {p.lider_nombre}</>}
                       </div>
+                      {p.descripcion && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{p.descripcion}</p>}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <Badge variant="outline" className={cn('text-[10px]', ESTADO_CLS[p.estado])}>{ESTADO_LABEL[p.estado]}</Badge>

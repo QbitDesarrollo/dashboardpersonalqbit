@@ -3,50 +3,58 @@ import { generarPdf, limpiarPdf, nombreArchivoPdf } from '../src/reportes/pdf.js
 import type { ContenidoReporte } from '../src/reportes/generador.js';
 
 const contenido: ContenidoReporte = {
-  version: 1,
+  version: 2,
   proyecto: { id: 'p1', nombre: 'Bot Proyecta', marca: 'Alba del Bosque', lider: 'Even Fierro', salud: 'amarillo' },
-  periodo: { desde: '2026-09-21', hasta: '2026-09-27' },
-  indicadores: { completadas: 1, atrasadas: 1, bloqueadas: 0, en_curso: 1, pendientes: 0, avance: 40, total_proyecto: 10, listas_proyecto: 4 },
-  resumen_ejecutivo: 'Semana con avances en la lógica de citas → falta la ficha.',
+  periodo: { desde: '2026-09-14', hasta: '2026-09-20', parcial: false },
+  semaforo: { color: 'rojo', frase: 'En riesgo: 1 entrega atrasada.' },
+  indicadores: { entregadas: 6, atrasadas: 1, bloqueadas: 0, fechas_movidas: 2, proximas: 4, abiertas: 50, avance: 36, avance_semana: 4 },
+  resumen_ejecutivo: 'Semana productiva: se entregaron 6 tareas → la ficha de ingresos preocupa.',
   destacados: {
-    logros: [{ texto: 'Se entregó el menú de incidencias.', task_ids: ['t2'] }],
+    logros: [{ texto: 'Se entregaron los roles del panel.', task_ids: ['t2'] }],
     decisiones: [{ texto: 'La cita solo se ofrece con presupuesto.', task_ids: ['t1'] }],
-    riesgos: [{ texto: 'La ficha de ingresos está atrasada.', task_ids: ['t3'] }],
+    riesgos: [{ texto: 'La ficha de ingresos va tarde.', task_ids: ['t3'] }],
   },
-  grupos: [
-    { clave: 'completadas', titulo: 'Completadas en el periodo', tareas: [{ id: 't2', titulo: 'Menú de incidencias', responsable: 'Oriana', estado: 'entregado', estado_texto: 'Entregado', fecha_entrega: '2026-09-24', dias_atraso: null, subtareas: null, comentarios: 0, linea: 'No tiene descripción.', fuente: 'plantilla' }] },
-    { clave: 'atrasadas', titulo: 'Atrasadas', tareas: [{ id: 't3', titulo: 'Ficha de ingresos', responsable: 'Diego', estado: 'en_proceso', estado_texto: 'En proceso', fecha_entrega: '2026-09-25', dias_atraso: 3, subtareas: '1/2', comentarios: 0, linea: 'Consiste en tomar los ingresos.', fuente: 'plantilla' }] },
-    { clave: 'bloqueadas', titulo: 'Bloqueadas', tareas: [] },
-    { clave: 'en_curso', titulo: 'En curso', tareas: [{ id: 't1', titulo: 'Momento de ofrecer cita', responsable: 'Jonathan', estado: 'en_proceso', estado_texto: 'En proceso', fecha_entrega: '2026-10-02', dias_atraso: null, subtareas: null, comentarios: 2, linea: 'Se definió cuándo ofrecer la cita.', fuente: 'ia' }] },
-    { clave: 'pendientes', titulo: 'Pendientes', tareas: [] },
+  movidas: [
+    { id: 't2', titulo: 'Cargar modelos y precios', responsable: 'Oriana Barcia', estado_texto: 'Entregado', eventos: ['Entregada el 18 sep por Oriana Barcia · 7 días antes de lo previsto'], avance: null },
+    { id: 't1', titulo: 'Momento de ofrecer cita', responsable: 'Jonathan Vera', estado_texto: 'En proceso', eventos: ['Fecha movida del 20 sep al 27 sep · por pedido del cliente'], avance: 'Se acordó ofrecer la cita solo con presupuesto.' },
   ],
-  proximo_periodo: [{ id: 't1', titulo: 'Momento de ofrecer cita', responsable: 'Jonathan', fecha_entrega: '2026-10-02' }],
-  sin_actualizacion: [{ id: 't3', titulo: 'Ficha de ingresos', responsable: 'Diego' }],
-  mensaje_correo: 'El proyecto avanza.',
-  generado_en: '2026-09-28T10:40:00.000Z',
+  riesgos: [{ id: 't3', titulo: 'Ficha de ingresos', responsable: 'Diego', estado_texto: 'En proceso', fecha_entrega: '2026-09-17', dias_atraso: 4 }],
+  proximas: [{ id: 't1', titulo: 'Momento de ofrecer cita', responsable: 'Jonathan Vera', estado_texto: 'En proceso', fecha_entrega: '2026-09-27' }],
+  resto: [{ id: 't9', titulo: 'Pruebas de carga', responsable: 'Ana', estado_texto: 'Pendiente', fecha_entrega: null }],
+  entregadas_antes: 5,
+  mensaje_correo: 'El proyecto avanza con un atraso.',
+  generado_en: '2026-09-21T10:40:00.000Z',
 };
 
 describe('generarPdf', () => {
-  it('arma un PDF con el encabezado, el resumen, los destacados, el detalle y lo que viene', () => {
-    const pdf = generarPdf(contenido, { aprobadoPor: 'Even Fierro' });
-    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
-    const texto = pdf.toString('latin1');
+  it('primero lo que se ve de un vistazo, después el detalle de la semana y el resto compacto', () => {
+    const texto = generarPdf(contenido, { aprobadoPor: 'Even Fierro' }).toString('latin1');
+    expect(texto.startsWith('%PDF-')).toBe(true);
     for (const esperado of [
-      'Bot Proyecta', 'Alba del Bosque', 'Resumen ejecutivo', 'Logros', 'Decisiones', 'Riesgos', 'Atrasadas',
-      'Ficha de ingresos', '3 días de atraso', 'Próximo periodo', 'Sin actualización', 'Aprobado por Even Fierro',
+      'Bot Proyecta', 'En riesgo: 1 entrega atrasada.', '36%', '+4 esta semana', 'Resumen ejecutivo', 'Riesgos',
+      'Esta semana', 'Entregada el 18 sep por Oriana Barcia', 'por pedido del cliente', '4 días de atraso',
+      'Próxima semana', 'Resto del proyecto', 'Pruebas de carga', 'Entregadas antes de esta semana: 5', 'Aprobado por Even Fierro',
     ]) expect(texto, esperado).toContain(esperado);
-    expect(texto).not.toContain('Bloqueadas (0)');
+  });
+
+  it('una semana en curso lo dice en el encabezado', () => {
+    const texto = generarPdf({ ...contenido, periodo: { ...contenido.periodo, parcial: true } }).toString('latin1');
+    expect(texto).toContain('semana en curso');
+  });
+
+  it('un reporte con el formato anterior pide regenerarse', () => {
+    expect(() => generarPdf({ ...contenido, version: 1 } as unknown as ContenidoReporte)).toThrow('Regenera este reporte para verlo con el formato nuevo.');
   });
 });
 
 describe('limpiarPdf', () => {
   it('cambia lo que la fuente del PDF no puede dibujar, sin tocar tildes, eñes ni signos del español', () => {
-    expect(limpiarPdf('Citas → ficha ✅ ¿listo? ¡sí! ñandú — “ok” • ítem')).toBe('Citas -> ficha ¿listo? ¡sí! ñandú — “ok” • ítem');
+    expect(limpiarPdf('Citas → ficha ✅ ¿listo? ¡sí! ñandú — “ok” • ítem')).toBe('Citas › ficha ¿listo? ¡sí! ñandú — “ok” • ítem');
   });
 });
 
 describe('nombreArchivoPdf', () => {
   it('nombra el archivo con el proyecto y el periodo', () => {
-    expect(nombreArchivoPdf(contenido)).toBe('Reporte Bot Proyecta 2026-09-21 a 2026-09-27.pdf');
+    expect(nombreArchivoPdf(contenido)).toBe('Reporte Bot Proyecta 2026-09-14 a 2026-09-20.pdf');
   });
 });

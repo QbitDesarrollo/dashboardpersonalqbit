@@ -43,4 +43,12 @@ describe('Proyectos', () => {
     mostrar('/proyectos?proyecto=p1&reporte=r5');
     expect(await screen.findByText('Detalle de Bot Proyecta · reporte r5')).toBeInTheDocument();
   });
+
+  it('muestra la descripción del proyecto, recortada', async () => {
+    m.getProjects.mockResolvedValue([proyecto({ descripcion: 'Bot de WhatsApp que atiende a los clientes de Alba del Bosque y agenda visitas.' })]);
+    mostrar();
+    const desc = await screen.findByText('Bot de WhatsApp que atiende a los clientes de Alba del Bosque y agenda visitas.');
+    expect(desc).toHaveClass('line-clamp-2');
+  });
 });
+

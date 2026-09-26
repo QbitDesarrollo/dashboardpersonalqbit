@@ -62,11 +62,19 @@ export async function configsActivas(): Promise<(ConfigReporte & { project_id: s
   return filas.map((f) => ({ project_id: f.project_id, activo: true, dia_entrega: Number(f.dia_entrega), hora_entrega: f.hora_entrega, anticipacion_horas: Number(f.anticipacion_horas) }));
 }
 
-/** Creates the report of a period if it does not exist yet. Returns its id either way. */
+/**
+ * Creates the report of a period if it does not exist yet. Returns its id either way.
+ * A partial week generated mid-week (shorter period, not approved) grows into the full week and is queued again.
+ */
 export async function asegurarReporte(projectId: string, e: Entrega, estado: EstadoReporte = 'programado'): Promise<string> {
   await query(
     'INSERT IGNORE INTO proyecto_reportes (id, project_id, periodo_desde, periodo_hasta, entregar_en, estado) VALUES (?, ?, ?, ?, ?, ?)',
     [uuid(), projectId, e.desde, e.hasta, aMysql(e.entregarEn), estado],
+  );
+  await query(
+    `UPDATE proyecto_reportes SET periodo_hasta = ?, entregar_en = ?, estado = ?, intentos = 0, proximo_intento_en = NULL, error = NULL, notificado_en = NULL
+      WHERE project_id = ? AND periodo_desde = ? AND periodo_hasta < ? AND estado IN ('programado', 'borrador', 'fallido')`,
+    [e.hasta, aMysql(e.entregarEn), estado, projectId, e.desde, e.hasta],
   );
   const f = await queryOne<{ id: string }>('SELECT id FROM proyecto_reportes WHERE project_id = ? AND periodo_desde = ?', [projectId, e.desde]);
   return f!.id;

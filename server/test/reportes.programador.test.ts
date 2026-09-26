@@ -125,5 +125,17 @@ describe('tickReportes', () => {
     expect(error).toBe('El proyecto se eliminó o no tiene un líder activo.');
     expect(enviados).toEqual([]);
   });
+
+  it('el reporte automático reemplaza la semana parcial que alguien generó a mitad de semana', async () => {
+    await query(
+      "INSERT INTO proyecto_reportes (id, project_id, periodo_desde, periodo_hasta, entregar_en, estado, contenido, notificado_en) VALUES (?, ?, '2026-09-21', '2026-09-25', '2026-09-25 20:00:00', 'borrador', '{}', '2026-09-25 20:00:00')",
+      [uuid(), proyectoId],
+    );
+    await tick('2026-09-28T10:30:00Z');
+    const filas = await query<any[]>("SELECT estado, DATE_FORMAT(periodo_hasta, '%Y-%m-%d') AS hasta FROM proyecto_reportes WHERE project_id = ?", [proyectoId]);
+    expect(filas).toEqual([{ estado: 'borrador', hasta: '2026-09-27' }]);
+    await tick('2026-09-28T13:00:00Z');
+    expect(enviados.map((e) => e.subject)).toEqual(['[Reporte listo] Bot Proyecta · 21 sep – 27 sep 2026']);
+  });
 });
 

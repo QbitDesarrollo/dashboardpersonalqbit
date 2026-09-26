@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { aprobarReporte, enviarReporte, esperarReporte, generarReporte, guardarConfigReportes, leerConfigReportes, listarReportes, pdfReporte, pendientesReportes, regenerarReporte } from './reportesApi';
+import { aprobarReporte, enviarReporte, esperarReporte, generarReporte, guardarConfigReportes, leerConfigReportes, listarReportes, pdfReporte, pendientesReportes, regenerarReporte, semanasReportes } from './reportesApi';
 
 const respuesta = (status: number, body: unknown) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
@@ -19,8 +19,10 @@ describe('reportesApi', () => {
     expect(ultima()).toMatchObject({ url: '/api/data/projects/p1/reportes/config', init: { method: 'PUT' } });
     await listarReportes('p1');
     expect(ultima().url).toBe('/api/data/projects/p1/reportes');
-    await generarReporte('p1');
-    expect(ultima()).toMatchObject({ url: '/api/data/projects/p1/reportes/generar', init: { method: 'POST' } });
+    await semanasReportes('p1');
+    expect(ultima().url).toBe('/api/data/projects/p1/reportes/semanas');
+    await generarReporte('p1', '2026-09-21');
+    expect(ultima()).toMatchObject({ url: '/api/data/projects/p1/reportes/generar', init: { method: 'POST', body: JSON.stringify({ desde: '2026-09-21' }) } });
     await regenerarReporte('r1', 'Menos técnico');
     expect(ultima()).toMatchObject({ url: '/api/data/reportes/r1/regenerar', init: { method: 'POST', body: JSON.stringify({ indicaciones: 'Menos técnico' }) } });
     await aprobarReporte('r1');

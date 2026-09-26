@@ -58,5 +58,17 @@ describe('DetalleProyecto', () => {
     expect(screen.queryByText(/Sección de reportes/)).not.toBeInTheDocument();
     expect(screen.getByLabelText('Líder del proyecto')).toHaveValue('');
   });
+
+  it('con líder muestra su nombre y el selector solo aparece al tocar "Cambiar"', async () => {
+    auth = { profile: { id: 'u9', rol: 'admin' }, isAdmin: true, isEjecutivo: false };
+    m.patchProject.mockResolvedValue(proyecto({ lider_user_id: 'u2', lider_nombre: 'Ana Mora' }));
+    mostrar(proyecto({}));
+    expect(await screen.findByText('Líder: Even Fierro')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Líder del proyecto')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar líder' }));
+    fireEvent.change(screen.getByLabelText('Líder del proyecto'), { target: { value: 'u2' } });
+    await waitFor(() => expect(m.patchProject).toHaveBeenCalledWith('p1', { lider_user_id: 'u2' }));
+    expect(await screen.findByText('Líder: Ana Mora')).toBeInTheDocument();
+  });
 });
 

@@ -25,6 +25,8 @@ const deps: DepsReportes = {
   esperar: async () => {},
   dirPdf,
   frontendUrl: 'https://tiusdei.test',
+  // Monday 28-sep-2026, 10:00 in Ecuador: this week is 28-sep (just today) and the previous one 21 to 27-sep.
+  ahora: () => new Date('2026-09-28T15:00:00Z'),
 };
 
 let api: { url: string; cerrar: () => Promise<void> };
@@ -60,7 +62,7 @@ async function esperarEstado(id: string, quien: Usuario) {
   throw new Error('El reporte no terminó de generarse');
 }
 async function generado(quien: Usuario = lider) {
-  const r = await llamar(u(`/projects/${proyectoId}/reportes/generar`), quien, 'POST', { desde: '2026-09-21', hasta: '2026-09-27' });
+  const r = await llamar(u(`/projects/${proyectoId}/reportes/generar`), quien, 'POST', { desde: '2026-09-21' });
   expect(r.status).toBe(202);
   return esperarEstado(r.body.id, quien);
 }
@@ -81,12 +83,30 @@ describe('configuración', () => {
   });
 });
 
+describe('elegir la semana', () => {
+  it('ofrece esta semana hasta hoy y las anteriores; sin elegir, genera esta semana', async () => {
+    const semanas = await llamar(u(`/projects/${proyectoId}/reportes/semanas`), lider);
+    expect(semanas.body.slice(0, 2)).toEqual([
+      { desde: '2026-09-28', hasta: '2026-09-28', parcial: true },
+      { desde: '2026-09-21', hasta: '2026-09-27', parcial: false },
+    ]);
+    const r = await llamar(u(`/projects/${proyectoId}/reportes/generar`), lider, 'POST', {});
+    const hecho = await esperarEstado(r.body.id, lider);
+    expect(hecho).toMatchObject({ periodo_desde: '2026-09-28', periodo_hasta: '2026-09-28' });
+    expect(hecho.contenido.periodo.parcial).toBe(true);
+  });
+
+  it('solo acepta semanas de la lista', async () => {
+    expect((await llamar(u(`/projects/${proyectoId}/reportes/generar`), lider, 'POST', { desde: '2026-09-23' })).status).toBe(400);
+  });
+});
+
 describe('generar, regenerar, aprobar', () => {
   it('"generar ahora" deja un borrador con el contenido y aparece en el historial', async () => {
     const r = await generado();
     expect(r).toMatchObject({ estado: 'borrador', periodo_desde: '2026-09-21', periodo_hasta: '2026-09-27' });
     expect(r.contenido.resumen_ejecutivo).toBe('Semana tranquila.');
-    expect(r.contenido.grupos.find((g: any) => g.clave === 'en_curso').tareas[0]).toMatchObject({ titulo: 'Momento de ofrecer cita', linea: 'Se avanzó.' });
+    expect(r.contenido.movidas[0]).toMatchObject({ titulo: 'Momento de ofrecer cita', avance: 'Se avanzó.' });
     const lista = await llamar(u(`/projects/${proyectoId}/reportes`), lider);
     expect(lista.body.map((x: any) => [x.periodo_desde, x.estado])).toEqual([['2026-09-21', 'borrador']]);
   });

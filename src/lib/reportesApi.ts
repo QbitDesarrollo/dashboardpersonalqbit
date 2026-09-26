@@ -4,25 +4,21 @@ import { llamar } from './minutasApi';
 /** Weekly project reports (REPORTES-PLAN.md). */
 
 export type EstadoReporte = 'programado' | 'generando' | 'borrador' | 'aprobado' | 'fallido';
-export type Grupo = 'completadas' | 'atrasadas' | 'bloqueadas' | 'en_curso' | 'pendientes';
 
 export interface ConfigReportes { activo: boolean; dia_entrega: number; hora_entrega: string; anticipacion_horas?: number }
 
 export interface Destacado { texto: string; task_ids: string[] }
-export interface TareaReporte {
-  id: string; titulo: string; responsable: string | null; estado: string; estado_texto: string;
-  fecha_entrega: string | null; dias_atraso: number | null; subtareas: string | null; comentarios: number;
-  linea: string; fuente: 'ia' | 'plantilla';
-}
+/** What the screen reads from a report; the full content is drawn in the PDF. */
 export interface ContenidoReporte {
+  version?: number;
   proyecto: { id: string; nombre: string; marca: string; lider: string; salud: string };
-  periodo: { desde: string; hasta: string };
-  indicadores: Record<Grupo, number> & { avance: number };
+  periodo: { desde: string; hasta: string; parcial?: boolean };
+  semaforo?: { color: 'verde' | 'amarillo' | 'rojo'; frase: string };
   resumen_ejecutivo: string;
   destacados: { logros: Destacado[]; decisiones: Destacado[]; riesgos: Destacado[] };
-  grupos: { clave: Grupo; titulo: string; tareas: TareaReporte[] }[];
   mensaje_correo: string;
 }
+export interface Semana { desde: string; hasta: string; parcial: boolean }
 
 export interface Envio { id: string; para: string[]; cc: string[]; enviado_en: string; enviado_por: string | null }
 
@@ -30,8 +26,10 @@ export interface ReporteResumen {
   id: string; project_id: string; periodo_desde: string; periodo_hasta: string; entregar_en: string;
   estado: EstadoReporte; error: string | null; indicaciones: string | null; generado_en: string | null;
   aprobado_por_nombre: string | null; aprobado_en: string | null; resumen: string | null;
+  /** The week was still running when the report was made. */
+  parcial: boolean;
 }
-export interface Reporte extends Omit<ReporteResumen, 'resumen'> {
+export interface Reporte extends Omit<ReporteResumen, 'resumen' | 'parcial'> {
   contenido: ContenidoReporte | null;
   envios: Envio[];
 }
@@ -40,8 +38,10 @@ export const leerConfigReportes = (projectId: string) => llamar<ConfigReportes>(
 export const guardarConfigReportes = (projectId: string, c: Pick<ConfigReportes, 'activo' | 'dia_entrega' | 'hora_entrega'>) =>
   llamar<ConfigReportes>(`/api/data/projects/${projectId}/reportes/config`, 'PUT', c);
 export const listarReportes = (projectId: string) => llamar<ReporteResumen[]>(`/api/data/projects/${projectId}/reportes`);
-export const generarReporte = (projectId: string, periodo?: { desde: string; hasta: string }) =>
-  llamar<{ id: string }>(`/api/data/projects/${projectId}/reportes/generar`, 'POST', periodo ?? {});
+export const semanasReportes = (projectId: string) => llamar<Semana[]>(`/api/data/projects/${projectId}/reportes/semanas`);
+/** Generates the report of a week (by its first day); without one, this week up to today. */
+export const generarReporte = (projectId: string, desde?: string) =>
+  llamar<{ id: string }>(`/api/data/projects/${projectId}/reportes/generar`, 'POST', desde ? { desde } : {});
 export const leerReporte = (id: string) => llamar<Reporte>(`/api/data/reportes/${id}`);
 export const regenerarReporte = (id: string, indicaciones: string) => llamar<{ id: string }>(`/api/data/reportes/${id}/regenerar`, 'POST', { indicaciones });
 export const aprobarReporte = (id: string) => llamar<Reporte>(`/api/data/reportes/${id}/aprobar`, 'POST');

@@ -11,6 +11,15 @@ Diferencias con el plan, decididas al construir:
 - El avance (%) del reporte usa los mismos números que la pantalla de Proyectos (cuenta subtareas).
 - "Generar ahora" lo pueden usar el líder y admin; no manda el correo de "listo" (lo pidió la misma persona).
 
+## Formato del reporte (rehecho con Even el 26-sep, tras ver el primero)
+El primero listaba todo lo abierto del proyecto con una frase por tarea (7 páginas) y mezclaba estados de hoy con una semana pasada. El formato vigente responde "¿cómo vamos esta semana?":
+1. **De un vistazo** (página 1): semáforo con su frase (rojo si hay atrasos; amarillo si hay bloqueos o 2+ fechas movidas; verde si no), avance del proyecto y cuánto avanzó en la semana, entregadas / atrasadas / fechas movidas / vencen en 7 días, resumen ejecutivo corto y hasta 3 logros, decisiones y riesgos.
+2. **Esta semana**: solo las tareas que se movieron (entregadas, cambios de estado, fechas movidas, comentarios). Los hechos van con frases fijas, sin IA: "Entregada el 18 sep por Oriana · 7 días antes de lo previsto", "Fecha movida del 20 al 27 sep · por pedido del cliente" (motivo de `task_reschedules`; sin clasificar no se menciona). La IA solo resume los comentarios.
+3. **Riesgos al cierre**, **Próxima semana** y **Resto del proyecto** (tarea, responsable y estado; bloqueado y en curso primero).
+- Estados y fechas se toman **al cierre de la semana** (historial de estados y de fechas), no los de hoy.
+- Semanas elegibles en la pantalla: esta semana hasta hoy (parcial) y las 11 anteriores, alineadas al día de entrega. El reporte automático reemplaza la semana parcial.
+- Sin códigos internos (BOT-012, [v1.1]…) en lo que redacta la IA. La capa "de qué trata" ya no se usa.
+
 ## Qué es
 
 Cada proyecto puede generar un reporte periódico de cómo va su trabajo. Es un documento **interno** (para líderes y jefaturas, nunca para el cliente). Tiusdei junta los hechos, Codex los redacta, el líder del proyecto lo revisa, lo aprueba y lo envía por correo en PDF a personas de Tiusdei.

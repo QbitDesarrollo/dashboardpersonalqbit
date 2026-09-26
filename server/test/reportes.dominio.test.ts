@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  entregasAbiertas, periodoAnterior, clasificarTareas, lotesPorTamano, lineaSinComentarios, textoPlano,
+  entregasAbiertas, periodoAnterior, semanasDisponibles, analizarSemana, eventosDeTarea, semaforo, avanceAl, lotesPorTamano, textoPlano,
   filtrarCitas, puede, ErrorReporte, type TareaDelPeriodo,
 } from '../src/reportes/dominio.js';
 
@@ -50,56 +50,93 @@ describe('periodoAnterior', () => {
 
 const tarea = (t: Partial<TareaDelPeriodo>): TareaDelPeriodo => ({
   id: 't', titulo: 'Tarea', estado: 'en_proceso', fecha_entrega: null, responsable: 'Ana', creada: '2026-09-01',
-  cerrada: null, detalle: '', subtareas: null, ...t,
+  cambios: [], reprogramaciones: [], comentarios: 0, ...t,
+});
+const SEMANA = { desde: '2026-09-14', hasta: '2026-09-20' };
+
+describe('semanasDisponibles', () => {
+  it('ofrece esta semana hasta hoy y las anteriores completas, alineadas al día de entrega', () => {
+    // Saturday 26-sep in Ecuador, deliveries on Mondays: weeks run Monday to Sunday.
+    const semanas = semanasDisponibles(LUNES_8, new Date('2026-09-26T20:00:00Z'), 3);
+    expect(semanas).toEqual([
+      { desde: '2026-09-21', hasta: '2026-09-26', parcial: true },
+      { desde: '2026-09-14', hasta: '2026-09-20', parcial: false },
+      { desde: '2026-09-07', hasta: '2026-09-13', parcial: false },
+    ]);
+  });
 });
 
-describe('clasificarTareas', () => {
-  const periodo = { desde: '2026-09-21', hasta: '2026-09-27' };
-
-  it('pone cada tarea en un solo grupo: completadas, atrasadas, bloqueadas, en curso y pendientes', () => {
-    const r = clasificarTareas([
-      tarea({ id: 'c', estado: 'entregado', cerrada: '2026-09-23' }),
-      tarea({ id: 'a', estado: 'en_proceso', fecha_entrega: '2026-09-25' }),
-      tarea({ id: 'b', estado: 'bloqueado', fecha_entrega: '2026-10-10' }),
-      tarea({ id: 'e', estado: 'revision_cliente', fecha_entrega: '2026-10-01' }),
-      tarea({ id: 'p', estado: 'backlog', fecha_entrega: '2026-10-20' }),
-    ], periodo);
-    expect(Object.fromEntries(Object.entries(r.grupos).map(([k, v]) => [k, v.map((t) => t.id)]))).toEqual({
-      completadas: ['c'], atrasadas: ['a'], bloqueadas: ['b'], en_curso: ['e'], pendientes: ['p'],
-    });
-    // Counted up to the cut, the day after the period ends (Monday 28): due Friday 25 is 3 days late.
-    expect(r.grupos.atrasadas[0].dias_atraso).toBe(3);
+describe('analizarSemana', () => {
+  it('toma estados y fechas al cierre de la semana, aunque hoy sean otros', () => {
+    const r = analizarSemana([
+      // Delivered on the 18th, reopened on the 21st: at the cut it was delivered.
+      tarea({ id: 'a', estado: 'backlog', cambios: [
+        { fecha: '2026-09-18', de: 'en_proceso', a: 'entregado', por: 'Oriana' },
+        { fecha: '2026-09-21', de: 'entregado', a: 'backlog', por: 'Even' },
+      ] }),
+      // Due on the 19th at the cut; moved to the 30th on the 22nd.
+      tarea({ id: 'b', fecha_entrega: '2026-09-30', reprogramaciones: [{ fecha: '2026-09-22', anterior: '2026-09-19', nueva: '2026-09-30', motivo: 'CLIENTE', comentario: null, por: 'Ana' }] }),
+    ], SEMANA);
+    expect(r.movidas.map((t) => [t.id, t.estado_al_corte])).toEqual([['a', 'entregado']]);
+    expect(r.riesgos.map((t) => [t.id, t.fecha_al_corte, t.dias_atraso])).toEqual([['b', '2026-09-19', 2]]);
   });
 
-  it('una atrasada que además está bloqueada cuenta como atrasada', () => {
-    const r = clasificarTareas([tarea({ id: 'x', estado: 'bloqueado', fecha_entrega: '2026-09-22' })], periodo);
-    expect(r.grupos.atrasadas.map((t) => t.id)).toEqual(['x']);
+  it('separa lo que se movió en la semana, los riesgos, lo próximo y el resto; deja fuera lo creado después', () => {
+    const r = analizarSemana([
+      tarea({ id: 'hecha', estado: 'entregado', cambios: [{ fecha: '2026-09-17', de: 'en_proceso', a: 'entregado', por: 'Ana' }] }),
+      tarea({ id: 'comentada', comentarios: 2, fecha_entrega: '2026-10-10' }),
+      tarea({ id: 'bloqueada', estado: 'bloqueado', fecha_entrega: '2026-10-10' }),
+      tarea({ id: 'proxima', estado: 'backlog', fecha_entrega: '2026-09-24' }),
+      tarea({ id: 'quieta', estado: 'en_proceso', fecha_entrega: '2026-11-01' }),
+      tarea({ id: 'vieja', estado: 'aprobado', cambios: [{ fecha: '2026-08-01', de: 'entregado', a: 'aprobado', por: 'Ana' }] }),
+      tarea({ id: 'futura', creada: '2026-09-25' }),
+    ], SEMANA);
+    expect(r.movidas.map((t) => t.id)).toEqual(['hecha', 'comentada']);
+    expect(r.riesgos.map((t) => t.id)).toEqual(['bloqueada']);
+    expect(r.proximas.map((t) => t.id)).toEqual(['proxima']);
+    expect(r.resto.map((t) => t.id)).toEqual(['bloqueada', 'proxima', 'quieta']);
+    expect(r.entregadas_antes).toBe(1);
+    expect(r.indicadores).toEqual({ entregadas: 1, atrasadas: 0, bloqueadas: 1, fechas_movidas: 0, proximas: 1, abiertas: 4 });
   });
+});
 
-  it('deja fuera las cerradas antes del periodo y las creadas después', () => {
-    const r = clasificarTareas([
-      tarea({ id: 'vieja', estado: 'aprobado', cerrada: '2026-09-10' }),
-      tarea({ id: 'nueva', creada: '2026-09-28' }),
-    ], periodo);
-    expect(Object.values(r.grupos).flat()).toEqual([]);
+describe('eventosDeTarea', () => {
+  it('cuenta lo que pasó en una línea cada cosa: entregas adelantadas o tarde, movimientos y fechas movidas con su motivo', () => {
+    expect(eventosDeTarea(tarea({ fecha_entrega: '2026-09-25', cambios: [{ fecha: '2026-09-18', de: 'en_proceso', a: 'entregado', por: 'Oriana Barcia' }] }), SEMANA))
+      .toEqual(['Entregada el 18 sep por Oriana Barcia · 7 días antes de lo previsto']);
+    expect(eventosDeTarea(tarea({ fecha_entrega: '2026-09-15', cambios: [{ fecha: '2026-09-17', de: 'en_proceso', a: 'entregado', por: 'Ana' }] }), SEMANA))
+      .toEqual(['Entregada el 17 sep por Ana · 2 días tarde']);
+    expect(eventosDeTarea(tarea({ cambios: [
+      { fecha: '2026-09-14', de: 'backlog', a: 'en_proceso', por: 'Jonathan Vera' },
+      { fecha: '2026-09-15', de: 'en_proceso', a: 'revision_interna', por: 'Jonathan Vera' },
+    ] }), SEMANA)).toEqual(['Pendiente → En proceso → Revisión interna (15 sep, Jonathan Vera)']);
+    expect(eventosDeTarea(tarea({ reprogramaciones: [
+      { fecha: '2026-09-16', anterior: '2026-09-20', nueva: '2026-09-27', motivo: 'CLIENTE', comentario: null, por: 'Ana' },
+      { fecha: '2026-09-17', anterior: '2026-09-27', nueva: '2026-09-30', motivo: 'SIN_CLASIFICAR', comentario: null, por: 'Ana' },
+    ] }), SEMANA)).toEqual(['Fecha movida del 20 sep al 27 sep · por pedido del cliente', 'Fecha movida del 27 sep al 30 sep']);
   });
+});
 
-  it('próximo periodo: lo abierto que vence en los siete días siguientes', () => {
-    const r = clasificarTareas([
-      tarea({ id: 'pronto', fecha_entrega: '2026-10-02' }),
-      tarea({ id: 'lejos', fecha_entrega: '2026-10-20' }),
-      tarea({ id: 'hecha', estado: 'entregado', cerrada: '2026-09-24', fecha_entrega: '2026-10-01' }),
-    ], periodo);
-    expect(r.proximo.map((t) => t.id)).toEqual(['pronto']);
+describe('avanceAl', () => {
+  it('porcentaje de tareas listas a una fecha, con las que existían a esa fecha', () => {
+    const tareas = [
+      tarea({ id: '1', estado: 'entregado', cambios: [{ fecha: '2026-09-10', de: 'en_proceso', a: 'entregado', por: null }] }),
+      tarea({ id: '2', estado: 'entregado', cambios: [{ fecha: '2026-09-18', de: 'en_proceso', a: 'entregado', por: null }] }),
+      tarea({ id: '3', estado: 'backlog' }),
+      tarea({ id: '4', estado: 'backlog', creada: '2026-09-19' }),
+    ];
+    expect(avanceAl(tareas, '2026-09-13')).toBe(33);
+    expect(avanceAl(tareas, '2026-09-20')).toBe(50);
+    expect(avanceAl([], '2026-09-20')).toBe(0);
   });
+});
 
-  it('cuenta los indicadores', () => {
-    const r = clasificarTareas([
-      tarea({ id: 'c', estado: 'entregado', cerrada: '2026-09-23' }),
-      tarea({ id: 'a', fecha_entrega: '2026-09-22' }),
-      tarea({ id: 'p', estado: 'backlog' }),
-    ], periodo);
-    expect(r.indicadores).toEqual({ completadas: 1, atrasadas: 1, bloqueadas: 0, en_curso: 0, pendientes: 1 });
+describe('semaforo', () => {
+  it('rojo con atrasos, amarillo con bloqueos o fechas movidas, verde si todo va bien', () => {
+    const base = { entregadas: 2, atrasadas: 0, bloqueadas: 0, fechas_movidas: 0, proximas: 3, abiertas: 10 };
+    expect(semaforo(base)).toEqual({ color: 'verde', frase: 'Vamos bien: sin atrasos ni bloqueos.' });
+    expect(semaforo({ ...base, bloqueadas: 1, fechas_movidas: 2 })).toEqual({ color: 'amarillo', frase: 'Atención: 1 tarea bloqueada y 2 fechas movidas.' });
+    expect(semaforo({ ...base, atrasadas: 3, bloqueadas: 1 })).toEqual({ color: 'rojo', frase: 'En riesgo: 3 entregas atrasadas y 1 tarea bloqueada.' });
   });
 });
 
@@ -109,15 +146,6 @@ describe('lotesPorTamano', () => {
       { id: 'a', tamano: 400 }, { id: 'b', tamano: 500 }, { id: 'c', tamano: 3000 }, { id: 'd', tamano: 200 },
     ], 1000);
     expect(lotes.map((l) => l.map((x) => x.id))).toEqual([['a', 'b'], ['c'], ['d']]);
-  });
-});
-
-describe('lineaSinComentarios', () => {
-  it('describe la tarea con lo que hay, sin inventar', () => {
-    expect(lineaSinComentarios(tarea({ estado: 'en_proceso', responsable: 'Ana Mora', fecha_entrega: '2026-10-02' }), 'el rediseño del home'))
-      .toBe('Consiste en el rediseño del home. Está en En proceso, a cargo de Ana Mora, con entrega el 2 oct. No hay comentarios del equipo en este periodo.');
-    expect(lineaSinComentarios(tarea({ estado: 'backlog', responsable: null, fecha_entrega: null }), null))
-      .toBe('No tiene descripción. Está en Pendiente, sin responsable, sin fecha de entrega. No hay comentarios del equipo en este periodo.');
   });
 });
 
