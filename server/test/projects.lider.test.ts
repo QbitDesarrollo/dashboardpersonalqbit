@@ -47,4 +47,17 @@ describe('proyectos · líder obligatorio', () => {
     const [fila] = await query<any[]>('SELECT lider_user_id FROM projects WHERE id = ?', [p.id]);
     expect(fila.lider_user_id).toBe(otro.id);
   });
+
+  it('no deja poner de líder a una persona desactivada, y la lista dice si el líder sigue activo', async () => {
+    const inactiva = await crearUsuario('Ex compañera', 'equipo');
+    await query('UPDATE profiles SET activo = 0 WHERE id = ?', [inactiva.id]);
+    expect(await crear({ brand_id: marcaId, nombre: 'Portal', lider_user_id: inactiva.id })).toMatchObject({ status: 400, body: { error: 'Elige el líder del proyecto.' } });
+    const lider = await crearUsuario('Diego Ruiz', 'equipo');
+    const { body: p } = await crear({ brand_id: marcaId, nombre: 'Portal', lider_user_id: lider.id });
+    expect(p.lider_activo).toBe(true);
+    await query('UPDATE profiles SET activo = 0 WHERE id = ?', [lider.id]);
+    const lista = await llamar(`${api.url}/projects`, admin);
+    expect(lista.body.find((x: any) => x.id === p.id).lider_activo).toBe(false);
+  });
 });
+

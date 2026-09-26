@@ -105,4 +105,25 @@ describe('tickReportes', () => {
     await tick('2026-09-28T10:30:00Z');
     expect(await reportes()).toEqual([]);
   });
+
+  it('con el líder desactivado no genera ni le avisa a nadie', async () => {
+    await query('UPDATE profiles SET activo = 0 WHERE id = ?', [lider.id]);
+    await tick('2026-09-28T10:30:00Z');
+    expect(await reportes()).toEqual([]);
+  });
+
+  it('descarta lo que estaba en cola si el proyecto se eliminó o se quedó sin líder activo, sin mandar correos', async () => {
+    const encolar = () => query(
+      "INSERT INTO proyecto_reportes (id, project_id, periodo_desde, periodo_hasta, entregar_en, estado) VALUES (?, ?, '2026-09-21', '2026-09-27', '2026-09-28 13:00:00', 'programado')",
+      [uuid(), proyectoId],
+    );
+    await encolar();
+    await query('UPDATE projects SET activo = 0 WHERE id = ?', [proyectoId]);
+    await tick('2026-09-28T10:30:00Z');
+    expect(await reportes()).toMatchObject([{ estado: 'fallido' }]);
+    const [{ error }] = await query<any[]>('SELECT error FROM proyecto_reportes WHERE project_id = ?', [proyectoId]);
+    expect(error).toBe('El proyecto se eliminó o no tiene un líder activo.');
+    expect(enviados).toEqual([]);
+  });
 });
+

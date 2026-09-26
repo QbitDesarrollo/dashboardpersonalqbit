@@ -50,4 +50,13 @@ describe('DetalleProyecto', () => {
     await screen.findByText('Tareas del proyecto');
     expect(screen.queryByText(/Sección de reportes/)).not.toBeInTheDocument();
   });
+
+  it('con el líder desactivado lo trata como sin líder: avisa y no muestra reportes', async () => {
+    auth = { profile: { id: 'u9', rol: 'admin' }, isAdmin: true, isEjecutivo: false };
+    mostrar(proyecto({ lider_activo: false, lider_nombre: 'Ex compañera', lider_user_id: 'x1' }));
+    expect(await screen.findByText('El líder de este proyecto está desactivado. Asigna otro para seguir con sus reportes.')).toBeInTheDocument();
+    expect(screen.queryByText(/Sección de reportes/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Líder del proyecto')).toHaveValue('');
+  });
 });
+

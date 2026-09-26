@@ -2243,6 +2243,8 @@ export interface Project {
   salud: "verde" | "amarillo" | "rojo"; salud_manual: boolean;
   fecha_inicio: string | null; fecha_fin: string | null;
   lider_user_id: string | null; lider_nombre?: string | null;
+  /** False when the leader was deactivated: treated as no leader. */
+  lider_activo?: boolean;
   desk_id: string | null; color: string | null; activo: boolean;
   total_tareas: number; tareas_listas: number; vencidas: number; avance: number;
   created_at: string;

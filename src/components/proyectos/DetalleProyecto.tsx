@@ -47,7 +47,9 @@ export function DetalleProyecto({ project, personas, onBack, reporteInicial }: P
   if (loading || !data) return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   const p = data.project;
   const puedeEditarLider = isAdmin || isEjecutivo;
-  const veReportes = !!p.lider_user_id && (isAdmin || profile?.id === p.lider_user_id);
+  // A deactivated leader counts as no leader: reports pause until someone assigns another.
+  const liderActivo = !!p.lider_user_id && p.lider_activo !== false;
+  const veReportes = liderActivo && (isAdmin || profile?.id === p.lider_user_id);
 
   const grouped: Record<string, ProjectTask[]> = {};
   for (const t of data.tasks) (grouped[t.estado] ||= []).push(t);
@@ -63,9 +65,12 @@ export function DetalleProyecto({ project, personas, onBack, reporteInicial }: P
         <Select value={p.estado} onValueChange={setEstado}><SelectTrigger className="w-36 h-9 text-sm"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(ESTADO_LABEL).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent></Select>
       </div>
 
-      {!p.lider_user_id && (
+      {!liderActivo && (
         <p role="alert" className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
-          <AlertTriangle className="h-4 w-4 shrink-0" />Este proyecto no tiene líder. Asígnalo para activar sus reportes semanales.
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {p.lider_user_id
+            ? 'El líder de este proyecto está desactivado. Asigna otro para seguir con sus reportes.'
+            : 'Este proyecto no tiene líder. Asígnalo para activar sus reportes semanales.'}
         </p>
       )}
 
@@ -80,7 +85,7 @@ export function DetalleProyecto({ project, personas, onBack, reporteInicial }: P
         {puedeEditarLider && (
           <div className="max-w-xs space-y-1.5 pt-1">
             <Label htmlFor="dp-lider" className="text-xs">Líder del proyecto</Label>
-            <SelectorLider id="dp-lider" personas={personas} value={p.lider_user_id ?? ''} onChange={setLider} />
+            <SelectorLider id="dp-lider" personas={personas} value={liderActivo ? p.lider_user_id! : ''} onChange={setLider} />
           </div>
         )}
       </CardContent></Card>

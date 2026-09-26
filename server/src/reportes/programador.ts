@@ -19,7 +19,7 @@ const ESPERA_REINTENTO_MIN = [10, 30];
 
 async function lider(projectId: string) {
   return queryOne<{ id: string; nombre: string; email: string | null }>(
-    'SELECT pr.id, pr.nombre, pr.email FROM projects p JOIN profiles pr ON pr.id = p.lider_user_id WHERE p.id = ?',
+    'SELECT pr.id, pr.nombre, pr.email FROM projects p JOIN profiles pr ON pr.id = p.lider_user_id WHERE p.id = ? AND pr.activo = 1',
     [projectId],
   );
 }
@@ -48,6 +48,7 @@ async function fallo(r: repo.FilaReporte, error: unknown, ahora: Date, deps: Dep
 export async function tickReportes(deps: DepsReportes, ahora = new Date()): Promise<void> {
   // Left "generating" by a restart: count it as a failed attempt so it is retried.
   for (const r of await repo.colgados(ahora)) await fallo(r, new ErrorReporte(500, 'La generación se interrumpió.'), ahora, deps);
+  await repo.descartarSinLider();
 
   for (const c of await repo.configsActivas()) {
     for (const e of entregasAbiertas(c, ahora)) await repo.asegurarReporte(c.project_id, e);

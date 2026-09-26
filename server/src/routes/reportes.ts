@@ -48,10 +48,19 @@ export function crearRouterReportes(deps: DepsReportes) {
 
   /** Loads a project and checks the caller may handle its reports. */
   const proyecto = async (req: AuthRequest, res: Response) => {
-    const p = await queryOne<{ id: string; lider_user_id: string | null }>('SELECT id, lider_user_id FROM projects WHERE id = ?', [String(req.params.id)]);
+    const p = await queryOne<{ id: string; lider_user_id: string | null; lider_activo: number | null }>(
+      'SELECT p.id, p.lider_user_id, pr.activo AS lider_activo FROM projects p LEFT JOIN profiles pr ON pr.id = p.lider_user_id WHERE p.id = ?',
+      [String(req.params.id)],
+    );
     if (!p) { res.status(404).json({ error: 'Proyecto no encontrado' }); return null; }
     if (!(await permitido(req.userId!, p.lider_user_id))) { res.status(403).json({ error: 'Solo el líder del proyecto o un admin manejan sus reportes.' }); return null; }
     return p;
+  };
+  /** Reports need someone to receive and approve them: no active leader, no reports. */
+  const sinLider = (p: { lider_user_id: string | null; lider_activo: number | null }, res: Response) => {
+    if (p.lider_user_id && Number(p.lider_activo)) return false;
+    res.status(409).json({ error: 'Asigna un líder activo al proyecto primero.' });
+    return true;
   };
   const reporte = async (req: AuthRequest, res: Response) => {
     const r = await repo.leerReporte(String(req.params.id));
@@ -79,7 +88,7 @@ export function crearRouterReportes(deps: DepsReportes) {
 
   router.put('/projects/:id/reportes/config', requireAuth, seguro(async (req, res) => {
     const p = await proyecto(req, res);
-    if (!p) return;
+    if (!p || sinLider(p, res)) return;
     const b = configSchema.safeParse(req.body);
     if (!b.success) return res.status(400).json({ error: 'Revisa el día (1 a 7) y la hora (HH:MM).' });
     await repo.guardarConfig(p.id, b.data, req.userId!);
@@ -95,7 +104,7 @@ export function crearRouterReportes(deps: DepsReportes) {
 
   router.post('/projects/:id/reportes/generar', requireAuth, seguro(async (req, res) => {
     const p = await proyecto(req, res);
-    if (!p) return;
+    if (!p || sinLider(p, res)) return;
     const b = generarSchema.safeParse(req.body ?? {});
     if (!b.success) return res.status(400).json({ error: 'Periodo inválido (máximo 31 días).' });
     const entrega: Entrega = b.data.desde && b.data.hasta

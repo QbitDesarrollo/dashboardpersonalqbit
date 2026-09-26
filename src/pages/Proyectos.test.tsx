@@ -28,10 +28,14 @@ const mostrar = (ruta = '/proyectos') => render(<MemoryRouter initialEntries={[r
 
 describe('Proyectos', () => {
   it('marca los proyectos que no tienen líder', async () => {
-    m.getProjects.mockResolvedValue([proyecto({}), proyecto({ id: 'p2', nombre: 'Portal', lider_user_id: null, lider_nombre: null })]);
+    m.getProjects.mockResolvedValue([
+      proyecto({}), proyecto({ id: 'p2', nombre: 'Portal', lider_user_id: null, lider_nombre: null }),
+      proyecto({ id: 'p3', nombre: 'SEO', lider_user_id: 'x1', lider_nombre: 'Ex compañera', lider_activo: false }),
+    ]);
     mostrar();
     expect(await screen.findByText('Portal')).toBeInTheDocument();
     expect(screen.getAllByText('Sin líder')).toHaveLength(1);
+    expect(screen.getByText('Líder desactivado')).toBeInTheDocument();
   });
 
   it('el enlace del correo abre el proyecto y el reporte', async () => {

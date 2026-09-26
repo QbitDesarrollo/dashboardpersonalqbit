@@ -159,3 +159,25 @@ describe('permisos', () => {
     expect((await llamar(u(`/reportes/${r.id}/aprobar`), ana, 'POST')).status).toBe(403);
   });
 });
+
+describe('casos borde', () => {
+  it('sin líder, o con el líder desactivado, no se configura ni se genera: primero hay que asignar uno', async () => {
+    await query('UPDATE projects SET lider_user_id = NULL WHERE id = ?', [proyectoId]);
+    const config = await llamar(u(`/projects/${proyectoId}/reportes/config`), admin, 'PUT', { activo: true, dia_entrega: 1, hora_entrega: '08:00' });
+    expect(config).toMatchObject({ status: 409, body: { error: 'Asigna un líder activo al proyecto primero.' } });
+    expect((await llamar(u(`/projects/${proyectoId}/reportes/generar`), admin, 'POST', {})).status).toBe(409);
+
+    await query('UPDATE projects SET lider_user_id = ? WHERE id = ?', [lider.id, proyectoId]);
+    await query('UPDATE profiles SET activo = 0 WHERE id = ?', [lider.id]);
+    expect((await llamar(u(`/projects/${proyectoId}/reportes/generar`), admin, 'POST', {})).status).toBe(409);
+  });
+
+  it('no envía a personas desactivadas', async () => {
+    const r = await generado();
+    await llamar(u(`/reportes/${r.id}/aprobar`), lider, 'POST');
+    await query('UPDATE profiles SET activo = 0 WHERE id = ?', [ana.id]);
+    expect(await llamar(u(`/reportes/${r.id}/enviar`), lider, 'POST', { para: [ana.id], cc: [] })).toMatchObject({ status: 400 });
+    expect(enviados).toEqual([]);
+  });
+});
+

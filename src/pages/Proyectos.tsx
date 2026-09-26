@@ -101,7 +101,10 @@ export default function Proyectos() {
                     <div>
                       <div className="font-semibold flex items-center gap-2"><span className={cn('inline-block h-2.5 w-2.5 rounded-full', SALUD_DOT[p.salud])} title={SALUD_LABEL[p.salud]} />{p.nombre}</div>
                       <div className="text-xs text-muted-foreground">
-                        {p.brand_nombre}{p.lider_nombre ? <> · {p.lider_nombre}</> : <> · <span className="font-medium text-amber-600">Sin líder</span></>}
+                        {p.brand_nombre}
+                        {!p.lider_user_id ? <> · <span className="font-medium text-amber-600">Sin líder</span></>
+                          : p.lider_activo === false ? <> · <span className="font-medium text-amber-600">Líder desactivado</span></>
+                          : <> · {p.lider_nombre}</>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">

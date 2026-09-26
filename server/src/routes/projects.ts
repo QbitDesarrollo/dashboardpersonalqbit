@@ -40,7 +40,7 @@ const SIN_LIDER = 'Elige el líder del proyecto.';
 /** Every project needs a leader (they receive and approve its reports): it must be an existing person. */
 async function liderValido(id: unknown): Promise<boolean> {
   if (typeof id !== 'string' || !id) return false;
-  return !!(await queryOne('SELECT id FROM profiles WHERE id = ?', [id]));
+  return !!(await queryOne('SELECT id FROM profiles WHERE id = ? AND activo = 1', [id]));
 }
 
 function shape(r: any) {
@@ -54,6 +54,8 @@ function shape(r: any) {
     salud, salud_manual: !!r.salud,
     fecha_inicio: r.fecha_inicio, fecha_fin: r.fecha_fin,
     lider_user_id: r.lider_user_id, lider_nombre: r.lider_nombre,
+    // A deactivated leader counts as no leader: reports pause until someone assigns another.
+    lider_activo: !!r.lider_user_id && !!Number(r.lider_activo),
     desk_id: r.desk_id, color: r.color, activo: !!r.activo,
     total_tareas: total, tareas_listas: listas, vencidas: Number(r.vencidas) || 0,
     avance, created_at: r.created_at,
@@ -70,7 +72,7 @@ projectsRouter.get('/projects', requireAuth, async (req: AuthRequest, res) => {
     if (brandFilter) { conds.push('p.brand_id = ?'); params.push(brandFilter); }
     if (estadoFilter) { conds.push('p.estado = ?'); params.push(estadoFilter); }
     const rows = await query<any[]>(
-      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, ${STATS_SQL}
+      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${STATS_SQL}
        FROM projects p
        LEFT JOIN brands b ON b.id = p.brand_id
        LEFT JOIN profiles pr ON pr.id = p.lider_user_id
@@ -87,7 +89,7 @@ projectsRouter.get('/projects/:id', requireAuth, async (req: AuthRequest, res) =
   try {
     const id = String(req.params.id);
     const r = await queryOne<any>(
-      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, ${STATS_SQL}
+      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${STATS_SQL}
        FROM projects p LEFT JOIN brands b ON b.id = p.brand_id LEFT JOIN profiles pr ON pr.id = p.lider_user_id
        WHERE p.id = ?`, [id]);
     if (!r) return res.status(404).json({ error: 'Proyecto no encontrado' });
@@ -124,7 +126,7 @@ projectsRouter.post('/projects', requireAuth, async (req: AuthRequest, res) => {
        liderId, b.desk_id || null, b.color || null, req.userId ?? null]
     );
     const r = await queryOne<any>(
-      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, ${STATS_SQL}
+      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${STATS_SQL}
        FROM projects p LEFT JOIN brands b ON b.id = p.brand_id LEFT JOIN profiles pr ON pr.id = p.lider_user_id WHERE p.id = ?`, [id]);
     res.status(201).json(shape(r));
   } catch (e) { console.error('[PROJECTS] create:', e); res.status(500).json({ error: 'Error al crear proyecto' }); }
@@ -152,7 +154,7 @@ projectsRouter.patch('/projects/:id', requireAuth, async (req: AuthRequest, res)
     vals.push(id);
     await query(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`, vals);
     const r = await queryOne<any>(
-      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, ${STATS_SQL}
+      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${STATS_SQL}
        FROM projects p LEFT JOIN brands b ON b.id = p.brand_id LEFT JOIN profiles pr ON pr.id = p.lider_user_id WHERE p.id = ?`, [id]);
     res.json(shape(r));
   } catch (e) { console.error('[PROJECTS] update:', e); res.status(500).json({ error: 'Error al actualizar' }); }

@@ -56,8 +56,8 @@ export async function guardarConfig(projectId: string, c: Pick<ConfigReporte, 'a
 export async function configsActivas(): Promise<(ConfigReporte & { project_id: string })[]> {
   const filas = await query<any[]>(
     `SELECT c.project_id, c.activo, c.dia_entrega, c.hora_entrega, c.anticipacion_horas
-       FROM proyecto_reportes_config c JOIN projects p ON p.id = c.project_id
-      WHERE c.activo = 1 AND p.activo = 1 AND p.lider_user_id IS NOT NULL`,
+       FROM proyecto_reportes_config c JOIN projects p ON p.id = c.project_id JOIN profiles l ON l.id = p.lider_user_id
+      WHERE c.activo = 1 AND p.activo = 1 AND l.activo = 1`,
   );
   return filas.map((f) => ({ project_id: f.project_id, activo: true, dia_entrega: Number(f.dia_entrega), hora_entrega: f.hora_entrega, anticipacion_horas: Number(f.anticipacion_horas) }));
 }
@@ -99,6 +99,15 @@ export async function tomarSiguiente(ahora: Date): Promise<FilaReporte | null> {
   );
   if (!candidato || !(await marcarGenerando(candidato.id, ['programado']))) return null;
   return leerReporte(candidato.id);
+}
+
+/** Queued reports of projects deleted or left without an active leader: nobody would receive them. */
+export async function descartarSinLider(): Promise<void> {
+  await query(
+    `UPDATE proyecto_reportes r JOIN projects p ON p.id = r.project_id LEFT JOIN profiles l ON l.id = p.lider_user_id
+        SET r.estado = 'fallido', r.error = 'El proyecto se eliminó o no tiene un líder activo.', r.generando_desde = NULL
+      WHERE r.estado = 'programado' AND (p.activo = 0 OR l.id IS NULL OR l.activo = 0)`,
+  );
 }
 
 export async function guardarBorrador(id: string, contenido: ContenidoReporte, indicaciones: string | null): Promise<void> {
@@ -172,7 +181,7 @@ export async function pendientesDe(userId: string): Promise<number> {
 export async function destinatarios(ids: string[]): Promise<{ id: string; nombre: string; email: string }[]> {
   if (!ids.length) return [];
   return query<any[]>(
-    `SELECT p.id, p.nombre, p.email FROM profiles p WHERE p.id IN (${ids.map(() => '?').join(',')}) AND p.email IS NOT NULL AND p.rol <> 'cliente'`,
+    `SELECT p.id, p.nombre, p.email FROM profiles p WHERE p.id IN (${ids.map(() => '?').join(',')}) AND p.email IS NOT NULL AND p.rol <> 'cliente' AND p.activo = 1`,
     ids,
   );
 }
