@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
+import { fechaDeColumna, fechaSql, hoyEcuador } from '../utils/fechas.js';
 
 /**
  * Proyectos — la capa que faltaba: Cliente (brand) → Proyecto → Tareas.
@@ -16,24 +17,26 @@ async function ensureExec(req: AuthRequest, res: any): Promise<boolean> {
   return true;
 }
 
-// Salud automática (si no fue seteada a mano): roja si hay tareas vencidas sin entregar,
-// amarilla si hay alguna por vencer pronto o el proyecto pasó su fecha_fin, verde si todo en orden.
-export function autoSalud(row: any): 'verde' | 'amarillo' | 'rojo' {
+// Salud automática (si no fue seteada a mano): roja si hay tareas vencidas sin entregar o el proyecto
+// en curso pasó su fecha_fin, amarilla si alguna vence en los próximos 3 días, verde si todo en orden.
+// "Hoy" es la fecha de Ecuador.
+export function autoSalud(row: any, hoy = hoyEcuador()): 'verde' | 'amarillo' | 'rojo' {
   if (Number(row.vencidas) > 0) return 'rojo';
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-  if (row.fecha_fin) {
-    const fin = new Date(String(row.fecha_fin).slice(0, 10) + 'T00:00:00');
-    if (fin < hoy && row.estado === 'en_curso') return 'rojo';
-  }
+  const fin = fechaDeColumna(row.fecha_fin);
+  if (fin && fin < hoy && row.estado === 'en_curso') return 'rojo';
   if (Number(row.por_vencer) > 0) return 'amarillo';
   return 'verde';
 }
 
-export const STATS_SQL = `
+/** Task counters of a project, with "today" in Ecuador time (see utils/fechas.ts). */
+export function statsSql(hoy = hoyEcuador()): string {
+  const d = fechaSql(hoy);
+  return `
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id) AS total_tareas,
   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado IN ('entregado','aprobado')) AS tareas_listas,
-  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado NOT IN ('entregado','aprobado','revision_cliente') AND t.fecha_entrega IS NOT NULL AND t.fecha_entrega < CURDATE()) AS vencidas,
-  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado NOT IN ('entregado','aprobado') AND t.fecha_entrega IS NOT NULL AND t.fecha_entrega BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY)) AS por_vencer`;
+  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado NOT IN ('entregado','aprobado','revision_cliente') AND t.fecha_entrega IS NOT NULL AND t.fecha_entrega < ${d}) AS vencidas,
+  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.estado NOT IN ('entregado','aprobado') AND t.fecha_entrega IS NOT NULL AND t.fecha_entrega BETWEEN ${d} AND DATE_ADD(${d}, INTERVAL 3 DAY)) AS por_vencer`;
+}
 
 const SIN_LIDER = 'Elige el líder del proyecto.';
 
@@ -72,7 +75,7 @@ projectsRouter.get('/projects', requireAuth, async (req: AuthRequest, res) => {
     if (brandFilter) { conds.push('p.brand_id = ?'); params.push(brandFilter); }
     if (estadoFilter) { conds.push('p.estado = ?'); params.push(estadoFilter); }
     const rows = await query<any[]>(
-      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${STATS_SQL}
+      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${statsSql()}
        FROM projects p
        LEFT JOIN brands b ON b.id = p.brand_id
        LEFT JOIN profiles pr ON pr.id = p.lider_user_id
@@ -89,7 +92,7 @@ projectsRouter.get('/projects/:id', requireAuth, async (req: AuthRequest, res) =
   try {
     const id = String(req.params.id);
     const r = await queryOne<any>(
-      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${STATS_SQL}
+      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${statsSql()}
        FROM projects p LEFT JOIN brands b ON b.id = p.brand_id LEFT JOIN profiles pr ON pr.id = p.lider_user_id
        WHERE p.id = ?`, [id]);
     if (!r) return res.status(404).json({ error: 'Proyecto no encontrado' });
@@ -126,7 +129,7 @@ projectsRouter.post('/projects', requireAuth, async (req: AuthRequest, res) => {
        liderId, b.desk_id || null, b.color || null, req.userId ?? null]
     );
     const r = await queryOne<any>(
-      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${STATS_SQL}
+      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${statsSql()}
        FROM projects p LEFT JOIN brands b ON b.id = p.brand_id LEFT JOIN profiles pr ON pr.id = p.lider_user_id WHERE p.id = ?`, [id]);
     res.status(201).json(shape(r));
   } catch (e) { console.error('[PROJECTS] create:', e); res.status(500).json({ error: 'Error al crear proyecto' }); }
@@ -154,7 +157,7 @@ projectsRouter.patch('/projects/:id', requireAuth, async (req: AuthRequest, res)
     vals.push(id);
     await query(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`, vals);
     const r = await queryOne<any>(
-      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${STATS_SQL}
+      `SELECT p.*, b.nombre AS brand_nombre, pr.nombre AS lider_nombre, pr.activo AS lider_activo, ${statsSql()}
        FROM projects p LEFT JOIN brands b ON b.id = p.brand_id LEFT JOIN profiles pr ON pr.id = p.lider_user_id WHERE p.id = ?`, [id]);
     res.json(shape(r));
   } catch (e) { console.error('[PROJECTS] update:', e); res.status(500).json({ error: 'Error al actualizar' }); }

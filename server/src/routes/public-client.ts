@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import multerPC from 'multer';
 import pathPC from 'path';
 import fsPC from 'fs';
+import { fechaSql, hoyEcuador } from '../utils/fechas.js';
 
 /**
  * Módulo de clientes — lado PÚBLICO (cliente sin login).
@@ -143,7 +144,7 @@ publicClientRouter.get('/public/client/:token', publicLimiter, async (req, res) 
               COUNT(t.id) AS total,
               SUM(t.estado IN ('entregado','aprobado')) AS listas,
               SUM(t.estado IN ('en_proceso','en_revision','revision_interna','bloqueado','revision_cliente')) AS en_marcha,
-              SUM(t.estado NOT IN ('entregado','aprobado','revision_cliente') AND t.fecha_cliente IS NOT NULL AND t.fecha_cliente < CURDATE()) AS vencidas
+              SUM(t.estado NOT IN ('entregado','aprobado','revision_cliente') AND t.fecha_cliente IS NOT NULL AND t.fecha_cliente < ${fechaSql(hoyEcuador())}) AS vencidas
        FROM projects pr
        INNER JOIN tasks t ON t.project_id = pr.id AND t.client_board_id = ? AND t.cliente_visible = 1
        WHERE pr.brand_id = ? AND pr.activo = 1

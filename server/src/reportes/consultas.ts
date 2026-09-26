@@ -1,5 +1,5 @@
 import { query, queryOne } from '../db/mysql.js';
-import { autoSalud, STATS_SQL } from '../routes/projects.js';
+import { autoSalud, statsSql } from '../routes/projects.js';
 import { textoPlano, type CambioEstado, type Reprogramacion, type TareaDelPeriodo } from './dominio.js';
 import type { Avance, Comentario, DatosReporte, DepsGenerador } from './generador.js';
 
@@ -20,7 +20,7 @@ const agrupar = <T>(filas: (T & { task_id: string })[]) => {
 
 export async function datosDelReporte(projectId: string, periodo: { desde: string; hasta: string; parcial?: boolean }): Promise<DatosReporte> {
   const p = await queryOne<any>(
-    `SELECT p.id, p.nombre, p.salud, p.estado, p.fecha_fin, DATE_FORMAT(p.fecha_fin, '%Y-%m-%d') AS fin, b.nombre AS marca, pr.nombre AS lider, ${STATS_SQL}
+    `SELECT p.id, p.nombre, p.salud, p.estado, p.fecha_fin, DATE_FORMAT(p.fecha_fin, '%Y-%m-%d') AS fin, b.nombre AS marca, pr.nombre AS lider, ${statsSql()}
        FROM projects p LEFT JOIN brands b ON b.id = p.brand_id LEFT JOIN profiles pr ON pr.id = p.lider_user_id
       WHERE p.id = ?`,
     [projectId],

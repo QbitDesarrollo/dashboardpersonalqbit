@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
+import { fechaSql, hoyEcuador } from '../utils/fechas.js';
 
 export const dashboardsRouter = Router();
 
@@ -147,7 +148,7 @@ dashboardsRouter.get('/dashboards/widget-data/:type', requireAuth, async (req: A
         const rows = await query<any[]>(
           `SELECT t.id, t.titulo_tarea, t.fecha_entrega, t.estado, t.prioridad, b.nombre as brand_nombre
            FROM tasks t LEFT JOIN brands b ON b.id = t.brand_id
-           WHERE t.fecha_entrega BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+           WHERE t.fecha_entrega BETWEEN ${fechaSql(hoyEcuador())} AND DATE_ADD(${fechaSql(hoyEcuador())}, INTERVAL 7 DAY)
            AND t.estado NOT IN ('entregado')
            AND (t.parent_task_id IS NULL OR t.parent_task_id = '')${brandFilter}
            ORDER BY t.fecha_entrega ASC LIMIT 20`,

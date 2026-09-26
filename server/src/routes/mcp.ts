@@ -11,6 +11,7 @@ import { getUserRole } from '../utils/roles.js';
 import { logActivity, logTaskChanges } from '../utils/activity.js';
 import { spawnNextRecurrence } from './tasks.js';
 import { processCommentMentions } from '../utils/mentions.js';
+import { fechaSql, hoyEcuador } from '../utils/fechas.js';
 
 /**
  * API del MCP de Tiusdei.
@@ -439,7 +440,7 @@ mcpRouter.get('/tasks', requireApiToken, async (req: AuthRequest, res) => {
     }
     if (estado) { conds.push('t.estado = ?'); params.push(estado); }
     if (prioridad) { conds.push('t.prioridad = ?'); params.push(prioridad); }
-    if (fOverdue) { conds.push("t.fecha_entrega < CURDATE() AND t.estado NOT IN ('entregado','aprobado')"); }
+    if (fOverdue) { conds.push(`t.fecha_entrega < ${fechaSql(hoyEcuador())} AND t.estado NOT IN ('entregado','aprobado')`); }
     if (fDueFrom) { conds.push('t.fecha_entrega >= ?'); params.push(fDueFrom); }
     if (fDueTo) { conds.push('t.fecha_entrega <= ?'); params.push(fDueTo); }
 

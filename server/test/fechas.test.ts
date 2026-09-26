@@ -1,0 +1,20 @@
+import { describe, it, expect } from 'vitest';
+import { fechaDeColumna, fechaSql, hoyEcuador } from '../src/utils/fechas.js';
+
+describe('fechas de Ecuador', () => {
+  it('hoy es la fecha de Ecuador aunque en UTC ya sea mañana', () => {
+    expect(hoyEcuador(new Date('2026-10-10T01:00:00Z'))).toBe('2026-10-09');
+    expect(hoyEcuador(new Date('2026-10-10T05:00:00Z'))).toBe('2026-10-10');
+  });
+
+  it('solo convierte a SQL una fecha YYYY-MM-DD; cualquier otra cosa se rechaza', () => {
+    expect(fechaSql('2026-10-09')).toBe("'2026-10-09'");
+    for (const malo of ["2026-10-09' OR '1'='1", '2026-10-9', '', 'hoy']) expect(() => fechaSql(malo), malo).toThrow();
+  });
+
+  it('lee una columna DATE de mysql2 (Date a medianoche UTC) o un texto', () => {
+    expect(fechaDeColumna(new Date('2026-10-02T00:00:00Z'))).toBe('2026-10-02');
+    expect(fechaDeColumna('2026-10-02')).toBe('2026-10-02');
+    expect(fechaDeColumna(null)).toBeNull();
+  });
+});

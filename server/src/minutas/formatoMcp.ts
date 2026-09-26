@@ -21,8 +21,7 @@ export function horaEcuador(valor: Date | string | null | undefined): string | n
   return d.toISOString().slice(0, 16).replace('T', ' ');
 }
 
-/** Today's date (YYYY-MM-DD) in Guayaquil: after 19:00 there, UTC is already tomorrow. */
-export const hoyEcuador = (ahora = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: ZONA }).format(ahora);
+export { hoyEcuador } from '../utils/fechas.js';
 
 /** Point status as the screen names it; points owed by the client read differently. */
 export function etiquetaEstadoPunto(estado: string, responsableCliente: boolean): string {
