@@ -8,12 +8,14 @@ interface Props {
   onChange: (ids: string[]) => void;
   /** The minuta owner is always part of it, so it is not offered. */
   excluir?: string;
+  /** Heading of the selector; also names its lists so two selectors can share a screen. */
+  titulo?: string;
 }
 
 const normalizar = (texto: string) => texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 /** Team of a minuta: chosen people on top, then a searchable, scrollable list. */
-export function SelectorEquipo({ personas, seleccionados, onChange, excluir }: Props) {
+export function SelectorEquipo({ personas, seleccionados, onChange, excluir, titulo = 'Equipo' }: Props) {
   const [busqueda, setBusqueda] = useState('');
   const disponibles = personas.filter((p) => p.id !== excluir);
   const elegidos = disponibles.filter((p) => seleccionados.includes(p.id));
@@ -26,14 +28,14 @@ export function SelectorEquipo({ personas, seleccionados, onChange, excluir }: P
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <span className="text-sm font-medium">Equipo</span>
+        <span className="text-sm font-medium">{titulo}</span>
         {elegidos.length > 0 && <span className="text-xs text-muted-foreground">{elegidos.length} {elegidos.length === 1 ? 'persona' : 'personas'}</span>}
       </div>
 
       {elegidos.length === 0 ? (
         <p className="text-xs text-muted-foreground">Nadie elegido todavía.</p>
       ) : (
-        <ul aria-label="Equipo elegido" className="flex flex-wrap gap-1.5">
+        <ul aria-label={titulo === 'Equipo' ? 'Equipo elegido' : `${titulo}: elegidos`} className="flex flex-wrap gap-1.5">
           {elegidos.map((p) => (
             <li key={p.id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-0.5 pl-2.5 pr-1 text-xs font-medium text-primary">
               {p.nombre}
@@ -50,7 +52,7 @@ export function SelectorEquipo({ personas, seleccionados, onChange, excluir }: P
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="search"
-            aria-label="Buscar persona"
+            aria-label={titulo === 'Equipo' ? 'Buscar persona' : `Buscar persona (${titulo})`}
             placeholder="Buscar persona…"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}

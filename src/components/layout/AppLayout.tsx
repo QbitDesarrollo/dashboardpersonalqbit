@@ -81,6 +81,7 @@ import { GlobalSearch } from '@/components/GlobalSearch';
 import { ChatBubble } from '@/components/chat/ChatBubble';
 import { GeminiPanel } from '@/components/gemini/GeminiPanel';
 import { TimeSessionProvider, useTimeSession } from '@/contexts/TimeSessionContext';
+import { usePendientesReportes } from '@/hooks/usePendientesReportes';
 import { GlobalTimerGuard } from '@/components/GlobalTimerGuard';
 import { CheckInWidget } from '@/components/time-doctor/CheckInWidget';
 
@@ -180,6 +181,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [siteSettings, setSiteSettings] = useState<{ logo_url?: string | null; site_name?: string | null }>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const incidenciasUnread = notifications.filter((n) => !n.leida && (n.mensaje || '').toLowerCase().includes('incidencia')).length;
+  const reportesPendientes = usePendientesReportes(!!profile && profile.rol !== 'cliente');
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const socketRef = useRef<ReturnType<typeof import('socket.io-client').io> | null>(null);
@@ -450,6 +452,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   {item.href === '/incidencias' && incidenciasUnread > 0 && (
                     <span className="ml-auto min-w-[18px] text-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 py-0.5">
                       {incidenciasUnread}
+                    </span>
+                  )}
+                  {/* Weekly reports ready for this person's review (REPORTES-PLAN.md). */}
+                  {item.href === '/proyectos' && reportesPendientes > 0 && (
+                    <span title="Reportes semanales por revisar" className="ml-auto min-w-[18px] text-center text-[10px] font-bold bg-primary text-primary-foreground rounded-full px-1.5 py-0.5">
+                      {reportesPendientes}
                     </span>
                   )}
                 </Link>
