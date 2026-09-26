@@ -1,6 +1,15 @@
 # Reportes semanales de proyecto — plan
 
-Definido con Even el 25–26 de septiembre de 2026. Estado: **plan aprobado, sin código todavía**.
+Definido con Even el 25–26 de septiembre de 2026. Estado (26-sep): **fases 1 a 5 construidas y probadas, sin desplegar**.
+
+Dónde está el código: `server/src/reportes/` (dominio, consultas, generador, pdf, repositorio, servicio, programador),
+`server/src/routes/reportes.ts`, migración `040`, `codex-runner/reportes/` y en el front `src/components/proyectos/`,
+`src/lib/reportesApi.ts` y `src/hooks/usePendientesReportes.ts`.
+
+Diferencias con el plan, decididas al construir:
+- Crear un proyecto sin líder solo pasa por la creación rápida del tablero del cliente (que no se toca): ahí queda como líder quien lo crea. La pantalla de Proyectos siempre lo pide.
+- El avance (%) del reporte usa los mismos números que la pantalla de Proyectos (cuenta subtareas).
+- "Generar ahora" lo pueden usar el líder y admin; no manda el correo de "listo" (lo pidió la misma persona).
 
 ## Qué es
 

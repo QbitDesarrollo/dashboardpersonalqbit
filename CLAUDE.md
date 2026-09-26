@@ -35,8 +35,11 @@ Reuniones con el cliente → puntos → tareas → evidencia. Cuelgan de la marc
 - **MCP**: `list_minutas`, `get_minuta` (con capturas de evidencia como imágenes; horas en hora de Ecuador), `create_minuta`, `add_minuta_points` (agrega puntos al final de una minuta existente), `link_task_to_minuta_point`. Herramientas en `mcp-server/src/herramientas/minutas.ts`, API en `server/src/routes/mcp-minutas.ts`, lógica compartida con la web en `server/src/minutas/servicio.ts`.
 - **Zona horaria**: servidor, Node y MySQL en UTC (no cambiar). Se muestra y se calcula "hoy" en `America/Guayaquil`; las fechas de reunión y compromiso son DATE sin hora.
 
-## Reportes semanales de proyecto (en diseño)
-Reporte interno por proyecto: Tiusdei junta los hechos, Codex redacta por capas, el líder lo revisa, aprueba y envía en PDF a usuarios de Tiusdei. **Lee [REPORTES-PLAN.md](./REPORTES-PLAN.md) antes de tocar código**: decisiones tomadas con Even, estructura del PDF, datos medidos, modelo de datos y fases.
+## Reportes semanales de proyecto
+Reporte interno por proyecto: Tiusdei junta los hechos, Codex redacta por capas, el líder lo revisa, aprueba y envía en PDF a usuarios de Tiusdei. **Lee [REPORTES-PLAN.md](./REPORTES-PLAN.md) antes de tocar código**: decisiones tomadas con Even, estructura del PDF, datos medidos, modelo de datos, fases y dónde está cada pieza.
+- Todo proyecto tiene **líder** (obligatorio al crear y editar). Solo el líder o un admin ven y manejan los reportes.
+- Back: `server/src/reportes/` + `server/src/routes/reportes.ts`; el programador corre cada 2 minutos desde `index.ts`. Runner: `POST /trabajo` en `codex-runner/`.
+- Front: `src/components/proyectos/` (detalle, reportes, visor del PDF), `src/lib/reportesApi.ts`, contador en el menú con `usePendientesReportes`.
 
 ## 🎯 Misión activa: el CONVERTIDOR DE CONTENIDOS
 Pedido de Juan José Vivas (6-jul-2026). **Lee el plan completo en [CONVERTIDOR-PLAN.md](./CONVERTIDOR-PLAN.md) antes de tocar código** — contiene el pedido textual de Juan, la arquitectura decidida (Convertidor en Tiusdei + IA de contratos en Nebula), el modelo de datos propuesto (tarifario, brand_entregables, canjes), las reglas de negocio, los 3 modelos de canje (recomendado: créditos mensuales) y el roadmap en 4 fases.
