@@ -23,7 +23,11 @@ export interface DepsMinutaEnlace {
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const fechaCorta = (fecha: string) => { const [, m, d] = fecha.split('-').map(Number); return `${d} ${MESES[m - 1]}`; };
 
-const personaSchema = z.object({ nombre: z.string().trim().min(1).max(120), email: z.string().trim().email().max(255) });
+// The email is optional: a copied message (for WhatsApp, say) only needs the name to greet.
+const personaSchema = z.object({
+  nombre: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(255).optional().or(z.literal('').transform(() => undefined)),
+});
 const envioSchema = z.object({
   medio: z.enum(['correo', 'copiado', 'vista_previa']),
   para: z.array(personaSchema).max(20),
@@ -114,6 +118,8 @@ export function crearRouterMinutaEnlace(deps: DepsMinutaEnlace) {
     if (!b.success) return res.status(400).json({ error: 'Revisa los nombres y correos.' });
     const { medio, para, resumen } = b.data;
     if (medio === 'correo' && para.length === 0) return res.status(400).json({ error: 'Elige al menos una persona para el correo.' });
+    const sinCorreo = medio === 'correo' ? para.find((p) => !p.email) : undefined;
+    if (sinCorreo) return res.status(400).json({ error: `${sinCorreo.nombre} no tiene correo. Agrégalo o quítalo de la lista.` });
 
     const detalle = (await cargarDetalle(m.id))!;
     const armar = (enlace: repo.EnlaceMinuta | null) => ({
@@ -129,10 +135,10 @@ export function crearRouterMinutaEnlace(deps: DepsMinutaEnlace) {
     const mensaje = mensajeCliente(datos);
     if (medio === 'correo') {
       const plantilla = await minutaClienteEmail({ ...datos, fecha: fechaCorta(detalle.fecha), codigoMinuta: detalle.codigo });
-      const ok = await deps.correo.enviar({ ...plantilla, to: para.map((p) => p.email).join(', ') });
+      const ok = await deps.correo.enviar({ ...plantilla, to: para.map((p) => p.email!).join(', ') });
       if (!ok) return res.status(502).json({ error: 'No se pudo enviar el correo. Copia el mensaje o intenta de nuevo.' });
     }
-    await repo.guardarContactos(m.brand_id, para, req.userId!);
+    await repo.guardarContactos(m.brand_id, para.filter((p): p is { nombre: string; email: string } => !!p.email), req.userId!);
     await repo.registrarEnvio(m.id, medio, para, mensaje, req.userId!);
     res.json({ mensaje, enlace: await estadoEnlace(m.id) });
   }));

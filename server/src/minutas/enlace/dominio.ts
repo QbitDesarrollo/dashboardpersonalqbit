@@ -94,7 +94,7 @@ export function mensajeCliente(d: DatosMensaje): string {
 }
 
 /** Names offered at the entry page: whoever the minuta was sent to, once each, first time first. */
-export function nombresDeEnvios(envios: { para: { nombre: string; email: string }[] }[]): string[] {
+export function nombresDeEnvios(envios: { para: { nombre: string; email?: string }[] }[]): string[] {
   const vistos = new Set<string>();
   const nombres: string[] = [];
   for (const e of envios) {

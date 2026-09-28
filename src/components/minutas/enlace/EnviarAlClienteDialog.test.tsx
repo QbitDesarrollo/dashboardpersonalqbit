@@ -65,6 +65,29 @@ describe('EnviarAlClienteDialog', () => {
     expect(onEnviado).toHaveBeenCalled();
   });
 
+  it('lo escrito en nombre y correo cuenta sin presionar "Agregar": sale en la vista previa y en el envío', async () => {
+    abrir();
+    await screen.findByRole('checkbox', { name: 'Antonio Pérez (antonio@alba.ec)' });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Luis Mora' } });
+    fireEvent.change(screen.getByLabelText('Correo'), { target: { value: 'luis@alba.ec' } });
+    expect(await screen.findByText('Mensaje vista_previa para Luis Mora:')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar por correo' }));
+    await waitFor(() => expect(m.enviarCliente).toHaveBeenLastCalledWith('m1', { medio: 'correo', resumen: '', para: [{ nombre: 'Luis Mora', email: 'luis@alba.ec' }] }));
+  });
+
+  it('para copiar basta el nombre; sin correo no se puede mandar por correo y lo explica', async () => {
+    abrir();
+    await screen.findByRole('checkbox', { name: 'Antonio Pérez (antonio@alba.ec)' });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Luis Mora' } });
+    expect(screen.getByRole('button', { name: 'Agregar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Enviar por correo' })).toBeDisabled();
+    expect(screen.getByText('Luis Mora no tiene correo: puedes copiar el mensaje o agregarle uno para enviarlo por correo.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+    expect(screen.getByRole('checkbox', { name: 'Luis Mora (sin correo)' })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar mensaje' }));
+    await waitFor(() => expect(m.enviarCliente).toHaveBeenLastCalledWith('m1', { medio: 'copiado', resumen: '', para: [{ nombre: 'Luis Mora' }] }));
+  });
+
   it('sin destinatarios no se puede mandar por correo', async () => {
     abrir();
     await screen.findByRole('checkbox', { name: 'Antonio Pérez (antonio@alba.ec)' });

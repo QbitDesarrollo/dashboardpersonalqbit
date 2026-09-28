@@ -138,6 +138,20 @@ describe('mandar al cliente', () => {
     expect(r.body.enlace.envios).toEqual([expect.objectContaining({ medio: 'copiado', para: [], enviado_por: 'Even Fierro' })]);
   });
 
+  it('para copiar basta el nombre: saluda a esa persona y no la guarda como contacto sin correo', async () => {
+    const r = await llamar(u('/enviar-cliente'), even, 'POST', { medio: 'copiado', para: [{ nombre: 'Luis Mora' }], resumen: '' });
+    expect(r.status).toBe(200);
+    expect(r.body.mensaje).toMatch(/^Hola Luis Mora:/);
+    expect(r.body.enlace.envios).toEqual([expect.objectContaining({ medio: 'copiado', para: [{ nombre: 'Luis Mora' }] })]);
+    expect((await llamar(u('/contactos'), even)).body).toEqual([]);
+  });
+
+  it('por correo, todos necesitan correo', async () => {
+    const r = await llamar(u('/enviar-cliente'), even, 'POST', { medio: 'correo', para: [PARA[0], { nombre: 'Luis Mora' }], resumen: '' });
+    expect(r).toMatchObject({ status: 400, body: { error: 'Luis Mora no tiene correo. Agrégalo o quítalo de la lista.' } });
+    expect(enviados).toEqual([]);
+  });
+
   it('un contacto que ya existía se actualiza sin duplicarse', async () => {
     await llamar(u('/enviar-cliente'), even, 'POST', { medio: 'copiado', para: [PARA[0]], resumen: '' });
     await llamar(u('/enviar-cliente'), even, 'POST', { medio: 'copiado', para: [{ nombre: 'Antonio Pérez Vera', email: 'ANTONIO@alba.ec' }], resumen: '' });

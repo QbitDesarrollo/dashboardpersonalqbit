@@ -2,8 +2,9 @@ import { llamar } from './minutasApi';
 
 /** What the team does with the client link of a minuta (MINUTAS-ENLACE-PLAN.md). */
 
-export interface Destinatario { nombre: string; email: string }
-export interface Contacto extends Destinatario { id: string }
+/** The email is optional: a copied message only needs the name; emailing and saving a contact need it. */
+export interface Destinatario { nombre: string; email?: string }
+export interface Contacto { id: string; nombre: string; email: string }
 export interface EnvioMinuta { id: string; medio: 'correo' | 'copiado'; para: Destinatario[]; enviado_por: string | null; enviado_en: string }
 export interface EstadoEnlace {
   activo: boolean;

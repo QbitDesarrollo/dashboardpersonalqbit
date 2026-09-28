@@ -46,7 +46,7 @@ export async function registrarAcceso(id: string, nombre: string): Promise<void>
   await query('INSERT INTO minuta_accesos (id, minuta_id, nombre) VALUES (?, ?, ?)', [uuid(), id, nombre]);
 }
 
-export interface Envio { id: string; medio: 'correo' | 'copiado'; para: { nombre: string; email: string }[]; enviado_por: string | null; enviado_en: Date }
+export interface Envio { id: string; medio: 'correo' | 'copiado'; para: { nombre: string; email?: string }[]; enviado_por: string | null; enviado_en: Date }
 
 export async function envios(id: string): Promise<Envio[]> {
   const filas = await query<any[]>(
@@ -117,6 +117,6 @@ export async function guardarContactos(brandId: string, personas: { nombre: stri
   }
 }
 
-export async function registrarEnvio(id: string, medio: 'correo' | 'copiado', para: { nombre: string; email: string }[], mensaje: string, userId: string): Promise<void> {
+export async function registrarEnvio(id: string, medio: 'correo' | 'copiado', para: { nombre: string; email?: string }[], mensaje: string, userId: string): Promise<void> {
   await query('INSERT INTO minuta_envios (id, minuta_id, medio, para, mensaje, enviado_por) VALUES (?, ?, ?, ?, ?, ?)', [uuid(), id, medio, JSON.stringify(para), mensaje, userId]);
 }

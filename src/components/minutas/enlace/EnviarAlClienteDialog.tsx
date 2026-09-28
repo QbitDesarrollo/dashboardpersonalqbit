@@ -17,7 +17,7 @@ interface Props {
 }
 
 const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const clave = (p: Destinatario) => p.email.toLowerCase();
+const clave = (p: Destinatario) => (p.email ? `e:${p.email.toLowerCase()}` : `n:${p.nombre.toLocaleLowerCase('es')}`);
 
 /** Send a minuta to the client: pick people, let Codex draft the summary, check the message, email it or copy it. */
 export function EnviarAlClienteDialog({ minutaId, abierto, onOpenChange, onEnviado }: Props) {
@@ -34,7 +34,13 @@ export function EnviarAlClienteDialog({ minutaId, abierto, onOpenChange, onEnvia
     contactosMinuta(minutaId).then((c) => setPersonas(c.map(({ nombre, email }) => ({ nombre, email })))).catch(() => setPersonas([]));
   }, [abierto, minutaId]);
 
-  const para = personas.filter((p) => elegidos.has(clave(p)));
+  // What is typed in the name and email fields counts without pressing "Agregar": nothing typed gets lost.
+  const escrito = { nombre: nuevo.nombre.trim(), email: nuevo.email.trim() };
+  const valido = !!escrito.nombre && (!escrito.email || CORREO.test(escrito.email));
+  const pendiente: Destinatario | null = valido ? { nombre: escrito.nombre, ...(escrito.email ? { email: escrito.email } : {}) } : null;
+  const marcados = personas.filter((p) => elegidos.has(clave(p)));
+  const para = pendiente && !marcados.some((p) => clave(p) === clave(pendiente)) ? [...marcados, pendiente] : marcados;
+  const sinCorreo = para.find((p) => !p.email);
   const claveVista = JSON.stringify([para, resumen]);
 
   // The preview is the server's own text, so what you read is exactly what goes out.
@@ -49,9 +55,9 @@ export function EnviarAlClienteDialog({ minutaId, abierto, onOpenChange, onEnvia
   }, [abierto, minutaId, claveVista]);
 
   const alternar = (p: Destinatario) => setElegidos((s) => { const n = new Set(s); if (n.has(clave(p))) n.delete(clave(p)); else n.add(clave(p)); return n; });
-  const valido = nuevo.nombre.trim() && CORREO.test(nuevo.email.trim());
   const agregar = () => {
-    const p = { nombre: nuevo.nombre.trim(), email: nuevo.email.trim() };
+    if (!pendiente) return;
+    const p = pendiente;
     setPersonas((ps) => [...ps.filter((x) => clave(x) !== clave(p)), p]);
     setElegidos((s) => new Set(s).add(clave(p)));
     setNuevo({ nombre: '', email: '' });
@@ -95,14 +101,14 @@ export function EnviarAlClienteDialog({ minutaId, abierto, onOpenChange, onEnvia
           <div className="grid gap-1.5 sm:grid-cols-2">
             {personas.map((p) => (
               <label key={clave(p)} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/5">
-                <input type="checkbox" checked={elegidos.has(clave(p))} onChange={() => alternar(p)} aria-label={`${p.nombre} (${p.email})`} className="accent-primary" />
-                <span className="min-w-0 truncate">{p.nombre} <span className="text-muted-foreground">· {p.email}</span></span>
+                <input type="checkbox" checked={elegidos.has(clave(p))} onChange={() => alternar(p)} aria-label={`${p.nombre} (${p.email ?? 'sin correo'})`} className="accent-primary" />
+                <span className="min-w-0 truncate">{p.nombre} <span className="text-muted-foreground">· {p.email ?? 'sin correo'}</span></span>
               </label>
             ))}
           </div>
           <div className="grid items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
             <div className="space-y-1"><Label htmlFor="ec-nombre" className="text-xs">Nombre</Label><Input id="ec-nombre" maxLength={120} value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} /></div>
-            <div className="space-y-1"><Label htmlFor="ec-email" className="text-xs">Correo</Label><Input id="ec-email" type="email" maxLength={255} value={nuevo.email} onChange={(e) => setNuevo({ ...nuevo, email: e.target.value })} /></div>
+            <div className="space-y-1"><Label htmlFor="ec-email" className="text-xs">Correo</Label><Input id="ec-email" type="email" maxLength={255} placeholder="Opcional si vas a copiar" value={nuevo.email} onChange={(e) => setNuevo({ ...nuevo, email: e.target.value })} /></div>
             <Button variant="outline" disabled={!valido} onClick={agregar}><Plus className="h-4 w-4" />Agregar</Button>
           </div>
         </section>
@@ -123,11 +129,14 @@ export function EnviarAlClienteDialog({ minutaId, abierto, onOpenChange, onEnvia
           <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border bg-muted/40 p-3 font-sans text-sm">{vista}</pre>
         </section>
 
+        {sinCorreo && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">{sinCorreo.nombre} no tiene correo: puedes copiar el mensaje o agregarle uno para enviarlo por correo.</p>
+        )}
         <DialogFooter className="gap-2 sm:gap-2">
           <Button variant="outline" disabled={!!enviando} onClick={() => mandar('copiado')}>
             {enviando === 'copiado' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}Copiar mensaje
           </Button>
-          <Button disabled={!!enviando || para.length === 0} onClick={() => mandar('correo')}>
+          <Button disabled={!!enviando || para.length === 0 || !!sinCorreo} onClick={() => mandar('correo')}>
             {enviando === 'correo' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Enviar por correo
           </Button>
         </DialogFooter>
