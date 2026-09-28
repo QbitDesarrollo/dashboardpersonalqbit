@@ -18,6 +18,17 @@ export interface DepsMinutaEnlace {
   runner: Pick<RunnerIa, 'trabajo'>;
   correo: { enviar(opciones: EmailOptions): Promise<boolean> };
   frontendUrl: string;
+  /** How long the team waits for Codex; under the proxy's own limit so the dialog gets a clear answer. */
+  limiteResumenMs?: number;
+}
+
+class ErrorTardanza extends Error {}
+function conLimite<T>(promesa: Promise<T>, ms: number): Promise<T> {
+  let reloj: NodeJS.Timeout;
+  return Promise.race([
+    promesa,
+    new Promise<T>((_, rechazar) => { reloj = setTimeout(() => rechazar(new ErrorTardanza('Codex tardó demasiado')), ms); }),
+  ]).finally(() => clearTimeout(reloj));
 }
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -99,12 +110,16 @@ export function crearRouterMinutaEnlace(deps: DepsMinutaEnlace) {
     };
     try {
       // One retry when the text comes back malformed; a second bad answer is reported, never used.
-      for (let intento = 1; intento <= 2; intento++) {
-        const r = await deps.runner.trabajo('minuta-resumen-cliente', entrada) as { resumen?: unknown } | null;
-        if (typeof r?.resumen === 'string' && resumenValido(r.resumen)) return res.json({ resumen: r.resumen.trim() });
-      }
-      throw new Error('Codex devolvió un resumen inválido dos veces');
+      const resumen = await conLimite((async () => {
+        for (let intento = 1; intento <= 2; intento++) {
+          const r = await deps.runner.trabajo('minuta-resumen-cliente', entrada) as { resumen?: unknown } | null;
+          if (typeof r?.resumen === 'string' && resumenValido(r.resumen)) return r.resumen.trim();
+        }
+        throw new Error('Codex devolvió un resumen inválido dos veces');
+      })(), deps.limiteResumenMs ?? 75_000);
+      res.json({ resumen });
     } catch (e) {
+      if (e instanceof ErrorTardanza) return res.status(504).json({ error: 'Codex tardó demasiado. Escribe el resumen tú o intenta en un momento.' });
       if (e instanceof ErrorRunnerOcupado) return res.status(429).json({ error: 'Codex está ocupado con otro trabajo. Escribe el resumen tú o intenta en un momento.' });
       console.error('[MINUTA ENLACE] resumen:', e);
       res.status(502).json({ error: 'No se pudo preparar el resumen. Escríbelo tú o intenta de nuevo.' });

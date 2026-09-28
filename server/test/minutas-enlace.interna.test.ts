@@ -14,6 +14,7 @@ const deps: DepsMinutaEnlace = {
   runner: { async trabajo(tipo, entrada) { llamadasIa.push({ tipo, entrada }); return respuestaIa(); } },
   correo: { async enviar(o) { if (correoFalla) return false; enviados.push(o); return true; } },
   frontendUrl: 'https://tiusdei.test',
+  limiteResumenMs: 200,
 };
 
 let api: { url: string; cerrar: () => Promise<void> };
@@ -102,6 +103,13 @@ describe('preparar el resumen con Codex', () => {
     expect(llamadasIa).toHaveLength(2);
     respuestaIa = async () => ({ resumen: 'Mal } otra vez' });
     expect((await llamar(u('/resumen-cliente'), even, 'POST')).status).toBe(502);
+  });
+
+  it('si Codex se cuelga, responde a tiempo con un mensaje claro en vez de dejar que el proxy corte', async () => {
+    respuestaIa = () => new Promise(() => {});
+    const inicio = Date.now();
+    expect(await llamar(u('/resumen-cliente'), even, 'POST')).toMatchObject({ status: 504, body: { error: 'Codex tardó demasiado. Escribe el resumen tú o intenta en un momento.' } });
+    expect(Date.now() - inicio).toBeLessThan(2000);
   });
 
   it('si Codex está ocupado o falla, lo dice para que el resumen se escriba a mano', async () => {
