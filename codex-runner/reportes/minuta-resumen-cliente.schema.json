@@ -1,8 +1,19 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["resumen"],
+  "required": ["puntos"],
   "properties": {
-    "resumen": { "type": "string" }
+    "puntos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["indice", "texto"],
+        "properties": {
+          "indice": { "type": "integer" },
+          "texto": { "type": "string" }
+        }
+      }
+    }
   }
 }

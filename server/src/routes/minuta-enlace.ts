@@ -5,7 +5,7 @@ import { requireAuth, type AuthRequest } from '../middleware/auth.js';
 import { soloEquipoInterno } from '../minutas/permisos.js';
 import { cargarDetalle } from '../minutas/consultas.js';
 import { ErrorRunnerOcupado, type RunnerIa } from '../minutas/ia/runner.js';
-import { generarCodigo, mensajeCliente, minutaParaCliente, resumenValido } from '../minutas/enlace/dominio.js';
+import { generarCodigo, lineasDeLista, mensajeCliente, minutaParaCliente, resumenValido } from '../minutas/enlace/dominio.js';
 import * as repo from '../minutas/enlace/repositorio.js';
 import { minutaClienteEmail, type EmailOptions } from '../services/email.js';
 
@@ -101,19 +101,31 @@ export function crearRouterMinutaEnlace(deps: DepsMinutaEnlace) {
   router.post('/minutas/:id/resumen-cliente', requireAuth, soloEquipoInterno, seguro(async (req, res) => {
     const m = await minuta(req, res);
     if (!m) return;
-    // Codex summarizes what the meeting was about, from the points the client will see. No status, progress or
-    // dates: the client sees those in the link, and without them Codex cannot turn the summary into a status report.
+    // Codex writes one line per point the client will see: what is done and what for. No status, progress or dates:
+    // the client sees those in the link, and without them Codex cannot turn the list into a status report.
     const vista = minutaParaCliente((await cargarDetalle(m.id))!, () => '');
     const entrada = {
       minuta: { titulo: vista.titulo, fecha: vista.fecha, marca: vista.brand_nombre, resumen: vista.resumen ?? '' },
-      puntos: vista.items.map((p) => ({ titulo: p.titulo, descripcion: p.descripcion ?? '', lo_debe_el_cliente: p.responsable_cliente })),
+      puntos: vista.items.map((p, i) => ({ indice: i + 1, titulo: p.titulo, descripcion: p.descripcion ?? '', lo_debe_el_cliente: p.responsable_cliente })),
+    };
+    /** One bullet per point, in the minuta's order; a point Codex skipped keeps its own title so none goes missing. */
+    const lista = (r: unknown): string | null => {
+      const puntos = (r as { puntos?: unknown } | null)?.puntos;
+      if (!Array.isArray(puntos)) return null;
+      const textos = new Map<number, string>();
+      for (const x of puntos as { indice?: unknown; texto?: unknown }[]) {
+        if (typeof x?.texto !== 'string') continue;
+        if (!resumenValido(x.texto)) return null;
+        if (typeof x.indice === 'number') textos.set(x.indice, x.texto.trim());
+      }
+      return entrada.puntos.map((p) => `- ${textos.get(p.indice) ?? p.titulo}`).join('\n');
     };
     try {
       // One retry when the text comes back malformed; a second bad answer is reported, never used.
       const resumen = await conLimite((async () => {
         for (let intento = 1; intento <= 2; intento++) {
-          const r = await deps.runner.trabajo('minuta-resumen-cliente', entrada) as { resumen?: unknown } | null;
-          if (typeof r?.resumen === 'string' && resumenValido(r.resumen)) return r.resumen.trim();
+          const texto = lista(await deps.runner.trabajo('minuta-resumen-cliente', entrada));
+          if (texto) return texto;
         }
         throw new Error('Codex devolvió un resumen inválido dos veces');
       })(), deps.limiteResumenMs ?? 75_000);
@@ -149,7 +161,7 @@ export function crearRouterMinutaEnlace(deps: DepsMinutaEnlace) {
     const datos = armar((await repo.porId(m.id))!);
     const mensaje = mensajeCliente(datos);
     if (medio === 'correo') {
-      const plantilla = await minutaClienteEmail({ ...datos, fecha: fechaCorta(detalle.fecha), codigoMinuta: detalle.codigo });
+      const plantilla = await minutaClienteEmail({ ...datos, fecha: fechaCorta(detalle.fecha), codigoMinuta: detalle.codigo, acuerdos: lineasDeLista(resumen) });
       const ok = await deps.correo.enviar({ ...plantilla, to: para.map((p) => p.email!).join(', ') });
       if (!ok) return res.status(502).json({ error: 'No se pudo enviar el correo. Copia el mensaje o intenta de nuevo.' });
     }

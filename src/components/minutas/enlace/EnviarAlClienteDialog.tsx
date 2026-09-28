@@ -120,7 +120,7 @@ export function EnviarAlClienteDialog({ minutaId, abierto, onOpenChange, onEnvia
               {preparando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Preparar resumen
             </Button>
           </div>
-          <Textarea id="ec-resumen" rows={3} maxLength={3000} value={resumen} onChange={(e) => setResumen(e.target.value)}
+          <Textarea id="ec-resumen" rows={8} maxLength={3000} value={resumen} onChange={(e) => setResumen(e.target.value)}
             placeholder={preparando ? 'Dame un momento, estoy redactando el resumen…' : 'Escríbelo tú o usa "Preparar resumen".'} />
         </section>
 

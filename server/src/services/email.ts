@@ -616,7 +616,9 @@ export async function reporteEnvioEmail(data: {
 
 /** To the client: the minuta of a meeting with its link and access code. Tiusdei speaks, not a person. */
 export async function minutaClienteEmail(data: {
-  nombres: string[]; codigoMinuta: string; titulo: string; marca: string; fecha: string; resumen: string; enlace: string; codigo: string;
+  nombres: string[]; codigoMinuta: string; titulo: string; marca: string; fecha: string; enlace: string; codigo: string;
+  /** What was agreed: a list, or a paragraph written by hand (shown as a quote). */
+  acuerdos: string[] | null; resumen: string;
 }): Promise<EmailOptions> {
   const varios = data.nombres.length > 1;
   const nombres = data.nombres.length > 1
@@ -626,14 +628,15 @@ export async function minutaClienteEmail(data: {
     accent: 'green',
     preheader: `Minuta de la reunión del ${data.fecha}`,
     headline: data.titulo,
-    greeting: nombres ? `Hola ${escapeHtml(nombres)}:` : 'Hola:',
-    intro: `${varios ? 'Les' : 'Te'} enviamos la minuta de la reunión del ${escapeHtml(data.fecha)}, <strong>«${escapeHtml(data.titulo)}»</strong> (${escapeHtml(data.marca)}). Para revisarla, aprobar puntos o dejar ${varios ? 'sus' : 'tus'} comentarios, entra con el código de acceso.`,
-    quote: data.resumen.trim() || undefined,
+    greeting: nombres ? `Hola ${nombres}:` : 'Hola:',
+    intro: `${varios ? 'Les' : 'Te'} enviamos la minuta de la reunión del ${escapeHtml(data.fecha)}, <strong>«${escapeHtml(data.titulo)}»</strong> (${escapeHtml(data.marca)}). En el enlace puedes ver el avance de cada punto, aprobar lo que ya está listo y dejarnos ${varios ? 'sus' : 'tus'} comentarios.`,
+    lista: data.acuerdos ? { titulo: 'Lo que acordamos', items: data.acuerdos } : undefined,
+    quote: !data.acuerdos && data.resumen.trim() ? data.resumen.trim() : undefined,
     details: [
       { label: 'Código de acceso', value: escapeHtml(data.codigo), highlight: true },
       { label: 'Enlace', value: escapeHtml(data.enlace) },
     ],
-    cta: { text: 'Ver la minuta', url: data.enlace },
+    cta: { text: 'Ver el avance de la minuta', url: data.enlace },
   });
   return { to: '', subject: `Minuta ${data.codigoMinuta} · ${data.titulo} · ${data.marca}`, html, text };
 }

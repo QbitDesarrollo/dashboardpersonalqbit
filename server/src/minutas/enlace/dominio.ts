@@ -77,6 +77,13 @@ export interface DatosMensaje {
   nombres: string[]; fecha: string; titulo: string; marca: string; resumen: string; enlace: string; codigo: string;
 }
 
+/** Lines of a bullet list ("- " or "• "), or null when the text is not a list (a paragraph written by hand). */
+export function lineasDeLista(texto: string): string[] | null {
+  const lineas = texto.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lineas.length || !lineas.every((l) => /^[-•]/.test(l))) return null;
+  return lineas.map((l) => l.replace(/^[-•]\s*/, ''));
+}
+
 /** The message that goes to the client, by email or copied by hand. It is Tiusdei speaking, not a person. */
 export function mensajeCliente(d: DatosMensaje): string {
   const varios = d.nombres.length > 1;
@@ -85,9 +92,10 @@ export function mensajeCliente(d: DatosMensaje): string {
     d.nombres.length ? `Hola ${enumerar(d.nombres)}:` : 'Hola:',
     '',
     `${varios ? 'Les' : 'Te'} enviamos la minuta de la reunión del ${fechaCorta(d.fecha)}, «${d.titulo}» (${d.marca}).`,
-    ...(resumen ? ['', `En resumen: ${resumen}`] : []),
+    ...(resumen ? ['', 'Lo que acordamos:', resumen] : []),
     '',
-    `Para revisarla, aprobar puntos o dejar ${varios ? 'sus' : 'tus'} comentarios, entra a este enlace:`,
+    // The client reads what was agreed, not that work starts now: the link shows how far each point got.
+    `En este enlace puedes ver el avance de cada punto, aprobar lo que ya está listo y dejarnos ${varios ? 'sus' : 'tus'} comentarios:`,
     d.enlace,
     `Código de acceso: ${d.codigo}`,
   ].join('\n');

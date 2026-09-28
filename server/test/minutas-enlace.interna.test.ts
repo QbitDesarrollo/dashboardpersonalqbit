@@ -7,7 +7,8 @@ import type { EmailOptions } from '../src/services/email.js';
 
 const enviados: EmailOptions[] = [];
 const llamadasIa: { tipo: string; entrada: any }[] = [];
-let respuestaIa: () => Promise<unknown> = async () => ({ resumen: 'Se revisó el panel de alertas y queda un ajuste.' });
+const PUNTOS_IA = { puntos: [{ indice: 1, texto: 'Revisar las alertas del panel para que muestren bien los leads.' }] };
+let respuestaIa: () => Promise<unknown> = async () => PUNTOS_IA;
 let correoFalla = false;
 
 const deps: DepsMinutaEnlace = {
@@ -30,7 +31,7 @@ beforeEach(async () => {
   enviados.length = 0;
   llamadasIa.length = 0;
   correoFalla = false;
-  respuestaIa = async () => ({ resumen: 'Se revisó el panel de alertas y queda un ajuste.' });
+  respuestaIa = async () => PUNTOS_IA;
   even = await crearUsuario('Even Fierro', 'admin');
   cliente = await crearUsuario('Cliente', 'cliente');
   marca = await crearMarca('Alba del Bosque');
@@ -81,7 +82,7 @@ describe('enlace para el cliente', () => {
 describe('preparar el resumen con Codex', () => {
   it('le pasa solo los puntos visibles para el cliente y devuelve el resumen', async () => {
     const r = await llamar(u('/resumen-cliente'), even, 'POST');
-    expect(r).toMatchObject({ status: 200, body: { resumen: 'Se revisó el panel de alertas y queda un ajuste.' } });
+    expect(r).toMatchObject({ status: 200, body: { resumen: '- Revisar las alertas del panel para que muestren bien los leads.' } });
     expect(llamadasIa).toHaveLength(1);
     expect(llamadasIa[0].tipo).toBe('minuta-resumen-cliente');
     expect(JSON.stringify(llamadasIa[0].entrada)).toContain('Panel de alertas');
@@ -92,17 +93,25 @@ describe('preparar el resumen con Codex', () => {
   it('a Codex solo le llega de qué trata cada punto, no su estado ni su avance: eso el cliente lo ve al entrar', async () => {
     await query("UPDATE minuta_items SET resolucion = 'Se corrigió el filtro', fecha_compromiso = '2026-09-30' WHERE numero = 1 AND minuta_id = ?", [minutaId]);
     await llamar(u('/resumen-cliente'), even, 'POST');
-    expect(llamadasIa[0].entrada.puntos).toEqual([{ titulo: 'Panel de alertas', descripcion: 'Revisar alertas', lo_debe_el_cliente: false }]);
+    expect(llamadasIa[0].entrada.puntos).toEqual([{ indice: 1, titulo: 'Panel de alertas', descripcion: 'Revisar alertas', lo_debe_el_cliente: false }]);
     expect(JSON.stringify(llamadasIa[0].entrada)).not.toContain('Se corrigió el filtro');
   });
 
   it('si Codex devuelve texto con basura lo intenta otra vez, y si insiste no lo usa', async () => {
-    const respuestas = ['Revisamos el panel.} dake\u{5F154}-vesm} (oops)', 'Revisamos el panel de alertas.'];
-    respuestaIa = async () => ({ resumen: respuestas.shift() });
-    expect(await llamar(u('/resumen-cliente'), even, 'POST')).toMatchObject({ status: 200, body: { resumen: 'Revisamos el panel de alertas.' } });
+    const respuestas = ['Revisar el panel.} dake\u{5F154}-vesm} (oops)', 'Revisar el panel de alertas.'];
+    respuestaIa = async () => ({ puntos: [{ indice: 1, texto: respuestas.shift() }] });
+    expect(await llamar(u('/resumen-cliente'), even, 'POST')).toMatchObject({ status: 200, body: { resumen: '- Revisar el panel de alertas.' } });
     expect(llamadasIa).toHaveLength(2);
-    respuestaIa = async () => ({ resumen: 'Mal } otra vez' });
+    respuestaIa = async () => ({ puntos: [{ indice: 1, texto: 'Mal } otra vez' }] });
     expect((await llamar(u('/resumen-cliente'), even, 'POST')).status).toBe(502);
+  });
+
+  it('un punto por ítem, en el orden de la minuta; si Codex se salta uno, va su título para que ninguno se pierda', async () => {
+    await query("INSERT INTO minuta_items (id, minuta_id, numero, titulo, descripcion, estado, visible_cliente, sort_order) VALUES (?, ?, 3, 'Ejemplo con SAVA', 'Asegurar el multi tenant', 'pendiente', 1, 3)", [uuid(), minutaId]);
+    await query("UPDATE minuta_items SET sort_order = numero WHERE minuta_id = ?", [minutaId]);
+    respuestaIa = async () => ({ puntos: [{ indice: 1, texto: 'Revisar las alertas del panel.' }, { indice: 7, texto: 'Inventado.' }] });
+    const r = await llamar(u('/resumen-cliente'), even, 'POST');
+    expect(r.body.resumen).toBe('- Revisar las alertas del panel.\n- Ejemplo con SAVA');
   });
 
   it('si Codex se cuelga, responde a tiempo con un mensaje claro en vez de dejar que el proxy corte', async () => {
@@ -122,8 +131,13 @@ describe('preparar el resumen con Codex', () => {
 
 describe('mandar al cliente', () => {
   it('por correo: crea el enlace si no había, envía el mensaje con el código y guarda los contactos de la marca', async () => {
-    const r = await llamar(u('/enviar-cliente'), even, 'POST', { medio: 'correo', para: PARA, resumen: 'Quedó un ajuste.' });
+    const r = await llamar(u('/enviar-cliente'), even, 'POST', { medio: 'correo', para: PARA, resumen: '- Corregir las alertas.\n- Mostrar el panel con SAVA.' });
     expect(r.status).toBe(200);
+    expect(enviados[0].html).toContain('Lo que acordamos');
+    expect(enviados[0].html).toMatch(/<li[^>]*>Corregir las alertas\.<\/li>/);
+    expect(enviados[0].html).toMatch(/<li[^>]*>Mostrar el panel con SAVA\.<\/li>/);
+    expect(enviados[0].html).toContain('puedes ver el avance de cada punto');
+    expect(enviados[0].text).toContain('- Corregir las alertas.');
     const enlace = r.body.enlace;
     expect(enlace).toMatchObject({ activo: true });
     expect(enviados).toHaveLength(1);
@@ -178,7 +192,7 @@ describe('mandar al cliente', () => {
     const r = await llamar(u('/enviar-cliente'), even, 'POST', { medio: 'vista_previa', para: [PARA[0]], resumen: 'Quedó un ajuste.' });
     expect(r.status).toBe(200);
     expect(r.body.mensaje).toContain('Hola Antonio Pérez:');
-    expect(r.body.mensaje).toContain('En resumen: Quedó un ajuste.');
+    expect(r.body.mensaje).toContain('Lo que acordamos:\nQuedó un ajuste.');
     expect(r.body.mensaje).toContain('[el enlace se crea al enviar]');
     expect(enviados).toEqual([]);
     expect(await query<any[]>('SELECT id FROM minuta_envios')).toEqual([]);

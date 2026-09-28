@@ -90,6 +90,8 @@ export interface EmailLayoutInput {
   details?: Array<{ label: string; value: string; highlight?: boolean }>;
   /** Cita destacada (ej. el texto del comentario). */
   quote?: string;
+  /** Lista con título (ej. los acuerdos de una minuta), después del párrafo principal. */
+  lista?: { titulo: string; items: string[] };
   /** Botón principal. */
   cta: { text: string; url: string };
   /** Botón secundario opcional. */
@@ -117,6 +119,11 @@ export async function renderEmail(input: EmailLayoutInput): Promise<{ html: stri
 
   const quoteBlock = input.quote
     ? `<div style="background:#f9fafb;border-left:4px solid ${accent.primary};padding:14px 16px;border-radius:4px;margin:20px 0;font-size:14px;color:#374151;font-style:italic;line-height:1.5;">"${escapeHtml(input.quote)}"</div>`
+    : '';
+
+  const listaBlock = input.lista && input.lista.items.length
+    ? `<p style="margin:16px 0 6px;font-size:14px;font-weight:600;color:#111;">${escapeHtml(input.lista.titulo)}</p>
+       <ul style="margin:0 0 16px;padding-left:20px;font-size:14px;color:#374151;line-height:1.6;">${input.lista.items.map((i) => `<li style="margin:0 0 4px;">${escapeHtml(i)}</li>`).join('')}</ul>`
     : '';
 
   const greetingBlock = input.greeting
@@ -170,6 +177,7 @@ export async function renderEmail(input: EmailLayoutInput): Promise<{ html: stri
               <td style="padding:24px 32px;">
                 ${greetingBlock}
                 <p style="margin:0 0 12px;font-size:14px;color:#374151;line-height:1.6;">${input.intro}</p>
+                ${listaBlock}
                 ${quoteBlock}
                 ${detailsTable}
                 <table role="presentation" cellspacing="0" cellpadding="0" style="margin:8px 0 4px;">
@@ -208,6 +216,11 @@ export async function renderEmail(input: EmailLayoutInput): Promise<{ html: stri
   if (input.greeting) lines.push(input.greeting);
   lines.push(stripHtml(input.intro));
   lines.push('');
+  if (input.lista && input.lista.items.length) {
+    lines.push(input.lista.titulo);
+    for (const i of input.lista.items) lines.push(`- ${i}`);
+    lines.push('');
+  }
   if (input.quote) {
     lines.push(`> "${input.quote}"`);
     lines.push('');

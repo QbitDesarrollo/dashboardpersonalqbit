@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  ALFABETO_CODIGO, evaluarIntento, resumenValido, generarCodigo, mensajeCliente, minutaParaCliente, nombresDeEnvios, normalizarCodigo,
+  ALFABETO_CODIGO, evaluarIntento, lineasDeLista, resumenValido, generarCodigo, mensajeCliente, minutaParaCliente, nombresDeEnvios, normalizarCodigo,
 } from '../src/minutas/enlace/dominio.js';
 
 describe('generarCodigo', () => {
@@ -117,29 +117,40 @@ describe('minutaParaCliente · aprobaciones', () => {
 describe('mensajeCliente', () => {
   const datos = {
     nombres: ['Antonio'], fecha: '2026-09-24', titulo: 'Inconsistencias del panel de alertas', marca: 'Alba del Bosque',
-    resumen: 'Se revisaron las alertas y quedan dos ajustes.', enlace: 'https://tiusdei.qbit.ec/m/abc', codigo: 'K7P2QX',
+    resumen: '- Corregir las alertas de leads descalificados.\n- Mostrar el panel con SAVA para comprobar que admite varios proyectos.',
+    enlace: 'https://tiusdei.qbit.ec/m/abc', codigo: 'K7P2QX',
   };
 
-  it('habla la plataforma, con el resumen, el enlace y el código', () => {
+  it('habla la plataforma: lo que acordamos en puntos, y que en el enlace se ve el avance de cada uno', () => {
     expect(mensajeCliente(datos)).toBe([
       'Hola Antonio:',
       '',
       'Te enviamos la minuta de la reunión del 24 sep, «Inconsistencias del panel de alertas» (Alba del Bosque).',
       '',
-      'En resumen: Se revisaron las alertas y quedan dos ajustes.',
+      'Lo que acordamos:',
+      '- Corregir las alertas de leads descalificados.',
+      '- Mostrar el panel con SAVA para comprobar que admite varios proyectos.',
       '',
-      'Para revisarla, aprobar puntos o dejar tus comentarios, entra a este enlace:',
+      'En este enlace puedes ver el avance de cada punto, aprobar lo que ya está listo y dejarnos tus comentarios:',
       'https://tiusdei.qbit.ec/m/abc',
       'Código de acceso: K7P2QX',
     ].join('\n'));
   });
 
-  it('a varias personas les habla en plural; sin nombres saluda sin nombre; sin resumen no lo menciona', () => {
+  it('a varias personas les habla en plural; sin nombres saluda sin nombre; sin resumen no pone la lista', () => {
     const varios = mensajeCliente({ ...datos, nombres: ['Antonio', 'María', 'Luis'] });
     expect(varios).toMatch(/^Hola Antonio, María y Luis:\n\nLes enviamos/);
-    expect(varios).toContain('dejar sus comentarios');
+    expect(varios).toContain('dejarnos sus comentarios');
     expect(mensajeCliente({ ...datos, nombres: [] })).toMatch(/^Hola:\n\nTe enviamos/);
-    expect(mensajeCliente({ ...datos, resumen: '  ' })).not.toContain('En resumen');
+    expect(mensajeCliente({ ...datos, resumen: '  ' })).not.toContain('Lo que acordamos');
+  });
+});
+
+describe('lineasDeLista', () => {
+  it('separa en puntos las líneas que empiezan con guion o viñeta; un texto corrido no es lista', () => {
+    expect(lineasDeLista('- Uno.\n• Dos.\n\n-Tres.')).toEqual(['Uno.', 'Dos.', 'Tres.']);
+    expect(lineasDeLista('Un párrafo normal.')).toBeNull();
+    expect(lineasDeLista('- Uno.\nY un párrafo suelto.')).toBeNull();
   });
 });
 
