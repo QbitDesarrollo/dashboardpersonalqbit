@@ -88,6 +88,13 @@ describe('preparar el resumen con Codex', () => {
     expect(JSON.stringify(llamadasIa[0].entrada)).not.toContain('Even Fierro');
   });
 
+  it('a Codex solo le llega de qué trata cada punto, no su estado ni su avance: eso el cliente lo ve al entrar', async () => {
+    await query("UPDATE minuta_items SET resolucion = 'Se corrigió el filtro', fecha_compromiso = '2026-09-30' WHERE numero = 1 AND minuta_id = ?", [minutaId]);
+    await llamar(u('/resumen-cliente'), even, 'POST');
+    expect(llamadasIa[0].entrada.puntos).toEqual([{ titulo: 'Panel de alertas', descripcion: 'Revisar alertas', lo_debe_el_cliente: false }]);
+    expect(JSON.stringify(llamadasIa[0].entrada)).not.toContain('Se corrigió el filtro');
+  });
+
   it('si Codex está ocupado o falla, lo dice para que el resumen se escriba a mano', async () => {
     respuestaIa = async () => { throw new ErrorRunnerOcupado('ocupado'); };
     expect((await llamar(u('/resumen-cliente'), even, 'POST')).status).toBe(429);

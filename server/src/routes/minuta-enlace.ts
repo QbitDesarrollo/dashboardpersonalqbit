@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { requireAuth, type AuthRequest } from '../middleware/auth.js';
 import { soloEquipoInterno } from '../minutas/permisos.js';
 import { cargarDetalle } from '../minutas/consultas.js';
-import { etiquetaEstadoPunto } from '../minutas/formatoMcp.js';
 import { ErrorRunnerOcupado, type RunnerIa } from '../minutas/ia/runner.js';
 import { generarCodigo, mensajeCliente, minutaParaCliente } from '../minutas/enlace/dominio.js';
 import * as repo from '../minutas/enlace/repositorio.js';
@@ -87,15 +86,12 @@ export function crearRouterMinutaEnlace(deps: DepsMinutaEnlace) {
   router.post('/minutas/:id/resumen-cliente', requireAuth, soloEquipoInterno, seguro(async (req, res) => {
     const m = await minuta(req, res);
     if (!m) return;
-    // Codex gets exactly what the client will see: visible points, no tasks, no team members.
+    // Codex summarizes what the meeting was about, from the points the client will see. No status, progress or
+    // dates: the client sees those in the link, and without them Codex cannot turn the summary into a status report.
     const vista = minutaParaCliente((await cargarDetalle(m.id))!, () => '');
     const entrada = {
       minuta: { titulo: vista.titulo, fecha: vista.fecha, marca: vista.brand_nombre, resumen: vista.resumen ?? '' },
-      puntos: vista.items.map((p) => ({
-        numero: `${vista.numero}.${p.numero}`, titulo: p.titulo, descripcion: p.descripcion ?? '',
-        estado: etiquetaEstadoPunto(p.estado, p.responsable_cliente), lo_debe_el_cliente: p.responsable_cliente,
-        fecha_compromiso: p.fecha_compromiso, resolucion: p.resolucion ?? '',
-      })),
+      puntos: vista.items.map((p) => ({ titulo: p.titulo, descripcion: p.descripcion ?? '', lo_debe_el_cliente: p.responsable_cliente })),
     };
     try {
       const r = await deps.runner.trabajo('minuta-resumen-cliente', entrada) as { resumen?: unknown } | null;
