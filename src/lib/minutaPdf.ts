@@ -73,6 +73,7 @@ const claro = (c: Rgb): Rgb => c.map((v) => Math.round(v + (255 - v) * 0.88)) as
 const LOGO = '/pwa-192x192.png';
 
 // The standard PDF fonts draw Latin-1 plus a few typographic signs; anything else (arrows, emoji) is replaced or dropped.
+// eslint-disable-next-line no-control-regex -- the range starts at \u0000 on purpose: it means "all of Latin-1".
 const PERMITIDOS = /[^\u0000-ÿ“”‘’—–•…€›]/g;
 const limpiar = (t: string) => t.replace(/→/g, '›').replace(/←/g, '‹').replace(PERMITIDOS, '').replace(/ {2,}/g, ' ').trim();
 
@@ -194,7 +195,7 @@ export async function generarMinutaPdf(m: Minuta, opciones: Opciones = {}, deps:
       letra(9, MARCA);
       doc.textWithLink(limpiar(`• ${e.nombre}`), mg, y, { url: e.url });
       const w = doc.getTextWidth(limpiar(`• ${e.nombre}`));
-      letra(8.5, GRIS); doc.text(limpiar(`  ${e.origen}`), mg + w, y);
+      letra(8.5, GRIS); doc.text(limpiar(e.origen), mg + w + 3, y);
       y += 4.8;
     }
 
