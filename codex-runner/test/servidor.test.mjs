@@ -112,6 +112,14 @@ test('corre un trabajo de reportes con su tipo, sus datos y las indicaciones', a
   assert.deepEqual(await r.json(), { tipo: 'reporte-avances', recibido: { entrada: { tareas: [{ id: 't1' }] }, indicaciones: 'Menos técnico' } });
 });
 
+test('corre el resumen de una minuta para el cliente', async (t) => {
+  const { servidor, llamar } = await levantar();
+  t.after(() => servidor.close());
+  const r = await llamar('/trabajo', cuerpo({ tipo: 'minuta-resumen-cliente', entrada: { puntos: [] } }));
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { tipo: 'minuta-resumen-cliente', recibido: { entrada: { puntos: [] }, indicaciones: '' } });
+});
+
 test('valida el tipo, los datos y las indicaciones del trabajo', async (t) => {
   const { servidor, llamar } = await levantar();
   t.after(() => servidor.close());

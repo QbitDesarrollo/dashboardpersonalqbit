@@ -5,7 +5,7 @@ const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_BYTES = 1024 * 1024;
 const MAX_NOTAS = 30_000;
 const MAX_INDICACIONES = 500;
-const TIPOS_TRABAJO = new Set(['reporte-descripciones', 'reporte-avances', 'reporte-resumen']);
+const TIPOS_TRABAJO = new Set(['reporte-descripciones', 'reporte-avances', 'reporte-resumen', 'minuta-resumen-cliente']);
 
 class ErrorHttp extends Error {
   constructor(status, mensaje) { super(mensaje); this.status = status; }

@@ -64,6 +64,8 @@ import { crearRouterReportes } from './routes/reportes.js';
 import { iniciarProgramadorReportes } from './reportes/programador.js';
 import { sendEmail } from './services/email.js';
 import { publicClientRouter } from './routes/public-client.js';
+import { crearRouterMinutaPublica } from './routes/public-minuta.js';
+import { crearRouterMinutaEnlace } from './routes/minuta-enlace.js';
 import { initErrorCapture, errorLogMiddleware } from './utils/errorLog.js';
 import { setSocketIO } from './services/whatsapp.js';
 import { apiTokensRouter } from './routes/api-tokens.js';
@@ -180,6 +182,7 @@ app.use('/api/', apiLimiter);
 // --- Routes ---
 app.use('/api', publicFormsPublicRouter);
 app.use('/api', publicClientRouter);
+app.use('/api', crearRouterMinutaPublica({ correo: { enviar: sendEmail }, frontendUrl: process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec' }));
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/data', profilesRouter);
@@ -236,6 +239,7 @@ const depsReportes = {
 };
 app.use('/api/data', crearRouterMinutasIa(runnerIa));
 app.use('/api/data', crearRouterReportes(depsReportes));
+app.use('/api/data', crearRouterMinutaEnlace({ runner: runnerIa, correo: { enviar: sendEmail }, frontendUrl: depsReportes.frontendUrl }));
 app.use('/api/data', minutasRouter);
 app.use('/api/data', apiTokensRouter);
 app.use('/api', mcpMinutasRouter);

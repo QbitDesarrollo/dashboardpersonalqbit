@@ -613,3 +613,44 @@ export async function reporteEnvioEmail(data: {
   });
   return { to: '', subject: `Reporte semanal · ${data.proyecto} · ${data.periodo}`, html, text };
 }
+
+/** To the client: the minuta of a meeting with its link and access code. Tiusdei speaks, not a person. */
+export async function minutaClienteEmail(data: {
+  nombres: string[]; codigoMinuta: string; titulo: string; marca: string; fecha: string; resumen: string; enlace: string; codigo: string;
+}): Promise<EmailOptions> {
+  const varios = data.nombres.length > 1;
+  const nombres = data.nombres.length > 1
+    ? `${data.nombres.slice(0, -1).join(', ')} y ${data.nombres[data.nombres.length - 1]}`
+    : data.nombres[0] ?? '';
+  const { html, text } = await renderEmail({
+    accent: 'green',
+    preheader: `Minuta de la reunión del ${data.fecha}`,
+    headline: data.titulo,
+    greeting: nombres ? `Hola ${escapeHtml(nombres)}:` : 'Hola:',
+    intro: `${varios ? 'Les' : 'Te'} enviamos la minuta de la reunión del ${escapeHtml(data.fecha)}, <strong>«${escapeHtml(data.titulo)}»</strong> (${escapeHtml(data.marca)}). Para revisarla, aprobar puntos o dejar ${varios ? 'sus' : 'tus'} comentarios, entra con el código de acceso.`,
+    quote: data.resumen.trim() || undefined,
+    details: [
+      { label: 'Código de acceso', value: escapeHtml(data.codigo), highlight: true },
+      { label: 'Enlace', value: escapeHtml(data.enlace) },
+    ],
+    cta: { text: 'Ver la minuta', url: data.enlace },
+  });
+  return { to: '', subject: `Minuta ${data.codigoMinuta} · ${data.titulo} · ${data.marca}`, html, text };
+}
+
+/** To the owner of a minuta: the client approved, asked for an adjustment or commented through the link. */
+export async function minutaActividadClienteEmail(data: {
+  quien: string; accion: string; codigoPunto: string; punto: string; codigoMinuta: string; titulo: string; marca: string; texto?: string; url: string;
+}): Promise<EmailOptions> {
+  const asunto = `${data.quien} ${data.accion} el punto ${data.codigoPunto}`;
+  const { html, text } = await renderEmail({
+    accent: 'green',
+    preheader: asunto,
+    headline: asunto,
+    intro: `Desde el enlace de la minuta <strong>${escapeHtml(data.codigoMinuta)} · ${escapeHtml(data.titulo)}</strong> (${escapeHtml(data.marca)}).`,
+    quote: data.texto || undefined,
+    details: [{ label: 'Punto', value: `${escapeHtml(data.codigoPunto)} · ${escapeHtml(data.punto)}` }],
+    cta: { text: 'Abrir la minuta', url: data.url },
+  });
+  return { to: '', subject: `${asunto} · ${data.codigoMinuta} ${data.titulo}`, html, text };
+}

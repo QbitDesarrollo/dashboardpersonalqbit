@@ -9,7 +9,7 @@ const ESQUEMA = path.join(AQUI, 'minuta.schema.json');
 const PROMPT = path.join(AQUI, 'prompt.txt');
 
 /** Report jobs Tiusdei may ask for; each one has reportes/<tipo>.prompt.txt and reportes/<tipo>.schema.json. */
-export const TIPOS_TRABAJO = ['reporte-descripciones', 'reporte-avances', 'reporte-resumen'];
+export const TIPOS_TRABAJO = ['reporte-descripciones', 'reporte-avances', 'reporte-resumen', 'minuta-resumen-cliente'];
 
 /** Prompt for one minuta: meeting date and, when given, the team's instructions (trusted, unlike the sources). */
 export function armarPrompt(plantilla, { fecha, indicaciones = '' }) {

@@ -104,7 +104,7 @@ minutaItemsRouter.post('/minuta-items/:id/accion', requireAuth, soloEquipoIntern
     const e = Object.hasOwn(extra, accion) ? extra[accion] : { sql: '', vals: [] };
     await query(`UPDATE minuta_items SET estado = ?${e.sql} WHERE id = ?`, [r.estado, ...e.vals, itemId]);
     // El ajuste que pidió el cliente queda escrito en el punto.
-    if (accion === 'pedir_ajuste') await insertarNota(itemId, 'ajuste', motivo!.trim(), req.userId!);
+    if (accion === 'pedir_ajuste') await insertarNota(itemId, 'ajuste', motivo!.trim(), { userId: req.userId! });
     res.json(await cargarDetalle(item.minuta_id));
   } catch (e) {
     console.error('[MINUTAS] acción:', e);
@@ -191,7 +191,7 @@ minutaItemsRouter.post('/minuta-items/:id/notas', requireAuth, soloEquipoInterno
     const itemId = String(req.params.id);
     const item = await queryOne<{ minuta_id: string }>('SELECT minuta_id FROM minuta_items WHERE id = ?', [itemId]);
     if (!item) return res.status(404).json({ error: 'Punto no encontrado' });
-    await insertarNota(itemId, 'nota', parsed.data.texto, req.userId!);
+    await insertarNota(itemId, 'nota', parsed.data.texto, { userId: req.userId! });
     res.status(201).json(await cargarDetalle(item.minuta_id));
   } catch (e) {
     console.error('[MINUTAS] nota:', e);

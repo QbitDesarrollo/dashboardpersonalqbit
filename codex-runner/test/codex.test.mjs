@@ -79,6 +79,6 @@ test('el resumen del reporte incluye las indicaciones del líder; un tipo descon
   const bin = await codexFalso(t, ESCRIBE_JSON);
   const r = await ejecutarTrabajo('reporte-resumen', { entrada: {}, indicaciones: 'Resalta los atrasos' }, { bin });
   assert.match(r.prompt, /Resalta los atrasos/);
-  assert.deepEqual(TIPOS_TRABAJO, ['reporte-descripciones', 'reporte-avances', 'reporte-resumen']);
+  assert.deepEqual(TIPOS_TRABAJO, ['reporte-descripciones', 'reporte-avances', 'reporte-resumen', 'minuta-resumen-cliente']);
   await assert.rejects(ejecutarTrabajo('otro', { entrada: {} }, { bin }), /Tipo de trabajo desconocido/);
 });

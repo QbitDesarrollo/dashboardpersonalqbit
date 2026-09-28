@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resumen"],
+  "properties": {
+    "resumen": { "type": "string" }
+  }
+}

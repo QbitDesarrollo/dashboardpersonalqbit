@@ -4,7 +4,7 @@ export interface SaludIa { listo: boolean; detalle: string }
 /** Sources for a draft: the meeting transcript and/or what the client sent; `indicaciones` come from the team. */
 export interface DatosMinutaIa { transcripcion: string; notas_cliente: string; indicaciones: string; fecha: string }
 /** Steps of a weekly project report (see codex-runner/reportes/). */
-export type TipoTrabajo = 'reporte-descripciones' | 'reporte-avances' | 'reporte-resumen';
+export type TipoTrabajo = 'reporte-descripciones' | 'reporte-avances' | 'reporte-resumen' | 'minuta-resumen-cliente';
 
 export interface RunnerIa {
   salud(): Promise<SaludIa>;

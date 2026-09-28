@@ -34,8 +34,13 @@ export async function sincronizarArranques(minutaId?: string): Promise<void> {
   );
 }
 
-export async function insertarNota(itemId: string, tipo: 'nota' | 'ajuste', texto: string, autorId: string) {
-  await query('INSERT INTO minuta_item_notas (id, item_id, tipo, texto, autor_user_id) VALUES (?, ?, ?, ?, ?)', [uuid(), itemId, tipo, texto, autorId]);
+/** A note by someone of the team (their user) or by the client through the link (the name they entered). */
+export async function insertarNota(itemId: string, tipo: 'nota' | 'ajuste', texto: string, autor: { userId: string } | { nombre: string }) {
+  const cliente = 'nombre' in autor;
+  await query(
+    'INSERT INTO minuta_item_notas (id, item_id, tipo, texto, autor_user_id, autor_nombre, via) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [uuid(), itemId, tipo, texto, cliente ? null : autor.userId, cliente ? autor.nombre : null, cliente ? 'enlace' : 'interno'],
+  );
 }
 
 export function codigo(numero: number): string {
@@ -80,7 +85,7 @@ export async function cargarDetalle(id: string) {
   if (items.length) {
     const ids = items.map((i) => i.id);
     const notas = await query<any[]>(
-      `SELECT n.id, n.item_id, n.tipo, n.texto, n.created_at, n.autor_user_id, p.nombre AS autor_nombre
+      `SELECT n.id, n.item_id, n.tipo, n.texto, n.created_at, n.autor_user_id, p.nombre AS usuario_nombre, n.autor_nombre, n.via
          FROM minuta_item_notas n
          LEFT JOIN profiles p ON p.id = n.autor_user_id
         WHERE n.item_id IN (${ids.map(() => '?').join(',')})
@@ -91,7 +96,9 @@ export async function cargarDetalle(id: string) {
       const lista = notasPorItem.get(n.item_id) ?? [];
       lista.push({
         id: n.id, tipo: n.tipo, texto: n.texto, created_at: n.created_at,
-        autor: n.autor_user_id ? { id: n.autor_user_id, nombre: n.autor_nombre } : null,
+        autor: n.autor_user_id ? { id: n.autor_user_id, nombre: n.usuario_nombre } : null,
+        autor_nombre: n.autor_nombre ?? null,
+        via: n.via,
       });
       notasPorItem.set(n.item_id, lista);
     }

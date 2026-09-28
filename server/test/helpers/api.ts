@@ -34,6 +34,7 @@ const TABLAS_DE_PRUEBA = [
   'proyecto_reporte_envios', 'proyecto_reportes', 'proyecto_reportes_config', 'tarea_resumenes_ia', 'reporte_avances_ia',
   'client_board_comments', 'client_boards', 'comments', 'activity_log', 'notifications',
   'files', 'api_tokens', 'minuta_ia_trabajos', 'desk_members', 'desks', 'site_settings',
+  'minuta_accesos', 'minuta_envios', 'marca_contactos',
   'minuta_item_notas', 'minuta_item_evidencias', 'minuta_items', 'minuta_miembros', 'minutas',
   'tasks', 'projects', 'brands', 'user_roles', 'profiles', 'users',
 ];
