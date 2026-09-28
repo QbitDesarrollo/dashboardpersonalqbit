@@ -95,6 +95,15 @@ describe('preparar el resumen con Codex', () => {
     expect(JSON.stringify(llamadasIa[0].entrada)).not.toContain('Se corrigió el filtro');
   });
 
+  it('si Codex devuelve texto con basura lo intenta otra vez, y si insiste no lo usa', async () => {
+    const respuestas = ['Revisamos el panel.} dake\u{5F154}-vesm} (oops)', 'Revisamos el panel de alertas.'];
+    respuestaIa = async () => ({ resumen: respuestas.shift() });
+    expect(await llamar(u('/resumen-cliente'), even, 'POST')).toMatchObject({ status: 200, body: { resumen: 'Revisamos el panel de alertas.' } });
+    expect(llamadasIa).toHaveLength(2);
+    respuestaIa = async () => ({ resumen: 'Mal } otra vez' });
+    expect((await llamar(u('/resumen-cliente'), even, 'POST')).status).toBe(502);
+  });
+
   it('si Codex está ocupado o falla, lo dice para que el resumen se escriba a mano', async () => {
     respuestaIa = async () => { throw new ErrorRunnerOcupado('ocupado'); };
     expect((await llamar(u('/resumen-cliente'), even, 'POST')).status).toBe(429);

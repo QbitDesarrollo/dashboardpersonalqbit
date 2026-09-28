@@ -5,7 +5,7 @@ import { requireAuth, type AuthRequest } from '../middleware/auth.js';
 import { soloEquipoInterno } from '../minutas/permisos.js';
 import { cargarDetalle } from '../minutas/consultas.js';
 import { ErrorRunnerOcupado, type RunnerIa } from '../minutas/ia/runner.js';
-import { generarCodigo, mensajeCliente, minutaParaCliente } from '../minutas/enlace/dominio.js';
+import { generarCodigo, mensajeCliente, minutaParaCliente, resumenValido } from '../minutas/enlace/dominio.js';
 import * as repo from '../minutas/enlace/repositorio.js';
 import { minutaClienteEmail, type EmailOptions } from '../services/email.js';
 
@@ -94,9 +94,12 @@ export function crearRouterMinutaEnlace(deps: DepsMinutaEnlace) {
       puntos: vista.items.map((p) => ({ titulo: p.titulo, descripcion: p.descripcion ?? '', lo_debe_el_cliente: p.responsable_cliente })),
     };
     try {
-      const r = await deps.runner.trabajo('minuta-resumen-cliente', entrada) as { resumen?: unknown } | null;
-      if (typeof r?.resumen !== 'string' || !r.resumen.trim()) throw new Error('Codex no devolvió el resumen');
-      res.json({ resumen: r.resumen.trim() });
+      // One retry when the text comes back malformed; a second bad answer is reported, never used.
+      for (let intento = 1; intento <= 2; intento++) {
+        const r = await deps.runner.trabajo('minuta-resumen-cliente', entrada) as { resumen?: unknown } | null;
+        if (typeof r?.resumen === 'string' && resumenValido(r.resumen)) return res.json({ resumen: r.resumen.trim() });
+      }
+      throw new Error('Codex devolvió un resumen inválido dos veces');
     } catch (e) {
       if (e instanceof ErrorRunnerOcupado) return res.status(429).json({ error: 'Codex está ocupado con otro trabajo. Escribe el resumen tú o intenta en un momento.' });
       console.error('[MINUTA ENLACE] resumen:', e);

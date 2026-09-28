@@ -108,3 +108,13 @@ export function nombresDeEnvios(envios: { para: { nombre: string; email: string 
   }
   return nombres;
 }
+
+/**
+ * Plain Spanish prose only: letters, digits, spaces and the usual punctuation. The model sometimes appends noise
+ * (braces, unassigned characters, "(oops)"-like tails); that must never reach a client.
+ */
+const PROSA = /^[\p{L}\p{M}\p{N}\s.,;:¡!¿?()«»"“”'‘’\-–—%/&+°·…]+$/u;
+export function resumenValido(texto: string): boolean {
+  const t = texto.trim();
+  return t.length > 0 && t.length <= 1500 && PROSA.test(t);
+}

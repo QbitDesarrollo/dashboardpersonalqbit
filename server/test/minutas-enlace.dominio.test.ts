@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  ALFABETO_CODIGO, evaluarIntento, generarCodigo, mensajeCliente, minutaParaCliente, nombresDeEnvios, normalizarCodigo,
+  ALFABETO_CODIGO, evaluarIntento, resumenValido, generarCodigo, mensajeCliente, minutaParaCliente, nombresDeEnvios, normalizarCodigo,
 } from '../src/minutas/enlace/dominio.js';
 
 describe('generarCodigo', () => {
@@ -150,5 +150,19 @@ describe('nombresDeEnvios', () => {
       { para: [] },
       { para: [{ nombre: 'antonio ', email: 'a@x.ec' }, { nombre: 'Luis', email: 'l@x.ec' }] },
     ])).toEqual(['Antonio', 'María', 'Luis']);
+  });
+});
+
+describe('resumenValido', () => {
+  it('acepta español normal con sus signos', () => {
+    expect(resumenValido('En la reunión acordamos corregir «mis alertas», revisar las llamadas (entrantes) y el 30% de las fichas; ¿listo? ¡Sí!')).toBe(true);
+  });
+
+  it('rechaza la basura que a veces agrega el modelo, llaves, etiquetas y caracteres de control', () => {
+    expect(resumenValido('Revisamos el panel.} dake\u{5F154}-vesm} (oops)')).toBe(false);
+    expect(resumenValido('Revisamos <b>el panel</b>.')).toBe(false);
+    expect(resumenValido('Revisamos\u0007 el panel.')).toBe(false);
+    expect(resumenValido('   ')).toBe(false);
+    expect(resumenValido('a'.repeat(1501))).toBe(false);
   });
 });
