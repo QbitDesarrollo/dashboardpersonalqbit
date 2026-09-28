@@ -136,6 +136,19 @@ describe('mandar al cliente', () => {
     expect(await query<any[]>('SELECT id FROM minuta_envios')).toEqual([]);
   });
 
+  it('la vista previa arma el mismo mensaje sin mandar, registrar ni crear el enlace', async () => {
+    const r = await llamar(u('/enviar-cliente'), even, 'POST', { medio: 'vista_previa', para: [PARA[0]], resumen: 'Quedó un ajuste.' });
+    expect(r.status).toBe(200);
+    expect(r.body.mensaje).toContain('Hola Antonio Pérez:');
+    expect(r.body.mensaje).toContain('En resumen: Quedó un ajuste.');
+    expect(r.body.mensaje).toContain('[el enlace se crea al enviar]');
+    expect(enviados).toEqual([]);
+    expect(await query<any[]>('SELECT id FROM minuta_envios')).toEqual([]);
+    expect((await llamar(u('/enlace'), even)).body.activo).toBe(false);
+    const { codigo } = (await llamar(u('/enlace'), even, 'POST', { accion: 'activar' })).body;
+    expect((await llamar(u('/enviar-cliente'), even, 'POST', { medio: 'vista_previa', para: [], resumen: '' })).body.mensaje).toContain(`Código de acceso: ${codigo}`);
+  });
+
   it('si el enlace estaba apagado, al mandar lo vuelve a prender', async () => {
     await llamar(u('/enlace'), even, 'POST', { accion: 'activar' });
     await llamar(u('/enlace'), even, 'POST', { accion: 'apagar' });

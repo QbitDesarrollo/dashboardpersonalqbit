@@ -66,6 +66,7 @@ const Templates = lazy(() => import("./pages/Templates"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PublicFormView = lazy(() => import("./pages/PublicFormView"));
 const ClientBoardPublic = lazy(() => import("./pages/ClientBoardPublic"));
+const MinutaPublica = lazy(() => import("./pages/MinutaPublica"));
 const Clientes = lazy(() => import("./pages/Clientes"));
 const PublicForms = lazy(() => import("./pages/admin/PublicForms"));
 const Automations = lazy(() => import("./pages/admin/Automations"));
@@ -115,6 +116,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/form/:slug" element={<PublicFormView />} />
             <Route path="/c/:token" element={<ClientBoardPublic />} />
+            <Route path="/m/:token" element={<MinutaPublica />} />
             <Route path="/auth/google/success" element={<GoogleAuthSuccess />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
 

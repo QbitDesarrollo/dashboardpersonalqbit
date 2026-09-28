@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, FileDown, FolderKanban, Loader2, Plus, Presentation } from 'lucide-react';
+import { ArrowLeft, FileDown, FolderKanban, Loader2, Plus, Presentation, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
 import { agregarPunto, borrarMinuta, editarMinuta, obtenerMinuta, reordenarPuntos, type Minuta } from '@/lib/minutasApi';
@@ -21,6 +21,8 @@ import { SELECT } from '@/components/minutas/EditorPuntos';
 import { SelectorEquipo } from '@/components/minutas/SelectorEquipo';
 import { ListaPuntos } from '@/components/minutas/ListaPuntos';
 import { PuntoDialog, type VistaPunto } from '@/components/minutas/PuntoDialog';
+import { EnlaceCliente } from '@/components/minutas/enlace/EnlaceCliente';
+import { EnviarAlClienteDialog } from '@/components/minutas/enlace/EnviarAlClienteDialog';
 
 function EditarMinuta({ minuta, personas, abierto, onOpenChange, onGuardada }: {
   minuta: Minuta;
@@ -110,6 +112,8 @@ export default function MinutaDetalle() {
   const [nuevo, setNuevo] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [editando, setEditando] = useState(false);
+  const [enviarAbierto, setEnviarAbierto] = useState(false);
+  const [versionEnlace, setVersionEnlace] = useState(0);
   const navigate = useNavigate();
   const hoy = hoyEcuador();
 
@@ -202,6 +206,7 @@ export default function MinutaDetalle() {
             {minuta.estado === 'borrador' && <Badge variant="outline" className="text-muted-foreground">Borrador</Badge>}
             {minuta.estado === 'borrador' && <Button size="sm" onClick={publicar}>Publicar</Button>}
             <Button size="sm" asChild><Link to={`/minutas/${minuta.id}/presentar`}><Presentation className="h-4 w-4" />Presentar</Link></Button>
+            <Button size="sm" variant="outline" onClick={() => setEnviarAbierto(true)}><Send className="h-4 w-4" />Enviar al cliente</Button>
             <Button size="sm" variant="outline" onClick={() => setEditando(true)}>Editar</Button>
             <Button size="sm" variant="outline" onClick={() => exportarMinutaPdf(minuta, { soloVisibles: true })}>
               <FileDown className="h-4 w-4" />Exportar PDF
@@ -248,6 +253,8 @@ export default function MinutaDetalle() {
         </div>
       </CardContent></Card>
 
+      <EnlaceCliente minutaId={minuta.id} version={versionEnlace} onEnviar={() => setEnviarAbierto(true)} />
+
       <Card><CardContent className="p-0">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <h2 className="font-semibold">Puntos</h2>
@@ -269,6 +276,7 @@ export default function MinutaDetalle() {
       </CardContent></Card>
 
       <EditarMinuta minuta={minuta} personas={personas} abierto={editando} onOpenChange={setEditando} onGuardada={setMinuta} />
+      <EnviarAlClienteDialog minutaId={minuta.id} abierto={enviarAbierto} onOpenChange={setEnviarAbierto} onEnviado={() => setVersionEnlace((v) => v + 1)} />
 
       {abierto && puntoAbierto && (
         <PuntoDialog

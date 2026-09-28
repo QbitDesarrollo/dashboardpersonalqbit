@@ -26,6 +26,9 @@ export interface Nota {
   texto: string;
   created_at: string;
   autor: Persona | null;
+  /** Name the client entered when the note came through the link. */
+  autor_nombre?: string | null;
+  via?: 'interno' | 'enlace';
 }
 
 export interface Punto {
@@ -72,6 +75,16 @@ export interface Minuta extends MinutaResumen {
   miembros: Persona[];
   items: Punto[];
 }
+
+/**
+ * What the presentation screens need from a minuta: the team's full minuta and the one the client sees through the
+ * link (visible points only, no tasks, no team members) both fit.
+ */
+export type EvidenciaVista = Pick<Evidencia, 'id' | 'tipo' | 'nombre' | 'url'>;
+export interface NotaVista { id: string; tipo: 'nota' | 'ajuste'; texto: string; created_at: string; autor_nombre?: string | null }
+export type PuntoVista = Pick<Punto, 'id' | 'numero' | 'titulo' | 'descripcion' | 'estado' | 'responsable_cliente' | 'fecha_compromiso' | 'resolucion' | 'visible_cliente'>
+  & { evidencias: EvidenciaVista[]; notas: NotaVista[] };
+export type MinutaVista = Pick<Minuta, 'id' | 'numero' | 'codigo' | 'titulo' | 'fecha' | 'resumen' | 'brand_nombre' | 'project_nombre'> & { items: PuntoVista[] };
 
 export interface PuntoNuevo {
   titulo: string;

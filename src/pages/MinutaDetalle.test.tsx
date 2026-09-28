@@ -27,6 +27,12 @@ vi.mock('@/lib/apiClient', () => ({ getProfiles: vi.fn(async () => []), getProje
 vi.mock('@/components/minutas/PuntoDialog', () => ({
   PuntoDialog: ({ punto, abierto, vista }: { punto: Punto; abierto: boolean; vista: string }) => (abierto ? <div role="dialog">{vista}: {punto.titulo}</div> : null),
 }));
+vi.mock('@/components/minutas/enlace/EnlaceCliente', () => ({
+  EnlaceCliente: ({ onEnviar }: { onEnviar: () => void }) => <button onClick={onEnviar}>Enviar desde la tarjeta</button>,
+}));
+vi.mock('@/components/minutas/enlace/EnviarAlClienteDialog', () => ({
+  EnviarAlClienteDialog: ({ abierto }: { abierto: boolean }) => (abierto ? <div role="dialog">Diálogo de envío</div> : null),
+}));
 vi.mock('@/lib/minutas', async (orig) => ({ ...(await orig<typeof import('@/lib/minutas')>()), hoyEcuador: () => '2026-09-24' }));
 
 const punto = (p: Partial<Punto>): Punto => ({
@@ -220,5 +226,11 @@ describe('MinutaDetalle · reordenar puntos', () => {
     await arrastrar('i2', 'i1');
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('No se pudo cambiar el orden', { description: 'Sin conexión' }));
     expect(titulos()).toEqual(['Filtro por marca', 'Fichas técnicas']);
+  });
+
+  it('"Enviar al cliente" abre el envío, desde el encabezado o desde la tarjeta del enlace', async () => {
+    renderDetalle();
+    fireEvent.click(await screen.findByRole('button', { name: 'Enviar al cliente' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Diálogo de envío');
   });
 });

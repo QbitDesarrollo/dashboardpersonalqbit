@@ -1,5 +1,5 @@
 import { CalendarDays, CheckCircle2, Hourglass } from 'lucide-react';
-import type { Punto } from '@/lib/minutasApi';
+import type { PuntoVista } from '@/lib/minutasApi';
 import { estadoCliente, fechaCorta } from '@/lib/minutas';
 import { cn } from '@/lib/utils';
 import { TONO } from '../tonos';
@@ -7,12 +7,14 @@ import { EvidenciasPresentadas } from './EvidenciasPresentadas';
 import { NotasPunto } from './NotasPunto';
 
 interface Props {
-  punto: Punto;
+  punto: PuntoVista;
   codigo: string;
+  /** Heading of the notes: in a meeting the team wrote what the client said; through the link they are comments. */
+  tituloNotas?: string;
 }
 
 /** One point on screen, in the client's language: what was asked, what was done and the evidence. */
-export function PuntoPresentado({ punto, codigo }: Props) {
+export function PuntoPresentado({ punto, codigo, tituloNotas }: Props) {
   const estado = estadoCliente(punto);
   const hayAvance = !!punto.resolucion || punto.evidencias.length > 0;
   return (
@@ -48,7 +50,7 @@ export function PuntoPresentado({ punto, codigo }: Props) {
           </p>
         )}
 
-        <NotasPunto notas={punto.notas} />
+        <NotasPunto notas={punto.notas} titulo={tituloNotas} />
       </div>
     </article>
   );

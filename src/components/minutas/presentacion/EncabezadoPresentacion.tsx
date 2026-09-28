@@ -1,17 +1,19 @@
 import { Link } from 'react-router-dom';
 import { Presentation, X } from 'lucide-react';
-import type { Minuta } from '@/lib/minutasApi';
+import type { MinutaVista } from '@/lib/minutasApi';
 import { fechaCorta } from '@/lib/minutas';
 import { Button } from '@/components/ui/button';
 
 interface Props {
-  minuta: Minuta;
+  minuta: MinutaVista;
   listos: number;
   total: number;
+  /** Where "Salir" goes; the client link has no way out into Tiusdei. */
+  salirA?: string;
 }
 
 /** Top bar: which minuta is on screen, how much is ready and the way out. */
-export function EncabezadoPresentacion({ minuta, listos, total }: Props) {
+export function EncabezadoPresentacion({ minuta, listos, total, salirA }: Props) {
   const avance = total > 0 ? Math.round((listos / total) * 100) : 0;
   return (
     <header className="sticky top-0 z-20 border-b border-border/60 bg-card/80 backdrop-blur-xl">
@@ -34,11 +36,13 @@ export function EncabezadoPresentacion({ minuta, listos, total }: Props) {
             <div className="gradient-primary h-full rounded-full transition-all" style={{ width: `${avance}%` }} />
           </div>
         </div>
-        <Button variant="outline" size="sm" asChild>
-          <Link to={`/minutas/${minuta.id}`} aria-label="Salir de la presentación">
-            <X className="h-4 w-4" /><span className="hidden sm:inline">Salir</span>
-          </Link>
-        </Button>
+        {salirA && (
+          <Button variant="outline" size="sm" asChild>
+            <Link to={salirA} aria-label="Salir de la presentación">
+              <X className="h-4 w-4" /><span className="hidden sm:inline">Salir</span>
+            </Link>
+          </Button>
+        )}
       </div>
     </header>
   );

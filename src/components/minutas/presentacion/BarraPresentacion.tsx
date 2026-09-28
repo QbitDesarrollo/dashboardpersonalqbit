@@ -1,21 +1,23 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { Minuta, Punto } from '@/lib/minutasApi';
+import type { PuntoVista } from '@/lib/minutasApi';
 import { Button } from '@/components/ui/button';
 import { AccionesCliente } from './AccionesCliente';
+import type { AccionesPresentacion, ModoPresentacion } from './acciones';
 
 interface Props {
-  punto: Punto;
+  punto: PuntoVista;
   posicion: number;
   total: number;
   onIr: (indice: number) => void;
-  onActualizada: (minuta: Minuta) => void;
+  acciones: AccionesPresentacion;
+  modo: ModoPresentacion;
 }
 
 /**
  * Bar that always sits at the bottom of the screen, in the same spot whatever the point's length,
  * so "Siguiente" never moves while presenting. Long points scroll behind it.
  */
-export function BarraPresentacion({ punto, posicion, total, onIr, onActualizada }: Props) {
+export function BarraPresentacion({ punto, posicion, total, onIr, acciones, modo }: Props) {
   return (
     <div className="sticky bottom-3 z-10 mt-auto rounded-2xl border bg-card/95 p-2.5 shadow-lg backdrop-blur-xl sm:p-3">
       <div className="flex items-center gap-2">
@@ -24,7 +26,7 @@ export function BarraPresentacion({ punto, posicion, total, onIr, onActualizada 
         </Button>
         <div className="flex min-w-0 flex-1 items-center justify-center gap-3">
           <span className="hidden whitespace-nowrap font-mono text-xs text-muted-foreground lg:inline">{`Punto ${posicion + 1} de ${total}`}</span>
-          <AccionesCliente key={punto.id} punto={punto} onActualizada={onActualizada} />
+          <AccionesCliente key={punto.id} punto={punto} acciones={acciones} modo={modo} />
         </div>
         <Button aria-label="Siguiente" disabled={posicion >= total - 1} onClick={() => onIr(posicion + 1)}>
           <span className="hidden md:inline">Siguiente</span><ChevronRight className="h-5 w-5" />

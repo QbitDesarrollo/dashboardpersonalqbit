@@ -1,14 +1,14 @@
 import { ExternalLink, HardDrive, Link2 } from 'lucide-react';
-import type { Evidencia } from '@/lib/minutasApi';
+import type { EvidenciaVista } from '@/lib/minutasApi';
 import { cn } from '@/lib/utils';
 
-function origen(ev: Evidencia): string {
+function origen(ev: EvidenciaVista): string {
   if (ev.tipo === 'drive') return 'Google Drive';
   try { return new URL(ev.url).hostname.replace(/^www\./, ''); } catch { return 'Enlace'; }
 }
 
 /** Evidence at presentation size: screenshots large, links and Drive files as cards. */
-export function EvidenciasPresentadas({ evidencias }: { evidencias: Evidencia[] }) {
+export function EvidenciasPresentadas({ evidencias }: { evidencias: EvidenciaVista[] }) {
   const imagenes = evidencias.filter((e) => e.tipo === 'imagen');
   const enlaces = evidencias.filter((e) => e.tipo !== 'imagen');
   if (evidencias.length === 0) return null;

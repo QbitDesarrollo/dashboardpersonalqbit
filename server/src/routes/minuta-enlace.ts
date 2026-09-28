@@ -26,7 +26,7 @@ const fechaCorta = (fecha: string) => { const [, m, d] = fecha.split('-').map(Nu
 
 const personaSchema = z.object({ nombre: z.string().trim().min(1).max(120), email: z.string().trim().email().max(255) });
 const envioSchema = z.object({
-  medio: z.enum(['correo', 'copiado']),
+  medio: z.enum(['correo', 'copiado', 'vista_previa']),
   para: z.array(personaSchema).max(20),
   resumen: z.string().max(3000),
 });
@@ -116,14 +116,17 @@ export function crearRouterMinutaEnlace(deps: DepsMinutaEnlace) {
     const { medio, para, resumen } = b.data;
     if (medio === 'correo' && para.length === 0) return res.status(400).json({ error: 'Elige al menos una persona para el correo.' });
 
+    const detalle = (await cargarDetalle(m.id))!;
+    const armar = (enlace: repo.EnlaceMinuta | null) => ({
+      nombres: para.map((p) => p.nombre), fecha: detalle.fecha, titulo: detalle.titulo, marca: detalle.brand_nombre, resumen,
+      enlace: url(enlace?.share_token ?? null) ?? '[el enlace se crea al enviar]', codigo: enlace?.share_codigo ?? '[se crea al enviar]',
+    });
+    // The preview is the exact same text, with nothing sent, recorded or created.
+    if (medio === 'vista_previa') return res.json({ mensaje: mensajeCliente(armar(m.share_token ? m : null)) });
+
     // Sending always leaves the link on, creating it the first time.
     if (!m.share_activo || !m.share_token) await activar(m.id);
-    const enlace = (await repo.porId(m.id))!;
-    const detalle = (await cargarDetalle(m.id))!;
-    const datos = {
-      nombres: para.map((p) => p.nombre), fecha: detalle.fecha, titulo: detalle.titulo, marca: detalle.brand_nombre,
-      resumen, enlace: url(enlace.share_token)!, codigo: enlace.share_codigo!,
-    };
+    const datos = armar((await repo.porId(m.id))!);
     const mensaje = mensajeCliente(datos);
     if (medio === 'correo') {
       const plantilla = await minutaClienteEmail({ ...datos, fecha: fechaCorta(detalle.fecha), codigoMinuta: detalle.codigo });

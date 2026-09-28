@@ -1,6 +1,6 @@
 # Minutas · enviar al cliente con enlace público — propuesta
 
-Estado: **aprobada por Even el 28-sep-2026**, en construcción.
+Estado: **aprobada por Even el 28-sep-2026**. Construida (fases 1 a 4) con TDD; falta la prueba con una minuta real y el despliegue (migración 041).
 
 ## Qué es
 
@@ -14,7 +14,7 @@ Nota: en septiembre se había decidido que las minutas no tuvieran página públ
 |---|---|
 | Código | 6 caracteres. Va **en el mismo correo** que el enlace. |
 | Entrada | El cliente elige su nombre de la lista de personas a quienes se les mandó la minuta, o "Otra persona" y lo escribe; luego pone el código. El nombre queda en la sesión firmada y en cada aprobación, ajuste y nota. No es identidad fuerte: basta para saber quién aprobó. (Se descartó un código por persona por su costo de gestión.) |
-| Qué ve | Lo mismo que el modo presentar: solo los puntos visibles para el cliente y no descartados, con su resolución y evidencias. **Sin tareas** ni datos internos (responsables del equipo, miembros, dueño). |
+| Qué ve | Lo mismo que el modo presentar: solo los puntos visibles para el cliente y no descartados, con su resolución y evidencias. **Sin tareas** ni datos internos (responsables del equipo, miembros, dueño). Las aprobaciones hechas en reunión no muestran el nombre de quien presentaba. |
 | Qué puede hacer | Aprobar un punto completado, pedir ajuste (con motivo) y dejar notas. Igual que en la reunión. |
 | Gestión | El equipo puede ver y copiar el enlace y el código, apagarlo y prenderlo, cambiar el código y ver quién entró y cuándo. |
 | Mensaje | Habla la plataforma, no una persona: "Hola Antonio: te enviamos la minuta de la reunión del 24 sep, *título*. En resumen: … Para revisarla, aprobar puntos o dejar tus comentarios, entra a este enlace con el código K7P2QX." El resumen lo redacta Codex y **el equipo lo revisa y edita antes de mandarlo**. |
@@ -37,6 +37,7 @@ Nota: en septiembre se había decidido que las minutas no tuvieran página públ
 - Botón **Enviar al cliente** → diálogo:
   1. Destinatarios: contactos sugeridos de la marca + "Agregar contacto" (nombre, correo).
   2. **Preparar correo**: Codex redacta el resumen ("Dame un momento…"); se muestra la vista previa del correo con el resumen editable.
+  Vista previa: el servidor arma el mismo texto sin enviar ni registrar nada (`medio: 'vista_previa'`).
   3. **Enviar desde Tiusdei** o **Copiar mensaje**. Si la minuta no tenía enlace, se crea en ese momento. Al copiar, los destinatarios son opcionales; si se eligen, quedan en el historial y en la lista de nombres de la entrada.
 - Tarjeta **Enlace para el cliente**: estado (activo / apagado / bloqueado por intentos), copiar enlace, ver y copiar código, apagar o prender, cambiar código, últimos accesos (nombre y fecha) y envíos (por correo a quién, o copiado por quién, y cuándo).
 

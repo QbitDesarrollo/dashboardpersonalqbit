@@ -1,11 +1,11 @@
 import { FileText, FolderKanban } from 'lucide-react';
-import type { Minuta, Punto } from '@/lib/minutasApi';
+import type { MinutaVista, PuntoVista } from '@/lib/minutasApi';
 import { cn } from '@/lib/utils';
 import { IconoEstado } from '../IconoEstado';
 
 interface Props {
-  minuta: Minuta;
-  puntos: Punto[];
+  minuta: MinutaVista;
+  puntos: PuntoVista[];
   actualId: string | undefined;
   onElegir: (indice: number) => void;
 }
