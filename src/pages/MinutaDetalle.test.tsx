@@ -190,10 +190,14 @@ describe('MinutaDetalle · PDF', () => {
     expect(screen.queryByRole('button', { name: 'PDF para el cliente' })).not.toBeInTheDocument();
   });
 
-  it('ya no ofrece un enlace público', async () => {
+  it('mientras arma el PDF (baja las capturas) lo dice y no deja pedirlo dos veces', async () => {
+    let terminar: () => void = () => {};
+    vi.mocked(minutaPdf.exportarMinutaPdf).mockReturnValue(new Promise<void>((r) => { terminar = r; }));
     renderDetalle();
-    await screen.findByRole('button', { name: 'Exportar PDF' });
-    expect(screen.queryByRole('button', { name: 'Copiar enlace para el cliente' })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Exportar PDF' }));
+    expect(await screen.findByRole('button', { name: 'Generando PDF…' })).toBeDisabled();
+    await act(async () => { terminar(); });
+    expect(await screen.findByRole('button', { name: 'Exportar PDF' })).toBeEnabled();
   });
 });
 

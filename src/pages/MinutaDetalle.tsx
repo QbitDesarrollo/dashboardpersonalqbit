@@ -114,6 +114,7 @@ export default function MinutaDetalle() {
   const [editando, setEditando] = useState(false);
   const [enviarAbierto, setEnviarAbierto] = useState(false);
   const [versionEnlace, setVersionEnlace] = useState(0);
+  const [generandoPdf, setGenerandoPdf] = useState(false);
   const navigate = useNavigate();
   const hoy = hoyEcuador();
 
@@ -186,6 +187,11 @@ export default function MinutaDetalle() {
   };
   // Al asignar puntos aparecen primero el responsable y el equipo de la minuta.
   const primero = new Set([minuta.owner.id, ...minuta.miembros.map((m) => m.id)]);
+  // The PDF downloads the screenshots first, which can take a few seconds.
+  const exportarPdf = async () => {
+    setGenerandoPdf(true);
+    try { await exportarMinutaPdf(minuta, { soloVisibles: true }); } catch { toast.error('No se pudo generar el PDF'); } finally { setGenerandoPdf(false); }
+  };
   const asignables = [...personas.filter((p) => primero.has(p.id)), ...personas.filter((p) => !primero.has(p.id))];
 
   return (
@@ -208,8 +214,9 @@ export default function MinutaDetalle() {
             <Button size="sm" asChild><Link to={`/minutas/${minuta.id}/presentar`}><Presentation className="h-4 w-4" />Presentar</Link></Button>
             <Button size="sm" variant="outline" onClick={() => setEnviarAbierto(true)}><Send className="h-4 w-4" />Enviar al cliente</Button>
             <Button size="sm" variant="outline" onClick={() => setEditando(true)}>Editar</Button>
-            <Button size="sm" variant="outline" onClick={() => exportarMinutaPdf(minuta, { soloVisibles: true })}>
-              <FileDown className="h-4 w-4" />Exportar PDF
+            <Button size="sm" variant="outline" disabled={generandoPdf} onClick={exportarPdf}>
+              {generandoPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+              {generandoPdf ? 'Generando PDF…' : 'Exportar PDF'}
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
