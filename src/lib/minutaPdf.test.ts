@@ -60,7 +60,7 @@ describe('generarMinutaPdf', () => {
     expect(pdf.startsWith('%PDF-')).toBe(true);
     for (const esperado of [
       'Revisi', 'Dinatek', 'M-03', '22 sep 2026', 'Responsable: Even Fierro', 'Resumen y acuerdos', 'Se prioriz',
-      'Puntos', '1 de 3 puntos cerrados', 'Filtro por marca', 'Compromiso: 6 oct', 'Video en el home', 'SE HIZO', 'Video de 12 s.',
+      'Puntos', '1 de 3 puntos cerrados', 'En curso: 1', 'Esperando al cliente: 1', 'Filtro por marca', 'Compromiso: 6 oct', 'Video en el home', 'SE HIZO', 'Video de 12 s.',
       'Home en staging', 'staging.dinatek.ec', 'Ajuste pedido por Antonio', 'Fichas t', 'Esperando al cliente', 'gina 1 de',
     ]) expect(pdf, esperado).toContain(esperado);
     expect(pdf).not.toContain('uploads/editor');

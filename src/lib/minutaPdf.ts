@@ -130,7 +130,7 @@ export async function generarMinutaPdf(m: Minuta, opciones: Opciones = {}, deps:
   doc.setFillColor(...FONDO); doc.roundedRect(mg, y, util, 18, 3, 3, 'F');
   letra(12, TEXTO, 'bold'); doc.text(`${listos} de ${vigentes.length} puntos cerrados`, mg + 6, y + 8);
   const porEstado = [...vigentes.reduce((acc, p) => acc.set(p.estado.texto, (acc.get(p.estado.texto) ?? 0) + 1), new Map<string, number>())];
-  letra(8.5, GRIS); doc.text(limpiar(porEstado.map(([t, n]) => `${n} ${t.toLowerCase()}`).join('  ·  ')), mg + 6, y + 13.5);
+  letra(8.5, GRIS); doc.text(limpiar(porEstado.map(([t, n]) => `${t}: ${n}`).join('  ·  ')), mg + 6, y + 13.5);
   const barra = util * 0.3;
   doc.setFillColor(255, 255, 255); doc.roundedRect(mg + util - barra - 6, y + 7.5, barra, 2.4, 1, 1, 'F');
   doc.setFillColor(...MARCA); doc.roundedRect(mg + util - barra - 6, y + 7.5, Math.max(1, barra * (vigentes.length ? listos / vigentes.length : 0)), 2.4, 1, 1, 'F');
