@@ -1,6 +1,14 @@
-import { useEffect, useState, useMemo, lazy, Suspense } from 'react';
+import { DashboardTareasDialog } from '@/components/dashboard/DashboardTareasDialog';
+import { useDashboardDatos } from '@/components/dashboard/useDashboardDatos';
+import { metricasResponsables, metricasMarcas, seleccionarTareas, type SeleccionDashboard } from '@/lib/dashboardSeleccion';
+import { CHART_COLORS, formatTime, calcStats, type Task, type UrgentTask } from '@/lib/dashboardDatos';
+import { DashboardKpis } from '@/components/dashboard/DashboardKpis';
+import { GraficoResponsables } from '@/components/dashboard/GraficoResponsables';
+import { GraficoMarcas } from '@/components/dashboard/GraficoMarcas';
+import { DashboardEquipoGraficos } from '@/components/dashboard/DashboardEquipoGraficos';
+import { DashboardProgreso } from '@/components/dashboard/DashboardProgreso';
+import { useState, useMemo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import * as api from '@/lib/apiClient';
 import { useAuth } from '@/contexts/AuthContext';
 
 const GoogleCalendarWidget = lazy(() => import('@/components/GoogleCalendarWidget'));
@@ -17,149 +25,15 @@ import {
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn, getInitials } from '@/lib/utils';
-import { toast } from 'sonner';
 import {
   CheckCircle2,
-  Clock,
   AlertTriangle,
-  XCircle,
-  TrendingUp,
   Calendar,
-  Users,
-  Briefcase,
-  Package,
-  Timer,
   Building2,
   User,
   Filter,
   Activity,
-  Target,
-  ListChecks,
 } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from 'recharts';
-
-interface Task {
-  id: string;
-  titulo_tarea: string;
-  fecha_entrega: string;
-  prioridad: string;
-  estado: string;
-  responsable_user_id: string | null;
-  brand_id: string;
-  desk_id: string | null;
-  cantidad_entregables: number;
-  tiempo_trabajado: number;
-  brands?: { nombre: string };
-  profiles?: { nombre: string };
-}
-
-interface TaskStats {
-  total: number;
-  backlog: number;
-  en_proceso: number;
-  en_revision: number;
-  aprobado: number;
-  entregado: number;
-  bloqueado: number;
-  atrasadas: number;
-}
-
-interface UrgentTask {
-  id: string;
-  titulo_tarea: string;
-  fecha_entrega: string;
-  dias_restantes: number;
-  prioridad: string;
-  estado: string;
-  brand_name: string;
-}
-
-interface ResponsableMetric {
-  nombre: string;
-  avatar_url?: string | null;
-  total: number;
-  completadas: number;
-  enProgreso: number;
-  tiempoTotal: number;
-  entregables: number;
-}
-
-interface BrandMetric {
-  nombre: string;
-  total: number;
-  completadas: number;
-  tiempoTotal: number;
-  entregables: number;
-}
-
-interface ActivityEntry {
-  id: string;
-  user_id: string;
-  user_nombre: string;
-  entity_type: string;
-  entity_id: string;
-  action: string;
-  field_name?: string;
-  old_value?: string;
-  new_value?: string;
-  created_at: string;
-}
-
-const CHART_COLORS = [
-  'hsl(var(--primary))',
-  'hsl(var(--info))',
-  'hsl(var(--success))',
-  'hsl(var(--warning))',
-  'hsl(var(--destructive))',
-  'hsl(220, 70%, 50%)',
-  'hsl(280, 70%, 50%)',
-  'hsl(340, 70%, 50%)',
-];
-
-const formatTime = (seconds: number) => {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
-};
-
-const calcStats = (taskList: Task[]): TaskStats => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const s: TaskStats = {
-    total: taskList.length,
-    backlog: 0, en_proceso: 0, en_revision: 0,
-    aprobado: 0, entregado: 0, bloqueado: 0, atrasadas: 0,
-  };
-  taskList.forEach(task => {
-    if (task.estado in s) {
-      s[task.estado as keyof TaskStats]++;
-    }
-    if (task.fecha_entrega) {
-      const [yy, mm, dd] = (task.fecha_entrega || '').split('T')[0].split('-').map(Number);
-      const fechaEntrega = new Date(yy, mm - 1, dd);
-      const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      if (diasRestantes < 0 && !['entregado', 'aprobado', 'revision_cliente'].includes(task.estado)) {
-        s.atrasadas++;
-      }
-    }
-  });
-  return s;
-};
 
 const buildUrgentTasks = (taskList: Task[]): UrgentTask[] => {
   const today = new Date();
@@ -187,12 +61,9 @@ const buildUrgentTasks = (taskList: Task[]): UrgentTask[] => {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { profile, isCliente, isAdmin, isEjecutivo, isEquipo, canViewAll } = useAuth();
+  const { profile, isAdmin, isEjecutivo, isEquipo, canViewAll } = useAuth();
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [profiles, setProfiles] = useState<{ id: string; nombre: string; avatar_url?: string | null }[]>([]);
-  const [brands, setBrands] = useState<{ id: string; nombre: string }[]>([]);
-  const [desks, setDesks] = useState<{ id: string; nombre: string }[]>([]);
+  const { tasks, profiles, brands, desks, recentActivity, loading, error, reintentar } = useDashboardDatos(profile?.id, isAdmin || isEjecutivo);
   const [filterBrand, setFilterBrand] = useState<string>('all');
   const [filterResponsable, setFilterResponsable] = useState<string>('all');
   // Período por fecha de entrega ("hay como dejarlo x dia o mes?" — Steven)
@@ -205,51 +76,6 @@ export default function Dashboard() {
   const [periodoHasta, setPeriodoHasta] = useState<string>(() => {
     try { return localStorage.getItem('dashboard_periodo_hasta') || ''; } catch { return ''; }
   });
-  const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [primeraCarga, setPrimeraCarga] = useState(true);
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, [profile]);
-
-  const fetchDashboardData = async () => {
-    try {
-      const fetchPromises: Promise<any>[] = [
-        api.getTasks({ limit: 500 }),
-        api.getProfiles(),
-        api.getBrands(),
-        api.getDesks(),
-      ];
-
-      if (isAdmin || isEjecutivo) {
-        fetchPromises.push(api.getRecentActivity(20));
-      }
-
-      const results = await Promise.all(fetchPromises);
-      const tasksRes = results[0];
-      const profilesData = results[1];
-      const brandsData = results[2];
-      const desksData = results[3];
-
-      const fetchedTasks = (tasksRes.tasks || []) as Task[];
-      setTasks(fetchedTasks);
-      setProfiles(Array.isArray(profilesData) ? profilesData.filter((p: any) => p.activo) : []);
-      setBrands(Array.isArray(brandsData) ? brandsData.filter((b: any) => b.activo) : []);
-      setDesks(Array.isArray(desksData) ? desksData.filter((d: any) => d.activo) : []);
-
-      if (isAdmin || isEjecutivo) {
-        setRecentActivity(Array.isArray(results[4]) ? results[4] : []);
-      }
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      toast.error('Error al cargar los datos del dashboard');
-    } finally {
-      setLoading(false);
-      setPrimeraCarga(false);
-    }
-  };
-
   // Apply filters (local + global)
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
@@ -295,67 +121,8 @@ export default function Dashboard() {
   // Urgent tasks for equipo
   const myUrgentTasks = useMemo(() => buildUrgentTasks(myTasks), [myTasks]);
 
-  // Metrics by Responsable (admin/ops only)
-  const responsableMetrics = useMemo(() => {
-    const metricsMap = new Map<string, ResponsableMetric>();
-
-    filteredTasks.forEach(task => {
-      if (!task.responsable_user_id) return;
-
-      const profileMatch = profiles.find(p => p.id === task.responsable_user_id);
-      const existing = metricsMap.get(task.responsable_user_id) || {
-        nombre: profileMatch?.nombre || 'Sin asignar',
-        avatar_url: profileMatch?.avatar_url || null,
-        total: 0,
-        completadas: 0,
-        enProgreso: 0,
-        tiempoTotal: 0,
-        entregables: 0,
-      };
-
-      existing.total++;
-      existing.entregables += task.cantidad_entregables;
-      existing.tiempoTotal += task.tiempo_trabajado;
-
-      if (task.estado === 'entregado' || task.estado === 'aprobado') {
-        existing.completadas++;
-      } else if (task.estado === 'en_proceso' || task.estado === 'en_revision') {
-        existing.enProgreso++;
-      }
-
-      metricsMap.set(task.responsable_user_id, existing);
-    });
-
-    return Array.from(metricsMap.values()).sort((a, b) => b.total - a.total);
-  }, [filteredTasks, profiles]);
-
-  // Metrics by Brand (admin/ops only)
-  const brandMetrics = useMemo(() => {
-    const metricsMap = new Map<string, BrandMetric>();
-
-    filteredTasks.forEach(task => {
-      const brandName = task.brands?.nombre || 'Sin marca';
-      const existing = metricsMap.get(task.brand_id) || {
-        nombre: brandName,
-        total: 0,
-        completadas: 0,
-        tiempoTotal: 0,
-        entregables: 0,
-      };
-
-      existing.total++;
-      existing.entregables += task.cantidad_entregables;
-      existing.tiempoTotal += task.tiempo_trabajado;
-
-      if (task.estado === 'entregado' || task.estado === 'aprobado') {
-        existing.completadas++;
-      }
-
-      metricsMap.set(task.brand_id, existing);
-    });
-
-    return Array.from(metricsMap.values()).sort((a, b) => b.total - a.total);
-  }, [filteredTasks]);
+  const responsableMetrics = useMemo(() => metricasResponsables(filteredTasks, profiles), [filteredTasks, profiles]);
+  const brandMetrics = useMemo(() => metricasMarcas(filteredTasks), [filteredTasks]);
 
   // Total metrics
   const totals = useMemo(() => {
@@ -368,102 +135,9 @@ export default function Dashboard() {
 
   // Active stats based on role
   const activeStats = isEquipo ? myStats : filteredStats;
-
-  // KPI cards for admin/ops
-  const adminKpiCards = [
-    {
-      title: 'Tareas Activas',
-      value: filteredStats.en_proceso + filteredStats.en_revision,
-      icon: <Clock className="h-5 w-5" />,
-      color: 'text-info',
-      bgColor: 'bg-info/10',
-    },
-    {
-      title: 'En Revisión',
-      value: filteredStats.en_revision,
-      icon: <TrendingUp className="h-5 w-5" />,
-      color: 'text-warning',
-      bgColor: 'bg-warning/10',
-    },
-    {
-      title: 'Entregadas',
-      value: filteredStats.entregado,
-      icon: <CheckCircle2 className="h-5 w-5" />,
-      color: 'text-success',
-      bgColor: 'bg-success/10',
-    },
-    {
-      title: 'Atrasadas',
-      value: filteredStats.atrasadas,
-      icon: <AlertTriangle className="h-5 w-5" />,
-      color: 'text-destructive',
-      bgColor: 'bg-destructive/10',
-    },
-    {
-      title: 'Total Entregables',
-      value: totals.entregables,
-      icon: <Package className="h-5 w-5" />,
-      color: 'text-primary',
-      bgColor: 'bg-primary/10',
-    },
-    {
-      title: 'Tiempo Total',
-      value: formatTime(totals.tiempoTotal),
-      icon: <Timer className="h-5 w-5" />,
-      color: 'text-info',
-      bgColor: 'bg-info/10',
-      isTime: true,
-    },
-  ];
-
-  // KPI cards for equipo (personal)
-  const equipoKpiCards = [
-    {
-      title: 'Mis Tareas Activas',
-      value: myStats.en_proceso + myStats.en_revision,
-      icon: <Target className="h-5 w-5" />,
-      color: 'text-info',
-      bgColor: 'bg-info/10',
-    },
-    {
-      title: 'En Revisión',
-      value: myStats.en_revision,
-      icon: <TrendingUp className="h-5 w-5" />,
-      color: 'text-warning',
-      bgColor: 'bg-warning/10',
-    },
-    {
-      title: 'Mis Entregadas',
-      value: myStats.entregado,
-      icon: <CheckCircle2 className="h-5 w-5" />,
-      color: 'text-success',
-      bgColor: 'bg-success/10',
-    },
-    {
-      title: 'Atrasadas',
-      value: myStats.atrasadas,
-      icon: <AlertTriangle className="h-5 w-5" />,
-      color: 'text-destructive',
-      bgColor: 'bg-destructive/10',
-    },
-    {
-      title: 'Mis Entregables',
-      value: totals.entregables,
-      icon: <Package className="h-5 w-5" />,
-      color: 'text-primary',
-      bgColor: 'bg-primary/10',
-    },
-    {
-      title: 'Mi Tiempo',
-      value: formatTime(totals.tiempoTotal),
-      icon: <Timer className="h-5 w-5" />,
-      color: 'text-info',
-      bgColor: 'bg-info/10',
-      isTime: true,
-    },
-  ];
-
-  const kpiCards = isEquipo ? equipoKpiCards : adminKpiCards;
+  const tareasActivas = isEquipo ? myTasks : filteredTasks;
+  const [seleccion, setSeleccion] = useState<SeleccionDashboard | null>(null);
+  const tareasSeleccionadas = useMemo(() => seleccion ? seleccionarTareas(tareasActivas, seleccion.criterio) : [], [tareasActivas, seleccion]);
 
   const getPriorityColor = (prioridad: string) => {
     switch (prioridad) {
@@ -534,10 +208,8 @@ export default function Dashboard() {
     return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
   };
 
-  // Solo la PRIMERA carga reemplaza la pantalla. Con `loading` a secas, cada
-  // recarga (buscar, filtrar, paginar) desmontaba la pagina entera: se perdia
-  // el foco del input y los dialogos abiertos se cerraban solos.
-  if (loading && primeraCarga) {
+  // Los filtros y la búsqueda usan los datos cargados, sin reiniciar la carga.
+  if (loading) {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -553,10 +225,13 @@ export default function Dashboard() {
     );
   }
 
+  if (error) return <div role="alert" className="rounded-lg border p-6"><p>{error}</p><button type="button" onClick={reintentar} className="mt-3 text-primary underline">Volver a intentar</button></div>;
+
   const activeUrgentTasks = isEquipo ? myUrgentTasks : filteredUrgentTasks;
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-fade-in">
+      {seleccion && <DashboardTareasDialog titulo={seleccion.titulo} tareas={tareasSeleccionadas} onCerrar={() => setSeleccion(null)} onAbrir={(id) => navigate(`/tareas?task=${encodeURIComponent(id)}`)} />}
       {/* Welcome + Filters */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -651,126 +326,16 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4">
-        {kpiCards.map((kpi, index) => (
-          <Card key={index} className="glass-card hover:border-primary/50 transition-colors">
-            <CardContent className="p-3 sm:p-4">
-              <div className="flex items-center justify-between mb-1 sm:mb-2">
-                <div className={cn("p-1.5 sm:p-2 rounded-lg", kpi.bgColor)}>
-                  <span className={cn(kpi.color, "[&>svg]:h-4 [&>svg]:w-4 sm:[&>svg]:h-5 sm:[&>svg]:w-5")}>{kpi.icon}</span>
-                </div>
-              </div>
-              <p className="text-lg sm:text-2xl font-bold text-foreground">
-                {kpi.isTime ? kpi.value : kpi.value}
-              </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground truncate">{kpi.title}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <DashboardKpis stats={activeStats} totals={totals} isEquipo={isEquipo} tareas={tareasActivas} onMostrar={setSeleccion} />
 
       {/* ====== ADMIN/OPS DASHBOARD ====== */}
       {canViewAll && (
         <>
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {/* Tasks by Responsable Chart */}
-            <Card className="glass-card">
-              <CardHeader className="pb-2 sm:pb-4">
-                <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                  <CardTitle className="text-base sm:text-lg">Tareas por Responsable</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="px-2 sm:px-6">
-                {responsableMetrics.length === 0 ? (
-                  <div className="text-center py-6 sm:py-8 text-muted-foreground">
-                    <User className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No hay tareas asignadas</p>
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <BarChart data={responsableMetrics.slice(0, 5)} layout="vertical" margin={{ left: 0, right: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis type="number" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 11 }} />
-                      <YAxis
-                        dataKey="nombre"
-                        type="category"
-                        width={70}
-                        stroke="hsl(var(--muted-foreground))"
-                        tick={{ fontSize: 10 }}
-                        tickFormatter={(value) => value.length > 10 ? value.substring(0, 10) + '...' : value}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                        }}
-                        formatter={(value: number, name: string) => {
-                          const labels: Record<string, string> = {
-                            completadas: 'Completadas',
-                            enProgreso: 'En Progreso',
-                            total: 'Total',
-                          };
-                          return [value, labels[name] || name];
-                        }}
-                      />
-                      <Bar dataKey="completadas" fill="hsl(var(--success))" name="completadas" stackId="a" />
-                      <Bar dataKey="enProgreso" fill="hsl(var(--info))" name="enProgreso" stackId="a" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
+            <GraficoResponsables responsableMetrics={responsableMetrics} tareas={filteredTasks} onMostrar={setSeleccion} />
 
-            {/* Tasks by Brand Chart */}
-            <Card className="glass-card">
-              <CardHeader className="pb-2 sm:pb-4">
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                  <CardTitle className="text-base sm:text-lg">Tareas por Marca</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="px-2 sm:px-6">
-                {brandMetrics.length === 0 ? (
-                  <div className="text-center py-6 sm:py-8 text-muted-foreground">
-                    <Building2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No hay tareas registradas</p>
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <PieChart>
-                      <Pie
-                        data={brandMetrics.slice(0, 6)}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ nombre, total }) => `${nombre.substring(0, 8)}${nombre.length > 8 ? '..' : ''}: ${total}`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="total"
-                      >
-                        {brandMetrics.slice(0, 6).map((_, index) => (
-                          <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                        }}
-                        formatter={(value: number) => [`${value} tareas`, 'Total']}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
+            <GraficoMarcas brandMetrics={brandMetrics} tareas={filteredTasks} onMostrar={setSeleccion} />
           </div>
 
           {/* Detailed Metrics Tables */}
@@ -921,163 +486,9 @@ export default function Dashboard() {
         </>
       )}
 
-      {/* ====== EQUIPO DASHBOARD ====== */}
-      {isEquipo && (
-        <>
-          {/* My Tasks Overview - Pie chart of my task statuses */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            <Card className="glass-card">
-              <CardHeader className="pb-2 sm:pb-4">
-                <div className="flex items-center gap-2">
-                  <ListChecks className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                  <CardTitle className="text-base sm:text-lg">Mis Tareas por Estado</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="px-2 sm:px-6">
-                {myTasks.length === 0 ? (
-                  <div className="text-center py-6 sm:py-8 text-muted-foreground">
-                    <CheckCircle2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No tienes tareas asignadas</p>
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: 'Pendiente', value: myStats.backlog },
-                          { name: 'En Proceso', value: myStats.en_proceso },
-                          { name: 'En Revisión', value: myStats.en_revision },
-                          { name: 'Aprobado', value: myStats.aprobado },
-                          { name: 'Entregado', value: myStats.entregado },
-                          { name: 'Bloqueado', value: myStats.bloqueado },
-                        ].filter(d => d.value > 0)}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, value }) => `${name}: ${value}`}
-                        outerRadius={80}
-                        dataKey="value"
-                      >
-                        {[
-                          'hsl(var(--muted-foreground))',
-                          'hsl(var(--info))',
-                          'hsl(var(--warning))',
-                          'hsl(var(--success))',
-                          'hsl(var(--primary))',
-                          'hsl(var(--destructive))',
-                        ].map((color, index) => (
-                          <Cell key={`cell-${index}`} fill={color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
+      {isEquipo && <DashboardEquipoGraficos myTasks={myTasks} myStats={myStats} onMostrar={setSeleccion} />}
 
-            {/* My Tasks by Brand */}
-            <Card className="glass-card">
-              <CardHeader className="pb-2 sm:pb-4">
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                  <CardTitle className="text-base sm:text-lg">Mis Tareas por Marca</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="px-2 sm:px-6">
-                {(() => {
-                  const myBrandMap = new Map<string, { nombre: string; total: number }>();
-                  myTasks.forEach(t => {
-                    const bName = t.brands?.nombre || 'Sin marca';
-                    const existing = myBrandMap.get(t.brand_id) || { nombre: bName, total: 0 };
-                    existing.total++;
-                    myBrandMap.set(t.brand_id, existing);
-                  });
-                  const myBrandData = Array.from(myBrandMap.values()).sort((a, b) => b.total - a.total);
-
-                  if (myBrandData.length === 0) {
-                    return (
-                      <div className="text-center py-6 sm:py-8 text-muted-foreground">
-                        <Building2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No hay tareas registradas</p>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <ResponsiveContainer width="100%" height={250}>
-                      <BarChart data={myBrandData.slice(0, 5)} layout="vertical" margin={{ left: 0, right: 10 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis type="number" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 11 }} />
-                        <YAxis
-                          dataKey="nombre"
-                          type="category"
-                          width={70}
-                          stroke="hsl(var(--muted-foreground))"
-                          tick={{ fontSize: 10 }}
-                          tickFormatter={(value) => value.length > 10 ? value.substring(0, 10) + '...' : value}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                          }}
-                          formatter={(value: number) => [`${value} tareas`, 'Total']}
-                        />
-                        <Bar dataKey="total" fill="hsl(var(--primary))" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  );
-                })()}
-              </CardContent>
-            </Card>
-          </div>
-        </>
-      )}
-
-      {/* Progress overview - shared but with different data */}
-      <Card className="glass-card">
-        <CardHeader className="pb-2 sm:pb-4">
-          <CardTitle className="text-base sm:text-lg">
-            {isEquipo ? 'Mi Progreso' : 'Progreso General'}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3 sm:space-y-4">
-            {[
-              { label: 'Pendiente', value: activeStats.backlog, total: activeStats.total, color: 'bg-status-backlog' },
-              { label: 'En Proceso', value: activeStats.en_proceso, total: activeStats.total, color: 'bg-status-in-progress' },
-              { label: 'En Revisión', value: activeStats.en_revision, total: activeStats.total, color: 'bg-status-in-review' },
-              { label: 'Aprobado', value: activeStats.aprobado, total: activeStats.total, color: 'bg-status-approved' },
-              { label: 'Entregado', value: activeStats.entregado, total: activeStats.total, color: 'bg-status-delivered' },
-            ].map((item, index) => (
-              <div key={index} className="space-y-1 sm:space-y-2">
-                <div className="flex items-center justify-between text-xs sm:text-sm">
-                  <span className="text-muted-foreground">{item.label}</span>
-                  <span className="font-medium text-foreground">
-                    {item.value} / {item.total}
-                  </span>
-                </div>
-                <div className="h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className={cn("h-full rounded-full transition-all", item.color)}
-                    style={{ width: `${item.total > 0 ? (item.value / item.total) * 100 : 0}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <DashboardProgreso activeStats={activeStats} isEquipo={isEquipo} onMostrar={setSeleccion} />
 
       {/* Urgent tasks */}
       <Card className="glass-card">
