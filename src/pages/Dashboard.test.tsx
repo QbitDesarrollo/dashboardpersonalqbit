@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import * as api from '@/lib/apiClient';
+import * as dashboardApi from '@/lib/dashboardApi';
 import Dashboard from './Dashboard';
 
 const contexto = vi.hoisted(() => ({ equipo: false, usuario: 'u1', marca: null as string | null, mesa: null as string | null }));
@@ -14,8 +15,9 @@ vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({
 }) }));
 vi.mock('@/contexts/GlobalFilterContext', () => ({ useGlobalFilter: () => ({ pinnedBrandId: contexto.marca, pinnedDeskId: contexto.mesa }) }));
 vi.mock('@/components/GoogleCalendarWidget', () => ({ default: () => null }));
+vi.mock('@/lib/dashboardApi', () => ({ getDashboardTasks: vi.fn() }));
 vi.mock('@/lib/apiClient', () => ({
-  getTasks: vi.fn(), getProfiles: vi.fn(), getBrands: vi.fn(), getDesks: vi.fn(), getRecentActivity: vi.fn(),
+  getProfiles: vi.fn(), getBrands: vi.fn(), getDesks: vi.fn(), getRecentActivity: vi.fn(),
 }));
 // jsdom cannot size charts. Keep the data and series visible to characterize what is counted.
 vi.mock('recharts', async () => {
@@ -64,14 +66,13 @@ describe('Dashboard · consultar las tareas de los indicadores', () => {
     contexto.equipo = true; abrir(); fireEvent.click(await screen.findByRole('button', { name: 'Ver tareas: Mis Tareas Activas' }));
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Tarea otra');
   });
-  it('carga las páginas restantes antes de contar y no presenta datos parciales al fallar', async () => {
-    vi.mocked(api.getTasks).mockImplementation(async (opciones) => ({ tasks: tareas.slice(opciones?.offset ?? 0, (opciones?.offset ?? 0) + 2), total: tareas.length }));
+  it('carga todo el historial con una petición antes de contar', async () => {
     abrir(); await screen.findByRole('button', { name: 'Ver tareas: Tareas Activas' });
     expect(tarjeta('Tareas Activas')).toHaveTextContent('3');
-    expect(api.getTasks).toHaveBeenCalledTimes(4);
+    expect(dashboardApi.getDashboardTasks).toHaveBeenCalledTimes(1);
   });
-  it('muestra un error recuperable si falla una página', async () => {
-    vi.mocked(api.getTasks).mockResolvedValueOnce({ tasks: [tareas[0]], total: 7 }).mockRejectedValueOnce(new Error('Sin conexión'));
+  it('muestra un error recuperable si falla la carga', async () => {
+    vi.mocked(dashboardApi.getDashboardTasks).mockRejectedValueOnce(new Error('Sin conexión'));
     abrir(); expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron cargar todos los datos');
     expect(screen.queryByText('Tareas Activas')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Volver a intentar' }));
@@ -86,7 +87,7 @@ describe('Dashboard · consultar las tareas de los indicadores', () => {
     expect(dialogo).toHaveTextContent('No hay tareas que coincidan');
   });
   it('las barras de progreso abren un grupo vacío sin fallar', async () => {
-    vi.mocked(api.getTasks).mockResolvedValue({ tasks: [], total: 0 });
+    vi.mocked(dashboardApi.getDashboardTasks).mockResolvedValue([]);
     abrir(); fireEvent.click(await screen.findByRole('button', { name: 'Ver progreso: Pendiente' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('No hay tareas en este grupo');
   });
@@ -99,13 +100,13 @@ describe('Dashboard · consultar las tareas de los indicadores', () => {
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Tarea otra');
   });
   it('ignora una respuesta vieja después de cambiar de usuario', async () => {
-    let completar!: (r: { tasks: unknown[]; total: number }) => void;
-    vi.mocked(api.getTasks).mockImplementationOnce(() => new Promise((resolve) => { completar = resolve; }))
-      .mockResolvedValueOnce({ tasks: [tarea('nueva', 'en_proceso')], total: 1 });
+    let completar!: (r: Awaited<ReturnType<typeof dashboardApi.getDashboardTasks>>) => void;
+    vi.mocked(dashboardApi.getDashboardTasks).mockImplementationOnce(() => new Promise((resolve) => { completar = resolve; }))
+      .mockResolvedValueOnce([tarea('nueva', 'en_proceso')]);
     const vista = abrir(); contexto.usuario = 'u2';
     vista.rerender(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Dashboard /></MemoryRouter>);
     await screen.findByText('Tareas Activas');
-    await act(async () => { completar({ tasks: tareas, total: tareas.length }); });
+    await act(async () => { completar(tareas); });
     expect(tarjeta('Tareas Activas')).toHaveTextContent('1');
     fireEvent.click(screen.getByRole('button', { name: 'Ver tareas: Tareas Activas' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Tarea nueva');
@@ -128,7 +129,7 @@ const tareas = [
 beforeEach(() => {
   localStorage.clear(); contexto.equipo = false; contexto.usuario = 'u1'; contexto.marca = null; contexto.mesa = null; navigate.mockReset();
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-02T15:00:00Z'));
-  vi.mocked(api.getTasks).mockReset().mockResolvedValue({ tasks: tareas, total: tareas.length });
+  vi.mocked(dashboardApi.getDashboardTasks).mockReset().mockResolvedValue(tareas);
   vi.mocked(api.getProfiles).mockResolvedValue([{ id: 'u1', nombre: 'Even', activo: true }, { id: 'u2', nombre: 'Diego', activo: true }]);
   vi.mocked(api.getBrands).mockResolvedValue([{ id: 'b1', nombre: 'Dinatek', activo: true }, { id: 'b2', nombre: 'Pronaca', activo: true }]);
   vi.mocked(api.getDesks).mockResolvedValue([]); vi.mocked(api.getRecentActivity).mockResolvedValue([]);

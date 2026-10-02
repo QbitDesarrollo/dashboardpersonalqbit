@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as api from '@/lib/apiClient';
-import { cargarTareasDashboard } from '@/lib/dashboardCarga';
+import { getDashboardTasks } from '@/lib/dashboardApi';
 import type { Task } from '@/lib/dashboardDatos';
 
 interface Catalogo { id: string; nombre: string; activo?: boolean | number; avatar_url?: string | null }
@@ -23,9 +23,7 @@ export function useDashboardDatos(userId: string | undefined, verActividad: bool
     const cargar = async () => {
       try {
         const [tasks, profiles, brands, desks, recentActivity] = await Promise.all([
-          cargarTareasDashboard(async (opciones) => {
-            const r = await api.getTasks(opciones); return { tasks: r.tasks as Task[], total: r.total };
-          }, () => vigente),
+          getDashboardTasks(),
           api.getProfiles(), api.getBrands(), api.getDesks(), verActividad ? api.getRecentActivity(20) : Promise.resolve([]),
         ]);
         if (!vigente) return;
