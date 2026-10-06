@@ -170,7 +170,7 @@ export default function TeamMonitor() {
             <SummaryCard icon={<Clock className="h-4 w-4" />} label="Horas hoy (timer + reuniones)" value={formatShortTime(totalHoursToday)} color="text-orange-600 dark:text-orange-400" />
           </div>
           <p className="text-[11px] text-muted-foreground -mt-1">
-            Las <strong className="text-foreground">horas de hoy</strong> suman timer + reuniones del Google Calendar (una reunión es trabajo). <strong className="text-foreground">Utilización</strong> = esas horas ÷ tiempo conectado hoy, sin almuerzo. Las reuniones solo cuentan dentro de la jornada marcada: las de antes del ingreso o del almuerzo no suman.
+            Las <strong className="text-foreground">horas de hoy</strong> suman timer + reuniones del Google Calendar (una reunión es trabajo). <strong className="text-foreground">Utilización</strong> = esas horas ÷ tiempo conectado hoy, sin almuerzo. Solo cuentan las reuniones que la persona aceptó u organizó (con invitados o videollamada; las invitaciones sin responder y los bloqueos personales no suman), dentro de la jornada marcada y sin el tiempo en que tenía el timer corriendo.
             Verde 40–85 % · <span className="text-amber-600 font-medium">ámbar más de 85 % (al tope, tenerlo en cuenta)</span> · rojo menos de 40 %.
             {liveUsers.filter((u) => Number(u.utilization_pct) > 85).length > 0 && <> Hoy por encima del 85 %: <strong className="text-foreground">{liveUsers.filter((u) => Number(u.utilization_pct) > 85).map((u) => String(u.nombre || '').trim().split(' ')[0]).join(', ')}</strong>.</>}
           </p>

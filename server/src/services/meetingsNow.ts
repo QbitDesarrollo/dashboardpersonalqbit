@@ -1,12 +1,23 @@
-import { google } from 'googleapis';
+import { google, type calendar_v3 } from 'googleapis';
 import { query } from '../db/mysql.js';
 import { getAuthedClient } from '../utils/googleAuth.js';
 
-// Reuniones de hoy de cada persona, leídas de su Google Calendar (si lo tiene
+// Reuniones de cada persona, leídas de su Google Calendar (si lo tiene
 // conectado). Sirve para que el monitor y las vistas de equipo muestren
-// "En reunión: X" y sumen las reuniones a la utilización del día. Los eventos
-// se cachean 2 minutos por persona para no golpear la API de Google en cada
-// refresco (el monitor consulta cada 30 s y las vistas de equipo cada 60 s).
+// "En reunión: X", sumen las reuniones a las horas trabajadas y para repartir
+// las reuniones por marca en Tiempo por marca. Los eventos se cachean por persona
+// para no golpear la API de Google en cada refresco.
+//
+// Qué cuenta como reunión (reunión con Steven, 6-oct-2026):
+//  - evento con hora (no de día completo), no cancelado, no marcado "disponible",
+//    que no sea una tarea que Tiusdei sincroniza ("[Tiusdei] ...");
+//  - con al menos otro invitado o con link de videollamada (un bloqueo personal
+//    tipo "NO DISPONIBLE" o "Almuerzo" no es reunión);
+//  - que la persona organizó, aceptó o marcó "quizás" (una invitación sin
+//    responder no cuenta: casi la mitad del tiempo agendado eran invitaciones así,
+//    muchas de reuniones a las que no fue o que no se dieron).
+// Y al sumar: solo dentro de la jornada marcada, sin duplicar reuniones que se
+// pisan y sin el tiempo en que la persona tenía el timer corriendo en una tarea.
 
 export interface EventoHoy { summary: string; start: string; end: string; duration_min: number }
 export interface ReunionesUsuario {
@@ -14,14 +25,10 @@ export interface ReunionesUsuario {
   eventos: EventoHoy[];
   ahora: EventoHoy | null;      // evento en curso en este momento
   hoy_seg: number;              // total agendado del día (pasadas + futuras)
-  hasta_ahora_seg: number;      // lo que CUENTA: transcurrido y dentro de la jornada marcada
+  hasta_ahora_seg: number;      // lo que CUENTA: transcurrido, en la jornada marcada y sin timer
   fuera_jornada_seg: number;    // transcurrido pero antes del ingreso, después de la salida o en almuerzo
 }
 
-// Las reuniones solo cuentan como trabajo dentro de la jornada marcada en
-// Asistencia (del ingreso a la salida, sin el almuerzo). Así, quien marca
-// ingreso a las 16:20 no suma las reuniones de la mañana y su utilización no
-// sale inflada; y las reuniones que se pisan entre sí se cuentan una sola vez.
 type Intervalo = [number, number];
 function unir(iv: Intervalo[]): Intervalo[] {
   const s = iv.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0]);
@@ -81,99 +88,119 @@ async function jornadas(userIds: string[], desdeMs: number): Promise<Map<string,
   return out;
 }
 
-const TTL_MS = 2 * 60 * 1000;
-const cache = new Map<string, { at: number; eventos: EventoHoy[] }>();
+/** Tiempo con timer en tareas desde `desdeMs`, por persona (la sesión activa llega hasta ahora). */
+async function tiempoConTimer(userIds: string[], desdeMs: number): Promise<Map<string, Intervalo[]>> {
+  const out = new Map<string, Intervalo[]>();
+  if (!userIds.length) return out;
+  const ph = userIds.map(() => '?').join(',');
+  const rows = await query<{ user_id: string; start_time: Date; end_time: Date | null; status: string }[]>(
+    `SELECT user_id, start_time, end_time, status FROM time_entries
+     WHERE user_id IN (${ph}) AND (start_time >= ? OR status = 'active') AND status IN ('active','completed','paused')`,
+    [...userIds, new Date(desdeMs - 13 * 3600 * 1000)],
+  );
+  const ahora = Date.now();
+  for (const r of rows) {
+    const ini = new Date(r.start_time).getTime();
+    const fin = r.end_time ? new Date(r.end_time).getTime() : (r.status === 'active' ? ahora : ini);
+    out.set(r.user_id, [...(out.get(r.user_id) || []), [ini, fin] as Intervalo]);
+  }
+  for (const [k, v] of out) out.set(k, unir(v));
+  return out;
+}
+
 const TZ = 'America/Guayaquil';
+
+/** ¿Este evento del calendario cuenta como reunión de la persona? (reglas arriba) */
+function esReunion(ev: calendar_v3.Schema$Event, maxMin: number): EventoHoy | null {
+  if (ev.status === 'cancelled' || ev.transparency === 'transparent') return null;
+  if ((ev.summary || '').startsWith('[Tiusdei]')) return null;
+  const s = ev.start?.dateTime, e = ev.end?.dateTime;
+  if (!s || !e) return null; // eventos de día completo no cuentan
+  const dur = Math.round((new Date(e).getTime() - new Date(s).getTime()) / 60000);
+  if (dur <= 0 || dur > maxMin) return null;
+  const invitados = ev.attendees || [];
+  const otros = invitados.filter((a) => !a.self && !a.resource).length;
+  const conLink = !!(ev.hangoutLink || ev.conferenceData);
+  if (otros === 0 && !conLink) return null; // bloqueo personal, no reunión
+  const yo = invitados.find((a) => a.self);
+  if (yo && !yo.organizer && yo.responseStatus !== 'accepted' && yo.responseStatus !== 'tentative') return null;
+  return { summary: ev.summary || '(Sin título)', start: s, end: e, duration_min: dur };
+}
+
+// Quién no deja leer su calendario (conexión vencida o sin permiso de calendario)
+const sinAcceso = new Map<string, string>();
+export function motivoSinAcceso(userId: string): string | null { return sinAcceso.get(userId) ?? null; }
+
+const cacheEventos = new Map<string, { at: number; eventos: EventoHoy[] }>();
+/** Reuniones de la persona entre dos instantes; null = sin Google conectado o sin acceso. */
+async function leerReuniones(userId: string, timeMin: string, timeMax: string, ttlMs: number, maxResults: number, maxMin: number): Promise<EventoHoy[] | null> {
+  const key = `${userId}|${timeMin}|${timeMax}`;
+  const c = cacheEventos.get(key);
+  if (c && Date.now() - c.at < ttlMs) return c.eventos;
+  const client = await getAuthedClient(userId);
+  if (!client) return null;
+  try {
+    const cal = google.calendar({ version: 'v3', auth: client });
+    const eventos: EventoHoy[] = [];
+    let pageToken: string | undefined;
+    do {
+      const resp = await cal.events.list({ calendarId: 'primary', timeMin, timeMax, maxResults, singleEvents: true, orderBy: 'startTime', pageToken });
+      for (const ev of resp.data.items || []) { const r = esReunion(ev, maxMin); if (r) eventos.push(r); }
+      pageToken = resp.data.nextPageToken || undefined;
+    } while (pageToken);
+    cacheEventos.set(key, { at: Date.now(), eventos });
+    sinAcceso.delete(userId);
+    // Que la caché no crezca sin límite con rangos viejos
+    if (cacheEventos.size > 2000) for (const [k, v] of cacheEventos) if (Date.now() - v.at > 3600_000) cacheEventos.delete(k);
+    return eventos;
+  } catch (e) {
+    const msg = (e as Error).message || '';
+    if (/scope/i.test(msg)) sinAcceso.set(userId, 'sin permiso de calendario');
+    else if (/refresh token|invalid_grant/i.test(msg)) sinAcceso.set(userId, 'conexión vencida');
+    console.error(`[REUNIONES] ${userId}:`, msg);
+    // Si Google falla, usar lo último que teníamos (aunque esté vencido) para no parpadear
+    return c?.eventos ?? (sinAcceso.has(userId) ? null : []);
+  }
+}
 
 function ventanaHoy(): { timeMin: string; timeMax: string } {
   const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
   return { timeMin: new Date(`${hoy}T00:00:00-05:00`).toISOString(), timeMax: new Date(`${hoy}T23:59:59-05:00`).toISOString() };
 }
-
+// Hoy: caché de 2 min (el monitor consulta cada 30 s y las vistas de equipo cada 60 s)
 async function eventosDe(userId: string): Promise<EventoHoy[] | null> {
-  const c = cache.get(userId);
-  if (c && Date.now() - c.at < TTL_MS) return c.eventos;
-  const client = await getAuthedClient(userId);
-  if (!client) return null;
   const { timeMin, timeMax } = ventanaHoy();
-  try {
-    const cal = google.calendar({ version: 'v3', auth: client });
-    const resp = await cal.events.list({ calendarId: 'primary', timeMin, timeMax, maxResults: 100, singleEvents: true, orderBy: 'startTime' });
-    const eventos: EventoHoy[] = [];
-    for (const ev of resp.data.items || []) {
-      if (ev.status === 'cancelled') continue;
-      if (ev.transparency === 'transparent') continue; // marcado como "disponible"
-      // Las tareas que Tiusdei sincroniza al calendario no son reuniones
-      if ((ev.summary || '').startsWith('[Tiusdei]')) continue;
-      const yo = (ev.attendees || []).find((a) => a.self);
-      if (yo && yo.responseStatus === 'declined') continue;
-      const s = ev.start?.dateTime, e = ev.end?.dateTime;
-      if (!s || !e) continue; // eventos de día completo no cuentan
-      const dur = Math.round((new Date(e).getTime() - new Date(s).getTime()) / 60000);
-      if (dur <= 0) continue;
-      eventos.push({ summary: ev.summary || '(Sin título)', start: s, end: e, duration_min: dur });
-    }
-    cache.set(userId, { at: Date.now(), eventos });
-    return eventos;
-  } catch (e) {
-    console.error(`[REUNIONES] ${userId}:`, (e as Error).message);
-    // Si Google falla, usar lo último que teníamos (aunque esté vencido) para no parpadear
-    return c?.eventos ?? [];
-  }
+  return leerReuniones(userId, timeMin, timeMax, 2 * 60 * 1000, 250, 24 * 60);
 }
-
-// Reuniones de los últimos N días, en segundos por día (calendario Ecuador), para
-// sumarlas a las horas trabajadas (hoy, semana, 30 días, ritmo). Caché de 10 min.
-const cacheRango = new Map<string, { at: number; eventos: EventoHoy[] }>();
-const TTL_RANGO_MS = 10 * 60 * 1000;
-const diaEcuador = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso));
-
+// Últimos N días: caché de 10 min; eventos de más de 12 h no son reuniones
 async function eventosRango(userId: string, dias: number): Promise<EventoHoy[] | null> {
-  const key = `${userId}:${dias}`;
-  const c = cacheRango.get(key);
-  if (c && Date.now() - c.at < TTL_RANGO_MS) return c.eventos;
-  const client = await getAuthedClient(userId);
-  if (!client) return null;
   const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
   const desde = new Date(`${hoy}T00:00:00-05:00`); desde.setUTCDate(desde.getUTCDate() - dias);
-  try {
-    const cal = google.calendar({ version: 'v3', auth: client });
-    const resp = await cal.events.list({ calendarId: 'primary', timeMin: desde.toISOString(), timeMax: new Date(`${hoy}T23:59:59-05:00`).toISOString(), maxResults: 2500, singleEvents: true, orderBy: 'startTime' });
-    const eventos: EventoHoy[] = [];
-    for (const ev of resp.data.items || []) {
-      if (ev.status === 'cancelled' || ev.transparency === 'transparent') continue;
-      if ((ev.summary || '').startsWith('[Tiusdei]')) continue;
-      const yo = (ev.attendees || []).find((a) => a.self);
-      if (yo && yo.responseStatus === 'declined') continue;
-      const s = ev.start?.dateTime, e = ev.end?.dateTime;
-      if (!s || !e) continue;
-      const dur = Math.round((new Date(e).getTime() - new Date(s).getTime()) / 60000);
-      if (dur <= 0 || dur > 12 * 60) continue; // eventos de más de 12 h no son reuniones
-      eventos.push({ summary: ev.summary || '(Sin título)', start: s, end: e, duration_min: dur });
-    }
-    cacheRango.set(key, { at: Date.now(), eventos });
-    return eventos;
-  } catch (e) {
-    console.error(`[REUNIONES rango] ${userId}:`, (e as Error).message);
-    return c?.eventos ?? [];
-  }
+  return leerReuniones(userId, desde.toISOString(), new Date(`${hoy}T23:59:59-05:00`).toISOString(), 10 * 60 * 1000, 2500, 12 * 60);
+}
+const diaEcuador = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso));
+
+async function conGoogle(userIds: string[]): Promise<Set<string>> {
+  if (!userIds.length) return new Set();
+  const tokens = await query<{ user_id: string }[]>(`SELECT user_id FROM google_tokens WHERE user_id IN (${userIds.map(() => '?').join(',')})`, userIds);
+  return new Set(tokens.map((t) => t.user_id));
 }
 
+/** Reuniones que cuentan, en segundos por día (calendario Ecuador), de los últimos N días. */
 export async function reunionesPorDia(userIds: string[], dias: number): Promise<Map<string, Record<string, number>>> {
   const out = new Map<string, Record<string, number>>();
   if (!userIds.length) return out;
-  const ph = userIds.map(() => '?').join(',');
-  const tokens = await query<{ user_id: string }[]>(`SELECT user_id FROM google_tokens WHERE user_id IN (${ph})`, userIds);
-  const conectados = new Set(tokens.map((t) => t.user_id));
+  const conectados = await conGoogle(userIds);
+  const ids = userIds.filter((u) => conectados.has(u));
   const ahoraMs = Date.now();
-  const jor = await jornadas(userIds.filter((u) => conectados.has(u)), ahoraMs - (dias + 1) * 86400000);
-  await Promise.all(userIds.map(async (uid) => {
-    if (!conectados.has(uid)) return;
+  const desdeMs = ahoraMs - (dias + 1) * 86400000;
+  const [jor, timer] = await Promise.all([jornadas(ids, desdeMs), tiempoConTimer(ids, desdeMs)]);
+  await Promise.all(ids.map(async (uid) => {
     const eventos = await eventosRango(uid, dias);
     if (!eventos) return;
-    // Transcurridas, sin duplicar las que se pisan, y solo dentro de la jornada marcada
+    // Transcurridas, sin duplicar las que se pisan, dentro de la jornada y sin el tiempo con timer
     const reun = unir(eventos.map((ev) => [new Date(ev.start).getTime(), Math.min(new Date(ev.end).getTime(), ahoraMs)] as Intervalo));
-    const cuentan = intersectar(reun, jor.get(uid) || []);
+    const cuentan = restar(intersectar(reun, jor.get(uid) || []), timer.get(uid) || []);
     const porDia: Record<string, number> = {};
     for (const [a, b] of cuentan) {
       const dia = diaEcuador(new Date(a).toISOString());
@@ -187,12 +214,11 @@ export async function reunionesPorDia(userIds: string[], dias: number): Promise<
 export async function reunionesDeHoy(userIds: string[]): Promise<Map<string, ReunionesUsuario>> {
   const out = new Map<string, ReunionesUsuario>();
   if (!userIds.length) return out;
-  const ph = userIds.map(() => '?').join(',');
-  const tokens = await query<{ user_id: string }[]>(`SELECT user_id FROM google_tokens WHERE user_id IN (${ph})`, userIds);
-  const conectados = new Set(tokens.map((t) => t.user_id));
+  const conectados = await conGoogle(userIds);
   const ahoraMs = Date.now();
   const inicioHoy = new Date(`${new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date())}T00:00:00-05:00`).getTime();
-  const jor = await jornadas(userIds.filter((u) => conectados.has(u)), inicioHoy);
+  const ids = userIds.filter((u) => conectados.has(u));
+  const [jor, timer] = await Promise.all([jornadas(ids, inicioHoy), tiempoConTimer(ids, inicioHoy)]);
   await Promise.all(userIds.map(async (uid) => {
     const vacio: ReunionesUsuario = { conectado: false, eventos: [], ahora: null, hoy_seg: 0, hasta_ahora_seg: 0, fuera_jornada_seg: 0 };
     if (!conectados.has(uid)) { out.set(uid, vacio); return; }
@@ -205,15 +231,58 @@ export async function reunionesDeHoy(userIds: string[]): Promise<Map<string, Reu
     }
     const agendado = unir(eventos.map((ev) => [new Date(ev.start).getTime(), new Date(ev.end).getTime()] as Intervalo));
     const transcurrido = intersectar(agendado, [[inicioHoy, ahoraMs]]);
-    const cuenta = sumarSeg(intersectar(transcurrido, (jor.get(uid) || []).filter(([, b]) => b > inicioHoy)));
+    const enJornada = intersectar(transcurrido, (jor.get(uid) || []).filter(([, b]) => b > inicioHoy));
+    const cuenta = sumarSeg(restar(enJornada, timer.get(uid) || []));
     out.set(uid, {
       conectado: true, eventos, ahora,
       hoy_seg: Math.round(sumarSeg(agendado)),
       hasta_ahora_seg: Math.round(cuenta),
-      fuera_jornada_seg: Math.round(Math.max(0, sumarSeg(transcurrido) - cuenta)),
+      fuera_jornada_seg: Math.round(Math.max(0, sumarSeg(transcurrido) - sumarSeg(enJornada))),
     });
   }));
   return out;
+}
+
+export interface ReunionContada { summary: string; seg: number }
+export interface ReunionesRango {
+  porPersona: Map<string, ReunionContada[]>;  // solo quienes se pudieron leer
+  sinAcceso: Map<string, string>;             // user_id → motivo
+  sinConectar: string[];                      // nunca conectaron Google
+}
+/**
+ * Reuniones que cuentan entre dos instantes, evento por evento (para repartirlas
+ * por marca). Cada segundo se asigna a una sola reunión: si dos se pisan, el
+ * tramo compartido va a la que empezó antes.
+ */
+export async function reunionesEntre(userIds: string[], desdeMs: number, hastaMs: number): Promise<ReunionesRango> {
+  const res: ReunionesRango = { porPersona: new Map(), sinAcceso: new Map(), sinConectar: [] };
+  if (!userIds.length) return res;
+  const conectados = await conGoogle(userIds);
+  res.sinConectar = userIds.filter((u) => !conectados.has(u));
+  const ids = userIds.filter((u) => conectados.has(u));
+  const fin = Math.min(hastaMs, Date.now());
+  if (fin <= desdeMs) return res;
+  const [jor, timer] = await Promise.all([jornadas(ids, desdeMs), tiempoConTimer(ids, desdeMs)]);
+  // Meses cerrados casi no cambian: caché de 1 h; el rango que incluye hoy, 10 min
+  const ttl = hastaMs < Date.now() ? 3600_000 : 10 * 60 * 1000;
+  const timeMin = new Date(desdeMs).toISOString(), timeMax = new Date(hastaMs).toISOString();
+  await Promise.all(ids.map(async (uid) => {
+    const eventos = await leerReuniones(uid, timeMin, timeMax, ttl, 2500, 12 * 60);
+    if (!eventos) { res.sinAcceso.set(uid, motivoSinAcceso(uid) || 'sin acceso al calendario'); return; }
+    const validos = intersectar(jor.get(uid) || [], [[desdeMs, fin]]);
+    const sinTimer = restar(validos, timer.get(uid) || []);
+    let ocupado: Intervalo[] = [];
+    const lista: ReunionContada[] = [];
+    for (const ev of [...eventos].sort((a, b) => a.start.localeCompare(b.start))) {
+      const iv = restar(intersectar([[new Date(ev.start).getTime(), new Date(ev.end).getTime()]], sinTimer), ocupado);
+      const seg = sumarSeg(iv);
+      if (seg <= 0) continue;
+      ocupado = unir([...ocupado, ...iv]);
+      lista.push({ summary: ev.summary, seg });
+    }
+    res.porPersona.set(uid, lista);
+  }));
+  return res;
 }
 
 // Ingreso tarde: primer ingreso del día después de `asistencia_hora_limite`

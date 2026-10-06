@@ -386,7 +386,7 @@ export default function EquipoDev() {
 
                 <div className={cn('flex items-start gap-1.5 text-xs', estadoAhora.cls)}>{estadoAhora.icon}<span className="leading-snug">{estadoAhora.texto}</span></div>
 
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground -mb-2" title="Tiempo con timer en tareas + reuniones del calendario. Es lo que ya trabajó, no lo que tiene disponible.">Horas trabajadas (timer + reuniones)</div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground -mb-2" title="Tiempo con timer en tareas + reuniones del calendario que aceptó u organizó (sin contar dos veces el tiempo con timer). Es lo que ya trabajó, no lo que tiene disponible.">Horas trabajadas (timer + reuniones)</div>
 
                 <div className="grid grid-cols-4 gap-1 text-center">
                   {[['Hoy', m.horas.hoy, 'Trabajado hoy'], ['Esta semana', m.horas.semana, 'Trabajado desde el lunes'], ['Últimos 30 días', m.horas.ult30, 'Trabajado en los últimos 30 días (no es lo disponible)'], ['Promedio/sem', m.horas.ritmo_semanal, 'Promedio semanal de las 4 semanas completas anteriores']].map(([l, v, tip]) => (

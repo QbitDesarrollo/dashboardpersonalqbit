@@ -401,7 +401,7 @@ export default function EquipoMesa() {
                 <div className="text-xs text-muted-foreground mt-3 pt-3 border-t space-y-1">
                   <div className="flex gap-2 items-start"><span className="font-medium text-amber-600 dark:text-amber-400 shrink-0">Al tope hoy (&gt;85 % de utilización):</span><Lista ms={alTope} /></div>
                   <div className="flex gap-2 items-start"><span className="font-medium text-amber-600 dark:text-amber-400 shrink-0">Ingreso tarde hoy (después de las {data.hora_limite_ingreso ?? '09:15'}):</span>{tardes.length ? <span className="text-foreground">{tardes.map((m) => `${m.nombre.split(' ')[0]} (${fmtHora(m.primer_ingreso)})`).join(', ')}</span> : <span className="text-muted-foreground">nadie</span>}</div>
-                  <div>Utilización de la mesa hoy: <span className={cn('font-semibold', utilCls(utilizacionMesa))}>{utilizacionMesa} %</span> · promedio de {conUtilizacion.length} personas con ingreso. Utilización = (tiempo con timer + reuniones del calendario) ÷ tiempo conectado, sin almuerzo. Las reuniones solo cuentan dentro de la jornada marcada (después del ingreso y fuera del almuerzo). Verde 40–85 %, ámbar más de 85 % (al tope), rojo menos de 40 %.</div>
+                  <div>Utilización de la mesa hoy: <span className={cn('font-semibold', utilCls(utilizacionMesa))}>{utilizacionMesa} %</span> · promedio de {conUtilizacion.length} personas con ingreso. Utilización = (tiempo con timer + reuniones del calendario) ÷ tiempo conectado, sin almuerzo. Reuniones: solo las que la persona aceptó u organizó (con invitados o videollamada), dentro de la jornada marcada y sin el tiempo en que tenía el timer corriendo. Verde 40–85 %, ámbar más de 85 % (al tope), rojo menos de 40 %.</div>
                 </div>
               )}
             </CardContent>
@@ -490,13 +490,13 @@ export default function EquipoMesa() {
                     <div className={cn('flex items-start gap-1.5 text-xs', estadoAhora.cls)}>{estadoAhora.icon}<span className="leading-snug">{estadoAhora.texto}</span></div>
                     {m.ingreso_tarde && <div className="text-[11px] text-amber-700 dark:text-amber-400">⚠ Marcó ingreso tarde: {fmtHora(m.primer_ingreso)} (límite {data.hora_limite_ingreso ?? '09:15'})</div>}
                     {(m.utilizacion_hoy_pct != null || (m.horas.reuniones_hoy_total ?? 0) > 0) && (
-                      <div className="text-[11px] text-muted-foreground" title="Utilización = (tiempo con timer + reuniones del calendario) ÷ tiempo conectado hoy, sin almuerzo. Las reuniones solo cuentan dentro de la jornada marcada. Más de 85 % = al tope.">
+                      <div className="text-[11px] text-muted-foreground" title="Utilización = (tiempo con timer + reuniones del calendario) ÷ tiempo conectado hoy, sin almuerzo. Solo cuentan reuniones aceptadas u organizadas, dentro de la jornada marcada y sin el tiempo con timer. Más de 85 % = al tope.">
                         {m.utilizacion_hoy_pct != null && <>Utilización hoy: <span className={cn('font-semibold', utilCls(m.utilizacion_hoy_pct))}>{m.utilizacion_hoy_pct} %{m.utilizacion_hoy_pct > 85 ? ' ⚠' : ''}</span> ({fmtH(m.horas.hoy)} de {fmtH((m.asistencia_hoy_seg ?? 0) / 3600)} conectado: timer {fmtH(m.horas.timer_hoy ?? m.horas.hoy)} + reuniones {fmtH(m.horas.reuniones_hoy ?? 0)})</>}
                         {(m.horas.reuniones_hoy_total ?? 0) > 0 && <>{m.utilizacion_hoy_pct != null ? ' · ' : ''}Reuniones agendadas hoy: {fmtH(m.horas.reuniones_hoy_total ?? 0)}{m.reuniones_hoy ? ` (${m.reuniones_hoy})` : ''}</>}
                         {!m.calendario_conectado && <>{' · '}<span title="Sin Google Calendar conectado: las reuniones no se cuentan">sin calendario</span></>}
                       </div>
                     )}
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground -mb-2" title="Tiempo con timer en tareas + reuniones del calendario. Es lo que ya trabajó, no lo que tiene disponible.">Horas trabajadas (timer + reuniones)</div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground -mb-2" title="Tiempo con timer en tareas + reuniones del calendario que aceptó u organizó (sin contar dos veces el tiempo con timer). Es lo que ya trabajó, no lo que tiene disponible.">Horas trabajadas (timer + reuniones)</div>
                     <div className="grid grid-cols-4 gap-1 text-center">
                       {[['Hoy', m.horas.hoy, 'Trabajado hoy'], ['Esta semana', m.horas.semana, 'Trabajado desde el lunes'], ['Últimos 30 días', m.horas.ult30, 'Trabajado en los últimos 30 días (no es lo disponible)'], ['Promedio/sem', m.horas.ritmo_semanal, 'Promedio semanal de las 4 semanas completas anteriores']].map(([l, v, tip]) => (
                         <div key={l as string} className="rounded-md bg-muted/50 py-1.5" title={tip as string}>
