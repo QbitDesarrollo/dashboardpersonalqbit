@@ -9,6 +9,7 @@ import { CamposAdjuntos } from './CamposAdjuntos';
 import { CamposEntregables } from './CamposEntregables';
 import { CamposPlanificacion } from './CamposPlanificacion';
 import { CamposPrincipales } from './CamposPrincipales';
+import { AvisoDuplicadas } from './AvisoDuplicadas';
 import { actualizarTarea, crearTarea } from './guardarTarea';
 import { useCatalogosTarea } from './useCatalogosTarea';
 import { useTareaForm } from './useTareaForm';
@@ -91,6 +92,7 @@ function FormularioTarea({ tarea, prellenado, mesaPorDefecto, puedeEditarArchivo
       <form onSubmit={enviar} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <CamposPrincipales form={form} catalogos={catalogos} />
+          {!tarea && <AvisoDuplicadas titulo={form.valores.titulo_tarea} brandId={form.valores.brand_id} />}
           <CamposEntregables form={form} tipos={catalogos.deliverableTypes} />
           <CamposPlanificacion form={form} tipos={catalogos.deliverableTypes} conFechaCliente={conFechaCliente} />
           <CamposAdjuntos form={form} taskId={tarea?.id} puedeEditarArchivos={puedeEditarArchivos} />

@@ -693,7 +693,9 @@ export default function Tasks() {
     const matchesBrand = filterBrand === 'all' || task.brand_id === filterBrand;
     // Confiamos en el backend: si pidió mesa, ya devolvió solo tareas de esa mesa (t.desk_id)
     const matchesDesk = true;
-    const matchesPinnedDesk = !pinnedDeskId || task.desk_id === pinnedDeskId;
+    // Mesa-departamento (Planning, Creatividad...): también sus tareas en otras mesas
+    const deptoPinned = pinnedDeskId ? (desks.find((d) => d.id === pinnedDeskId) as { department_id?: string | null } | undefined)?.department_id : null;
+    const matchesPinnedDesk = !pinnedDeskId || task.desk_id === pinnedDeskId || (!!deptoPinned && task.department_id === deptoPinned);
     const matchesPinnedBrand = !pinnedBrandId || task.brand_id === pinnedBrandId;
     const matchesFolder = (() => {
       if (filterFolder === 'all') return true;

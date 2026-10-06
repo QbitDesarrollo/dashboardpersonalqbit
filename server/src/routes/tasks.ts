@@ -175,8 +175,12 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
       // tareas de los miembros de la mesa en otras mesas; con mesas de 30+
       // personas eso devolvia 2/3 de todas las tareas y el frontend (que filtra
       // por t.desk_id) mostraba paginas vacias.
-      extraConditions += ' AND t.desk_id = ?';
-      extraParams.push(deskIdFilter);
+      // Mesas que son de un departamento (Planning, Creatividad, Desarrollo):
+      // también traen las tareas de ese departamento aunque vivan en la mesa de
+      // la marca (pedido de Steven, 5-oct: así el planner ve la tarea que le creó
+      // la ejecutiva y no la duplica).
+      extraConditions += ' AND (t.desk_id = ? OR t.department_id = (SELECT dk.department_id FROM desks dk WHERE dk.id = ?))';
+      extraParams.push(deskIdFilter, deskIdFilter);
     }
     if (responsableFilter) {
       extraConditions += ' AND (t.responsable_user_id = ? OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?))';
@@ -222,11 +226,13 @@ tasksRouter.get('/tasks', requireAuth, async (req: AuthRequest, res) => {
       const deskIds = deskRows.map((r) => r.desk_id);
       // FIX: incluir también tareas donde el usuario es co-responsable (task_responsables)
       const coRespCondition = ' OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?) OR t.id IN (SELECT task_id FROM task_seguidores WHERE user_id = ?)';
+      // + tareas del departamento de sus mesas-departamento (Planning, Creatividad...)
+      const deskPh = deskIds.map(() => '?').join(',');
       const where = deskIds.length > 0
-        ? ` WHERE ((t.desk_id IN (${deskIds.map(() => '?').join(',')})) OR t.responsable_user_id = ?${coRespCondition})${noSubtasksCondition}${sprintCondition}${extraConditions}`
+        ? ` WHERE ((t.desk_id IN (${deskPh})) OR t.department_id IN (SELECT dk.department_id FROM desks dk WHERE dk.id IN (${deskPh}) AND dk.department_id IS NOT NULL) OR t.responsable_user_id = ?${coRespCondition})${noSubtasksCondition}${sprintCondition}${extraConditions}`
         : ` WHERE (t.responsable_user_id = ?${coRespCondition})${noSubtasksCondition}${sprintCondition}${extraConditions}`;
-      countParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams] : [req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams];
-      listParams = deskIds.length > 0 ? [...deskIds, req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)] : [req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)];
+      countParams = deskIds.length > 0 ? [...deskIds, ...deskIds, req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams] : [req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams];
+      listParams = deskIds.length > 0 ? [...deskIds, ...deskIds, req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)] : [req.userId!, req.userId!, req.userId!, ...sprintParam, ...extraParams, String(limit), String(offset)];
       countSql = `SELECT COUNT(*) as total ${baseFrom}${where}`;
       listSql = `${baseSelect}${where}${orderBy} LIMIT ? OFFSET ?`;
     } else {
@@ -367,6 +373,65 @@ tasksRouter.get("/tasks/active-timer", requireAuth, async (req: AuthRequest, res
 });
 
 // GET single task by ID (for deep-linking from emails / daily)
+// Tareas abiertas parecidas a un título (misma marca), para avisar antes de crear
+// una duplicada (pedido de Steven, 5-oct: la ejecutiva y el planner creaban la misma).
+const PALABRAS_VACIAS = new Set(['para', 'por', 'con', 'del', 'las', 'los', 'una', 'uno', 'que', 'sus', 'mas', 'sin', 'the', 'and', 'tarea', 'post', 'posts']);
+function palabrasTitulo(t: string): Set<string> {
+  const norm = String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9ñ ]+/g, ' ');
+  return new Set(norm.split(/\s+/).filter((w) => w.length >= 3 && !PALABRAS_VACIAS.has(w)));
+}
+tasksRouter.get('/tasks/similares', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const role = await getUserRole(req.userId!);
+    if (role === 'cliente') return res.status(403).json({ error: 'Sin permisos' });
+    const titulo = String(req.query.titulo || '').slice(0, 300);
+    const brandId = typeof req.query.brand_id === 'string' ? req.query.brand_id : '';
+    const excluir = typeof req.query.excluir_id === 'string' ? req.query.excluir_id : '';
+    // Las palabras del nombre de la marca no cuentan ("Catálogo Alba del Bosque" no se parece
+    // a "Salesforce | Alba de Bosque" solo por la marca)
+    const marca = brandId ? await queryOne<{ nombre: string }>('SELECT nombre FROM brands WHERE id = ?', [brandId]) : null;
+    const deMarca = palabrasTitulo(marca?.nombre || '');
+    const sinMarca = (ws: Set<string>) => new Set([...ws].filter((w) => !deMarca.has(w)));
+    const buscadas = sinMarca(palabrasTitulo(titulo));
+    if (!brandId || buscadas.size === 0) return res.json({ similares: [] });
+    const candidatas = await query<any[]>(
+      `SELECT t.id, t.titulo_tarea, t.estado, DATE_FORMAT(t.fecha_entrega, '%Y-%m-%d') AS fecha_entrega,
+              p.nombre AS responsable, dep.nombre AS departamento, d.nombre AS mesa, cb.nombre AS creada_por
+       FROM tasks t
+       LEFT JOIN profiles p ON p.id = t.responsable_user_id
+       LEFT JOIN departments dep ON dep.id = t.department_id
+       LEFT JOIN desks d ON d.id = t.desk_id
+       LEFT JOIN profiles cb ON cb.id = t.created_by
+       WHERE t.brand_id = ? AND t.estado NOT IN ('entregado','aprobado')
+         AND (t.parent_task_id IS NULL OR t.parent_task_id = '')
+         AND t.created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) AND t.id <> ?
+       ORDER BY t.created_at DESC LIMIT 400`,
+      [brandId, excluir],
+    );
+    const similares = candidatas
+      .map((c) => {
+        const suyas = sinMarca(palabrasTitulo(c.titulo_tarea));
+        let comunes = 0;
+        for (const w of buscadas) if (suyas.has(w)) comunes++;
+        // Coincidencia sobre el título más corto: "Planner octubre" ~ "Planner de contenidos octubre"
+        const score = comunes / Math.max(1, Math.min(buscadas.size, suyas.size));
+        return { ...c, responsable: c.responsable ? String(c.responsable).trim() : null, comunes, score };
+      })
+      .filter((c) => c.comunes >= Math.min(2, buscadas.size) && c.score >= 0.6)
+      .sort((a, b) => b.score - a.score || b.comunes - a.comunes)
+      .slice(0, 5)
+      .map((c) => ({
+        id: c.id, titulo_tarea: c.titulo_tarea, estado: c.estado, fecha_entrega: c.fecha_entrega,
+        responsable: c.responsable, departamento: c.departamento, mesa: c.mesa,
+        creada_por: c.creada_por ? String(c.creada_por).trim() : null, parecido: Math.round(c.score * 100),
+      }));
+    res.json({ similares });
+  } catch (e) {
+    console.error('[TASKS] similares:', e);
+    res.status(500).json({ error: 'Error al buscar tareas parecidas' });
+  }
+});
+
 tasksRouter.get('/tasks/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
     const taskId = req.params.id;

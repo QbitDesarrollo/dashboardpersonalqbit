@@ -99,6 +99,7 @@ interface TaskRow {
   desk_nombre: string | null;
   reagendada: number;
   minutos_por_tipo: string | number | null;
+  bloqueado_desde: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -177,6 +178,10 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
                   (SELECT dt2.minutos_estimados * GREATEST(1, COALESCE(t.cantidad_entregables, 1))
                     FROM deliverable_types dt2 WHERE dt2.id = t.tipo_entregable_id AND dt2.minutos_estimados > 0)
                 ) AS minutos_por_tipo,
+                CASE WHEN t.estado = 'bloqueado' THEN
+                  (SELECT MAX(al.created_at) FROM activity_log al
+                    WHERE al.entity_type = 'task' AND al.entity_id = t.id AND al.field_name = 'estado' AND al.new_value = 'bloqueado')
+                END AS bloqueado_desde,
                 t.created_at, t.updated_at
          FROM tasks t
          LEFT JOIN brands b ON b.id = t.brand_id
@@ -222,6 +227,10 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
       const responsables = Array.from(set);
       const est = Number(t.estimated_hours || 0);
       const porTipo = Number(t.minutos_por_tipo || 0) / 60;
+      // Bloqueada (esperando al cliente u otra área): no es atraso del equipo ni
+      // carga de esta semana; se muestra aparte con los días que lleva así.
+      const bloqueada = t.estado === 'bloqueado';
+      const bloqueadaDesde = bloqueada ? (t.bloqueado_desde ?? t.updated_at) : null;
       return {
         id: t.id,
         titulo: t.titulo_tarea,
@@ -245,7 +254,9 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
         marca: t.brand_nombre,
         mesa: t.desk_nombre,
         abierta: !ESTADOS_CERRADOS.has(t.estado),
-        vencida: !ESTADOS_CERRADOS.has(t.estado) && !!t.fecha_entrega && t.fecha_entrega < hoy,
+        vencida: !ESTADOS_CERRADOS.has(t.estado) && !bloqueada && !!t.fecha_entrega && t.fecha_entrega < hoy,
+        bloqueada,
+        bloqueada_dias: bloqueadaDesde ? Math.max(0, Math.floor((Date.now() - new Date(bloqueadaDesde).getTime()) / 86400000)) : null,
         created_at: t.created_at,
         updated_at: t.updated_at,
       };
@@ -289,6 +300,7 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
       // Carga por semana (horas restantes de cada tarea abierta, repartidas entre responsables)
       const semanas = semanasAdelante.map((inicio) => ({ inicio, horas: 0, tareas: 0, capacidad: cap, pct: 0 }));
       let vencidasH = 0, vencidasN = 0, sinFechaH = 0, sinFechaN = 0, despuesH = 0, despuesN = 0;
+      let bloqueadasH = 0, bloqueadasN = 0, bloqueadasDiasMax = 0, bloqueadasDiasSum = 0;
       let comprometidas = 0, estimadasExplicitas = 0;
       for (const t of abiertas) {
         const conocidas = t.estimado_h ?? t.estimado_tipo_h;
@@ -296,6 +308,13 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
         const horas = conocidas ?? (opts.sinEstimar === 'cero' ? 0 : defecto);
         // Sin horas conocidas en la vista por mesa: la tarea se cuenta, pero sin sumar horas
         const restante = (horas > 0 ? Math.max(0.25, horas - t.trabajado_h) : 0) / Math.max(1, t.responsables.length);
+        // Las bloqueadas no se pueden trabajar hoy: van aparte, fuera de la carga y de las vencidas
+        if (t.bloqueada) {
+          bloqueadasH += restante; bloqueadasN += 1;
+          bloqueadasDiasMax = Math.max(bloqueadasDiasMax, t.bloqueada_dias ?? 0);
+          bloqueadasDiasSum += t.bloqueada_dias ?? 0;
+          continue;
+        }
         comprometidas += restante;
         if (!t.fecha_entrega) { sinFechaH += restante; sinFechaN += 1; continue; }
         if (t.fecha_entrega < hoy) { vencidasH += restante; vencidasN += 1; continue; }
@@ -413,7 +432,7 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
           vence_proxima_semana: abiertas.filter((t) => t.fecha_entrega && t.fecha_entrega > finSemana && t.fecha_entrega <= finProxima).length,
           sin_fecha: sinFechaN,
           sin_estimar: abiertas.length - estimadasExplicitas,
-          bloqueadas: abiertas.filter((t) => t.estado === 'bloqueado').length,
+          bloqueadas: bloqueadasN,
           en_proceso: abiertas.filter((t) => t.estado === 'en_proceso').length,
           reagendadas: abiertas.filter((t) => t.reagendada > 0).length,
           con_ajustes: abiertas.filter((t) => t.ajustes > 0).length,
@@ -425,6 +444,7 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
           semanas_para_vaciar: cap > 0 ? r1(comprometidas / cap) : null,
           semanas_a_ritmo_real: ritmo > 0 ? r1(comprometidas / ritmo) : null,
           vencidas: { horas: r1(vencidasH), tareas: vencidasN },
+          bloqueadas: { horas: r1(bloqueadasH), tareas: bloqueadasN, dias_max: bloqueadasDiasMax, dias_promedio: bloqueadasN ? Math.round(bloqueadasDiasSum / bloqueadasN) : 0 },
           sin_fecha: { horas: r1(sinFechaH), tareas: sinFechaN },
           despues: { horas: r1(despuesH), tareas: despuesN },
           semanas,
@@ -443,6 +463,7 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
     const ritmoEquipo = r1(base.reduce((a, m) => a + m.horas.ritmo_semanal, 0));
     const abiertasEquipo = base.reduce((a, m) => a + m.conteos.abiertas, 0);
     const sinEstimarEquipo = base.reduce((a, m) => a + m.conteos.sin_estimar, 0);
+    const bloqueadasEquipo = { tareas: base.reduce((a, m) => a + m.carga.bloqueadas.tareas, 0), horas: r1(base.reduce((a, m) => a + m.carga.bloqueadas.horas, 0)) };
     let deficit4 = 0;
     for (const m of base) for (const s of m.carga.semanas.slice(0, 4)) deficit4 += Math.max(0, s.horas - s.capacidad);
     const faltantesSemana = r1(deficit4 / 4);
@@ -497,6 +518,7 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
         tareas_abiertas: abiertasEquipo,
         sin_estimar: sinEstimarEquipo,
         pct_sin_estimar: abiertasEquipo ? Math.round((sinEstimarEquipo / abiertasEquipo) * 100) : 0,
+        bloqueadas: bloqueadasEquipo,
         saturados,
         veredicto,
       },

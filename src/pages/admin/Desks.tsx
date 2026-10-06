@@ -38,6 +38,8 @@ interface Desk {
   id: string;
   nombre: string;
   activo: boolean;
+  /** Mesa que es canal de un departamento: en Tareas muestra también las de ese departamento. */
+  department_id?: string | null;
 }
 
 interface Profile {
@@ -77,6 +79,9 @@ export default function AdminDesks() {
     nombre: '',
     activo: true,
   });
+  const [departments, setDepartments] = useState<{ id: string; nombre: string }[]>([]);
+  const [deptoForm, setDeptoForm] = useState<string>('none');
+  const nombreDepto = (id?: string | null) => (id ? departments.find((d) => d.id === id)?.nombre : undefined);
 
   useEffect(() => {
     fetchDesks();
@@ -84,8 +89,9 @@ export default function AdminDesks() {
 
   const fetchDesks = async () => {
     try {
-      const [data, users, brands] = await Promise.all([api.getDesks(), api.getProfiles(), api.getBrands()]);
+      const [data, users, brands, deps] = await Promise.all([api.getDesks(), api.getProfiles(), api.getBrands(), api.getDepartments().catch(() => [])]);
       if (Array.isArray(data)) setDesks(data);
+      if (Array.isArray(deps)) setDepartments(deps);
       if (Array.isArray(users)) setAllUsers(users);
       if (Array.isArray(brands)) setAllBrands(brands);
     } catch (error) {
@@ -226,13 +232,16 @@ export default function AdminDesks() {
     setSaving(true);
 
     try {
+      const depto = deptoForm === 'none' ? null : deptoForm;
       if (selectedDesk) {
         const result: any = await api.patchDesk(selectedDesk.id, formData);
         if (result?.error) throw new Error(result.error);
+        if ((selectedDesk.department_id ?? null) !== depto) await api.setDeskDepartment(selectedDesk.id, depto);
         toast.success('Mesa actualizada');
       } else {
         const result: any = await api.createDesk(formData);
         if (result?.error) throw new Error(result.error);
+        if (depto && result?.id) await api.setDeskDepartment(result.id, depto);
         toast.success('Mesa creada');
       }
 
@@ -248,12 +257,14 @@ export default function AdminDesks() {
 
   const resetForm = () => {
     setFormData({ nombre: '', activo: true });
+    setDeptoForm('none');
     setSelectedDesk(null);
   };
 
   const openEditDialog = (desk: Desk) => {
     setSelectedDesk(desk);
     setFormData({ nombre: desk.nombre, activo: desk.activo });
+    setDeptoForm(desk.department_id || 'none');
     setDialogOpen(true);
   };
 
@@ -300,6 +311,17 @@ export default function AdminDesks() {
                   required
                 />
               </div>
+              <div className="space-y-2">
+                <Label>Canal de departamento</Label>
+                <Select value={deptoForm} onValueChange={setDeptoForm}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Ninguno (mesa normal)</SelectItem>
+                    {departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.nombre}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Si eliges un departamento, al filtrar Tareas por esta mesa también salen las tareas de ese departamento que están en la mesa de la marca. Así el equipo ve la tarea que le crearon y no la duplica.</p>
+              </div>
               <div className="flex items-center justify-between">
                 <Label>Activa</Label>
                 <Switch
@@ -335,6 +357,7 @@ export default function AdminDesks() {
                 <div key={desk.id} className="p-4 flex items-center justify-between">
                   <div className="space-y-1">
                     <span className="font-medium">{desk.nombre}</span>
+                    {nombreDepto(desk.department_id) && <div className="text-[11px] text-muted-foreground">Canal: {nombreDepto(desk.department_id)}</div>}
                     <div>
                       <Badge variant={desk.activo ? "default" : "secondary"}>
                         {desk.activo ? 'Activa' : 'Inactiva'}
@@ -375,7 +398,7 @@ export default function AdminDesks() {
                 ) : (
                   desks.map((desk) => (
                     <TableRow key={desk.id} className="border-border hover:bg-muted/50">
-                      <TableCell className="font-medium">{desk.nombre}</TableCell>
+                      <TableCell className="font-medium">{desk.nombre}{nombreDepto(desk.department_id) && <Badge variant="outline" className="ml-2 text-[10px] font-normal" title="Muestra también las tareas de este departamento">Canal: {nombreDepto(desk.department_id)}</Badge>}</TableCell>
                       <TableCell>
                         <Badge variant={desk.activo ? "default" : "secondary"}>
                           {desk.activo ? 'Activa' : 'Inactiva'}

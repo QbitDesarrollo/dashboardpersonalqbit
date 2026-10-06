@@ -47,7 +47,7 @@ interface Miembro {
   };
   carga: {
     horas_comprometidas: number; horas_defecto_por_tarea: number; semanas_para_vaciar: number | null; semanas_a_ritmo_real: number | null;
-    vencidas: { horas: number; tareas: number }; sin_fecha: { horas: number; tareas: number }; despues: { horas: number; tareas: number };
+    vencidas: { horas: number; tareas: number }; bloqueadas?: { horas: number; tareas: number; dias_max: number; dias_promedio: number }; sin_fecha: { horas: number; tareas: number }; despues: { horas: number; tareas: number };
     semanas: Semana[];
   };
 }
@@ -55,7 +55,7 @@ interface Tarea {
   id: string; titulo: string; estado: string; prioridad: string; fecha_inicio: string | null; fecha_entrega: string | null;
   estimado_h: number | null; estimado_tipo_h?: number | null; trabajado_h: number; responsable_user_id: string | null; responsables: string[]; miembros: string[];
   ajustes: number; reagendada: number; es_subtarea: boolean; timer_activo: boolean; departamento: string | null;
-  project_id: string | null; proyecto: string | null; marca: string | null; mesa: string | null; abierta: boolean; vencida: boolean;
+  project_id: string | null; proyecto: string | null; marca: string | null; mesa: string | null; abierta: boolean; vencida: boolean; bloqueada?: boolean; bloqueada_dias?: number | null;
   created_at: string; updated_at: string;
 }
 interface Proyecto {
@@ -67,7 +67,7 @@ interface Overview {
   equipo: {
     integrantes?: number; soporte?: number; capacidad_semana: number; capacidad_bruta: number; reservadas_semana: number; horas_comprometidas: number; ritmo_semanal_real: number; semanas_para_vaciar: number | null;
     semanas_a_ritmo_real: number | null; horas_faltantes_semana: number; personas_faltantes: number; tareas_abiertas: number;
-    sin_estimar: number; pct_sin_estimar: number; saturados: string[]; veredicto: 'ok' | 'al_limite' | 'contratar';
+    sin_estimar: number; pct_sin_estimar: number; bloqueadas?: { tareas: number; horas: number }; saturados: string[]; veredicto: 'ok' | 'al_limite' | 'contratar';
   };
   proyectos: Proyecto[]; tareas: Tarea[];
   candidatos: { id: string; nombre: string; rol: string; avatar_url?: string | null }[];
@@ -422,7 +422,7 @@ export default function EquipoMesa() {
                     <div><div className="text-muted-foreground text-xs">Capacidad para proyectos</div><div className="font-semibold text-lg">{eq.capacidad_semana} h/sem</div>
                       <div className="text-xs text-muted-foreground">{eq.reservadas_semana > 0 ? `${eq.capacidad_bruta} h − ${eq.reservadas_semana} h reservadas` : `${miembros.length} personas`}</div></div>
                     <div><div className="text-muted-foreground text-xs">Horas comprometidas (abiertas)</div><div className="font-semibold text-lg">{fmtH(eq.horas_comprometidas)}</div>
-                      <div className="text-xs text-muted-foreground">{eq.tareas_abiertas} tareas abiertas</div></div>
+                      <div className="text-xs text-muted-foreground">{eq.tareas_abiertas} tareas abiertas{eq.bloqueadas?.tareas ? ` · ${eq.bloqueadas.tareas} bloqueadas van aparte (${fmtH(eq.bloqueadas.horas)})` : ''}</div></div>
                     <div><div className="text-muted-foreground text-xs">Semanas para vaciar la cola</div>
                       <div className="font-semibold text-lg">{eq.semanas_para_vaciar ?? '—'} <span className="text-xs font-normal text-muted-foreground">a capacidad plena</span></div>
                       <div className="text-xs text-muted-foreground">{eq.semanas_a_ritmo_real != null ? `${eq.semanas_a_ritmo_real} sem al ritmo real del timer (${fmtH(eq.ritmo_semanal_real)}/sem)` : 'sin ritmo real (no usan timer)'}</div></div>
@@ -496,9 +496,10 @@ export default function EquipoMesa() {
                         {!m.calendario_conectado && <>{' · '}<span title="Sin Google Calendar conectado: las reuniones no se cuentan">sin calendario</span></>}
                       </div>
                     )}
-                    <div className="grid grid-cols-4 gap-1 text-center" title="Horas trabajadas = timer + reuniones del calendario">
-                      {[['Hoy', m.horas.hoy], ['Semana', m.horas.semana], ['30 días', m.horas.ult30], ['Ritmo/sem', m.horas.ritmo_semanal]].map(([l, v]) => (
-                        <div key={l as string} className="rounded-md bg-muted/50 py-1.5">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground -mb-2" title="Tiempo con timer en tareas + reuniones del calendario. Es lo que ya trabajó, no lo que tiene disponible.">Horas trabajadas (timer + reuniones)</div>
+                    <div className="grid grid-cols-4 gap-1 text-center">
+                      {[['Hoy', m.horas.hoy, 'Trabajado hoy'], ['Esta semana', m.horas.semana, 'Trabajado desde el lunes'], ['Últimos 30 días', m.horas.ult30, 'Trabajado en los últimos 30 días (no es lo disponible)'], ['Promedio/sem', m.horas.ritmo_semanal, 'Promedio semanal de las 4 semanas completas anteriores']].map(([l, v, tip]) => (
+                        <div key={l as string} className="rounded-md bg-muted/50 py-1.5" title={tip as string}>
                           <div className="text-sm font-semibold">{fmtH(v as number)}</div>
                           <div className="text-[10px] text-muted-foreground">{l}</div>
                         </div>
@@ -507,14 +508,14 @@ export default function EquipoMesa() {
                     <div className="space-y-1.5">
                       {[s0, s1].filter(Boolean).map((s, i) => (
                         <div key={s.inicio} className="text-xs">
-                          <div className="flex justify-between mb-0.5"><span className="text-muted-foreground">{i === 0 ? 'Esta semana' : 'Próxima semana'}{i === 0 && k.vencidas.tareas > 0 ? ` (incluye ${k.vencidas.tareas} vencidas)` : ''}</span><span className="font-medium">{fmtH(s.horas)} / {s.capacidad}h · {s.pct}%</span></div>
+                          <div className="flex justify-between mb-0.5"><span className="text-muted-foreground">{i === 0 ? 'Pendiente esta semana' : 'Pendiente próxima semana'}{i === 0 && k.vencidas.tareas > 0 ? ` (incluye ${k.vencidas.tareas} vencidas)` : ''}</span><span className="font-medium">{fmtH(s.horas)} / {s.capacidad}h · {s.pct}%</span></div>
                           <div className="h-2 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, s.pct)}%`, background: colorCarga(s.pct) }} /></div>
                         </div>
                       ))}
                     </div>
                     <div className="flex flex-wrap gap-1.5 text-[11px]" title="Haz clic en un chip para ver esas tareas abajo">
                       {c.vencidas > 0 && <Badge variant="outline" className="border-rose-500/50 text-rose-600 dark:text-rose-400 gap-1 cursor-pointer hover:bg-rose-500/10" onClick={() => verTareas(m.id, 'vencidas')}><Flame className="h-3 w-3" />{c.vencidas} vencidas</Badge>}
-                      {c.bloqueadas > 0 && <Badge variant="outline" className="border-rose-500/50 text-rose-600 dark:text-rose-400 cursor-pointer hover:bg-rose-500/10" onClick={() => verTareas(m.id, 'bloqueadas')}>{c.bloqueadas} bloqueadas</Badge>}
+                      {c.bloqueadas > 0 && <Badge variant="outline" className="gap-1 border-slate-400/60 text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-muted" onClick={() => verTareas(m.id, 'bloqueadas')} title="Esperando al cliente u otra área: no cuentan en la carga ni como vencidas"><Lock className="h-3 w-3" />{c.bloqueadas} bloqueadas{k.bloqueadas?.dias_max ? ` · hasta ${k.bloqueadas.dias_max} d` : ''}</Badge>}
                       <Badge variant="outline" className="cursor-pointer hover:bg-muted" onClick={() => verTareas(m.id, 'en_proceso')}>{c.en_proceso} en proceso</Badge>
                       <Badge variant="outline" className="cursor-pointer hover:bg-muted" onClick={() => verTareas(m.id, 'semana')}>{c.vence_esta_semana} vencen esta sem.</Badge>
                       {c.sin_estimar > 0 && <Badge variant="outline" className="border-amber-500/50 text-amber-600 dark:text-amber-400 cursor-pointer hover:bg-amber-500/10" onClick={() => verTareas(m.id, 'sin_estimar')}>{c.sin_estimar} sin estimar</Badge>}
@@ -525,6 +526,7 @@ export default function EquipoMesa() {
                     <div className="text-xs text-muted-foreground border-t pt-2">
                       Cola: <span className="font-medium text-foreground">{fmtH(k.horas_comprometidas)}</span> → <span className={cn('font-medium', semVaciar > 4 ? 'text-rose-600 dark:text-rose-400' : semVaciar > 2 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{k.semanas_para_vaciar ?? '—'} sem</span> a capacidad plena
                       {k.semanas_a_ritmo_real != null && <> · <span className="font-medium text-foreground">{k.semanas_a_ritmo_real} sem</span> a su ritmo real</>}
+{(k.bloqueadas?.tareas ?? 0) > 0 && <div className="mt-1 flex items-center gap-1"><Lock className="h-3 w-3" />En espera: <span className="font-medium text-foreground">{fmtH(k.bloqueadas!.horas)}</span> en {k.bloqueadas!.tareas} bloqueadas (promedio {k.bloqueadas!.dias_promedio} d); no suman a la cola</div>}
                     </div>
                   </CardContent>
                 </Card>
@@ -694,7 +696,7 @@ export default function EquipoMesa() {
                         </div></TableCell>
                         <TableCell><span className={cn('text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap font-medium', ESTADO[t.estado]?.cls ?? 'bg-muted')}>{ESTADO[t.estado]?.label ?? t.estado}</span></TableCell>
                         <TableCell><span className={cn('text-[11px] font-medium', t.prioridad === 'alta' ? 'text-rose-600 dark:text-rose-400' : t.prioridad === 'media' ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground')}>{t.prioridad}</span></TableCell>
-                        <TableCell className={cn('whitespace-nowrap text-xs', t.vencida && 'text-rose-600 dark:text-rose-400 font-semibold')}>{fmtDM(t.fecha_entrega)}{t.vencida && ' ⚠'}</TableCell>
+                        <TableCell className={cn('whitespace-nowrap text-xs', t.vencida && 'text-rose-600 dark:text-rose-400 font-semibold')}>{fmtDM(t.fecha_entrega)}{t.vencida && ' ⚠'}{t.bloqueada && <span className="ml-1 text-muted-foreground font-normal" title="Bloqueada: no cuenta como vencida">🔒 {t.bloqueada_dias ?? 0} d</span>}</TableCell>
                         <TableCell className="text-right whitespace-nowrap text-xs">{t.estimado_h ? fmtH(t.estimado_h) : t.estimado_tipo_h ? <span title="Estimado estándar por tipo de entregable">~{fmtH(t.estimado_tipo_h)}</span> : <span className="text-amber-600 dark:text-amber-400">sin est.</span>} / {fmtH(t.trabajado_h)}</TableCell>
                         <TableCell><div className="flex gap-1 flex-wrap text-[10px] text-muted-foreground">
                           {t.timer_activo && <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5"><Play className="h-3 w-3" />timer</span>}

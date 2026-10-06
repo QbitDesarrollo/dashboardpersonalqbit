@@ -241,6 +241,19 @@ export async function createDesk(data: { nombre: string; activo?: boolean }) {
   return res.json();
 }
 
+export async function setDeskDepartment(id: string, department_id: string | null) {
+  const res = await request(`/api/data/desks/${id}/department`, { method: 'PATCH', body: JSON.stringify({ department_id }) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al guardar');
+  return res.json();
+}
+
+export async function getTareasSimilares(titulo: string, brandId: string, excluirId?: string) {
+  const qs = new URLSearchParams({ titulo, brand_id: brandId }); if (excluirId) qs.set('excluir_id', excluirId);
+  const res = await request(`/api/data/tasks/similares?${qs.toString()}`);
+  if (!res.ok) throw new Error('Error al buscar tareas parecidas');
+  return res.json();
+}
+
 export async function patchDesk(id: string, data: { nombre?: string; activo?: boolean }) {
   const res = await request(`/api/data/desks/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
   return res.json();
@@ -288,8 +301,8 @@ export async function setProfileDepartment(id: string, department_id: string | n
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al guardar');
   return res.json();
 }
-export async function getTiempoPorMarca(mes: string, deskId?: string) {
-  const qs = new URLSearchParams({ mes }); if (deskId) qs.set('desk_id', deskId);
+export async function getTiempoPorMarca(mes: string, deskId?: string, userId?: string) {
+  const qs = new URLSearchParams({ mes }); if (deskId) qs.set('desk_id', deskId); if (userId) qs.set('user_id', userId);
   const res = await request(`/api/data/metrics/tiempo-por-marca?${qs.toString()}`);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al cargar');
   return res.json();

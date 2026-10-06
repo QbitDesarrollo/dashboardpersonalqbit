@@ -9,9 +9,11 @@ import { reunionesDeHoy } from '../services/meetingsNow.js';
  *  1. "checkin":   quien no ha marcado ingreso a la hora configurada (una vez al día).
  *  2. "sin_tarea": quien está conectado (con ingreso, sin salida, no en almuerzo,
  *                  no en reunión del calendario) y lleva N minutos sin tarea activa.
- * Solo a los roles configurados (por defecto 'equipo': no a jefaturas) que sean
- * equipo directo de una mesa (integrante base, no soporte), en días hábiles y
- * dentro del horario. Además, un reporte diario de asistencia (sin ingreso e
+ * Solo a los roles configurados (por defecto 'equipo': no a jefaturas), en días
+ * hábiles y dentro del horario. "sin_tarea" va solo al equipo directo de una mesa
+ * (integrante base, no soporte). El de ingreso y el reporte de las 10:00 incluyen
+ * también al soporte de las mesas y a las personas de `recordatorio_checkin_extra_ids`
+ * aunque tengan otro rol (pedido de Steven, 29-sep: Carlos, Luis y Nicole olvidan marcar). Además, un reporte diario de asistencia (sin ingreso e
  * ingreso tarde) a `reporte_asistencia_ids` a las `reporte_asistencia_hora` (10:00).
  * Corre cada 10 min vía setInterval en index.ts.
  *
@@ -23,6 +25,8 @@ import { reunionesDeHoy } from '../services/meetingsNow.js';
  *  recordatorio_sin_tarea_min    '30'             minutos conectado sin tarea activa
  *  recordatorio_sin_tarea_max    '3'              máximo de avisos por persona al día
  *  recordatorio_horario          '09:00-18:00'    ventana Ecuador para "sin tarea"
+ *  recordatorio_checkin_soporte  '1'              el de ingreso también al soporte de las mesas
+ *  recordatorio_checkin_extra_ids ''              CSV de ids que reciben el de ingreso sin importar su rol
  */
 const TZ = 'America/Guayaquil';
 
@@ -60,6 +64,18 @@ async function registrar(userId: string, tipo: string, fecha: string): Promise<v
 // Solo el equipo directo de las mesas: integrante base (no soporte) de alguna mesa activa
 const EQUIPO_DIRECTO = `EXISTS (SELECT 1 FROM desk_members dm JOIN desks d ON d.id = dm.desk_id
   WHERE dm.user_id = p.id AND d.activo = 1 AND COALESCE(dm.es_soporte, 0) = 0)`;
+// Integrante de alguna mesa activa, base o soporte
+const DE_ALGUNA_MESA = `EXISTS (SELECT 1 FROM desk_members dm JOIN desks d ON d.id = dm.desk_id
+  WHERE dm.user_id = p.id AND d.activo = 1)`;
+
+// Quiénes deben marcar ingreso: condición SQL + parámetros (roles y extras)
+async function alcanceIngreso(roles: string[]): Promise<{ cond: string; params: string[] }> {
+  const conSoporte = (await setting('recordatorio_checkin_soporte', '1')) === '1';
+  const extras = (await setting('recordatorio_checkin_extra_ids', '')).split(',').map((s) => s.trim()).filter(Boolean);
+  const porRol = `(p.rol IN (${roles.map(() => '?').join(',')}) AND ${conSoporte ? DE_ALGUNA_MESA : EQUIPO_DIRECTO})`;
+  const cond = extras.length ? `(${porRol} OR p.id IN (${extras.map(() => '?').join(',')}))` : porRol;
+  return { cond, params: [...roles, ...extras] };
+}
 
 export async function runRecordatorios(): Promise<void> {
   try {
@@ -70,6 +86,7 @@ export async function runRecordatorios(): Promise<void> {
     const frontendUrl = process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
     const emailOk = !!(process.env.MAILGUN_API_KEY || process.env.SMTP_PASS);
     const ph = roles.map(() => '?').join(',');
+    const ingreso = await alcanceIngreso(roles);
 
     // ---- 0. Reporte diario de asistencia a jefatura (una vez al día, desde las 10:00) ----
     const horaReporte = aMinutos(await setting('reporte_asistencia_hora', '10:00'));
@@ -79,8 +96,8 @@ export async function runRecordatorios(): Promise<void> {
       const equipo = await query<{ id: string; nombre: string; check_in: Date | null }[]>(
         `SELECT p.id, p.nombre,
                 (SELECT MIN(a.check_in) FROM attendance a WHERE a.user_id = p.id AND DATE(CONVERT_TZ(a.check_in, '+00:00', '-05:00')) = ?) AS check_in
-         FROM profiles p WHERE p.activo = 1 AND p.rol IN (${ph}) AND ${EQUIPO_DIRECTO} ORDER BY p.nombre`,
-        [fecha, ...roles],
+         FROM profiles p WHERE p.activo = 1 AND ${ingreso.cond} ORDER BY p.nombre`,
+        [fecha, ...ingreso.params],
       );
       const hhmm = (d: Date) => new Intl.DateTimeFormat('es-EC', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(d));
       const sinIngreso = equipo.filter((u) => !u.check_in);
@@ -98,7 +115,7 @@ export async function runRecordatorios(): Promise<void> {
             preheader: 'Reporte de asistencia',
             headline: `Asistencia de hoy: ${sinIngreso.length} sin ingreso`,
             greeting: `Hola ${esc(String(dest.nombre).trim().split(' ')[0])},`,
-            intro: `Este es el reporte de las ${await setting('reporte_asistencia_hora', '10:00')} del equipo directo de las mesas (${equipo.length} personas).`,
+            intro: `Este es el reporte de las ${await setting('reporte_asistencia_hora', '10:00')} del equipo de las mesas, base y soporte (${equipo.length} personas).`,
             details: [
               { label: `Sin ingreso (${sinIngreso.length})`, value: lista(sinIngreso), highlight: sinIngreso.length > 0 },
               { label: `Ingreso tarde, después de las ${limite} (${tarde.length})`, value: tarde.length ? tarde.map((u) => `${esc(String(u.nombre).trim())} (${hhmm(u.check_in as Date)})`).join(', ') : 'nadie' },
@@ -118,9 +135,9 @@ export async function runRecordatorios(): Promise<void> {
       if (minutos >= horaMin && minutos < horaMin + 120) {
         const sinIngreso = await query<{ id: string; nombre: string; email: string }[]>(
           `SELECT p.id, p.nombre, u.email FROM profiles p JOIN users u ON u.id = p.id
-           WHERE p.activo = 1 AND p.rol IN (${ph}) AND ${EQUIPO_DIRECTO}
+           WHERE p.activo = 1 AND ${ingreso.cond}
              AND NOT EXISTS (SELECT 1 FROM attendance a WHERE a.user_id = p.id AND DATE(CONVERT_TZ(a.check_in, '+00:00', '-05:00')) = ?)`,
-          [...roles, fecha],
+          [...ingreso.params, fecha],
         );
         for (const u of sinIngreso) {
           const { hoy } = await yaEnviado(u.id, 'checkin', fecha);

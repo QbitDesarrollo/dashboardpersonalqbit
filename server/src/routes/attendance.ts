@@ -98,7 +98,7 @@ attendanceRouter.post('/attendance/lunch-start', requireAuth, async (req: AuthRe
     );
     for (const ses of sesiones) {
       const elapsed = Math.max(0, Math.floor((Date.now() - new Date(ses.start_time).getTime()) / 1000));
-      const capped = Math.min(10 * 3600, Math.max(0, elapsed - Number(ses.idle_seconds)));
+      const capped = Math.min(12 * 3600, Math.max(0, elapsed - Number(ses.idle_seconds)));
       await query(
         `UPDATE time_entries SET status='completed', end_time=NOW(), duration_seconds=?,
                 description=CONCAT(IFNULL(description,''), ' [pausada por almuerzo]')
@@ -151,8 +151,38 @@ attendanceRouter.post('/attendance/lunch-end', requireAuth, async (req: AuthRequ
 
     const nowStr = new Date().toISOString().replace('T', ' ').replace('Z', '');
     await query(`UPDATE attendance SET lunch_end = ? WHERE id = ?`, [nowStr, open.id]);
+
+    // Al volver se REANUDA SOLO la tarea que se pausó al salir a almorzar (pedido de
+    // Steven, 29-sep: los chicos volvían y el timer seguía en pausa). Solo si no hay
+    // otro timer corriendo, la tarea sigue abierta y el almuerzo no pasó de 3 h.
+    let timerReanudado: { task_id: string; titulo: string } | null = null;
+    try {
+      const almuerzoSeg = (Date.now() - new Date(open.lunch_start).getTime()) / 1000;
+      const activo = await queryOne<any>(`SELECT id FROM time_entries WHERE user_id = ? AND status = 'active' LIMIT 1`, [req.userId]);
+      if (!activo && almuerzoSeg <= 3 * 3600) {
+        const pausada = await queryOne<any>(
+          `SELECT te.task_id, t.titulo_tarea FROM time_entries te JOIN tasks t ON t.id = te.task_id
+           WHERE te.user_id = ? AND te.description LIKE '%[pausada por almuerzo]%'
+             AND te.end_time >= DATE_SUB(?, INTERVAL 5 MINUTE)
+             AND t.estado NOT IN ('entregado','aprobado','bloqueado')
+           ORDER BY te.end_time DESC LIMIT 1`,
+          [req.userId, open.lunch_start]
+        );
+        if (pausada?.task_id) {
+          await query(
+            `INSERT INTO time_entries (id, task_id, user_id, start_time, status, description) VALUES (?, ?, ?, ?, 'active', '[reanudada al volver del almuerzo]')`,
+            [uuid(), pausada.task_id, req.userId, nowStr]
+          );
+          await query(`UPDATE tasks SET timer_activo = 1, timer_inicio = ? WHERE id = ?`, [nowStr, pausada.task_id]);
+          timerReanudado = { task_id: pausada.task_id, titulo: pausada.titulo_tarea };
+        }
+      }
+    } catch (e) {
+      console.error('[ATTENDANCE] No se pudo reanudar el timer tras el almuerzo:', e);
+    }
+
     const record = await queryOne<any>('SELECT * FROM attendance WHERE id = ?', [open.id]);
-    res.json({ attendance: record });
+    res.json({ attendance: record, timer_reanudado: timerReanudado });
   } catch (e) {
     console.error('[ATTENDANCE] Error lunch-end:', e);
     res.status(500).json({ error: 'Error al marcar regreso' });

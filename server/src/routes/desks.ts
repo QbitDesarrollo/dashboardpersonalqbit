@@ -123,6 +123,26 @@ desksRouter.patch('/desks/:id', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// Mesa que funciona como canal de un departamento (Planning, Creatividad,
+// Desarrollo): en /tareas muestra también las tareas de ese departamento que
+// viven en la mesa de la marca. null = mesa normal.
+desksRouter.patch('/desks/:id/department', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!(await hasRole(req.userId!, ['admin']))) return res.status(403).json({ error: 'Sin permisos' });
+    const parsed = z.object({ department_id: z.string().uuid().nullable() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Departamento inválido' });
+    const depId = parsed.data.department_id;
+    if (depId && !(await queryOne<{ id: string }>('SELECT id FROM departments WHERE id = ?', [depId]))) {
+      return res.status(404).json({ error: 'Departamento no encontrado' });
+    }
+    await query('UPDATE desks SET department_id = ? WHERE id = ?', [depId, String(req.params.id)]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[DESKS] department:', e);
+    res.status(500).json({ error: 'Error al guardar el departamento de la mesa' });
+  }
+});
+
 desksRouter.get('/desks/:id/members', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;

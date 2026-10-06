@@ -124,12 +124,19 @@ export function CheckInWidget() {
       const data = volver ? await api.lunchEnd() : await api.lunchStart();
       setAttendance(data.attendance);
       if (volver) {
-        toast.success('¡Bienvenido de vuelta! Regreso registrado');
+        const reanudado = data?.timer_reanudado as { titulo?: string } | null | undefined;
+        toast.success('¡Bienvenido de vuelta! Regreso registrado', {
+          description: reanudado
+            ? `Se reanudó tu timer en «${reanudado.titulo}». Si vas a trabajar en otra cosa, cámbiala o pausa.`
+            : undefined,
+        });
+        // La lista de tareas y la barra del timer deben reflejar el timer reanudado
+        if (reanudado) setTimeout(() => window.location.reload(), 1800);
       } else {
         const n = Number(data?.timers_pausados || 0);
         toast.success('Salida a almuerzo registrada. ¡Buen provecho!', {
           description: n > 0
-            ? `Se pausó ${n === 1 ? 'tu timer' : `${n} timers`} automáticamente. Al volver dale play a la tarea que retomes.`
+            ? `Se pausó ${n === 1 ? 'tu timer' : `${n} timers`} automáticamente. Al marcar tu regreso se reanuda solo.`
             : undefined,
         });
         // La lista de tareas debe reflejar el timer detenido

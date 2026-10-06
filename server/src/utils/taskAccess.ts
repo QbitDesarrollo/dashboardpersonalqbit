@@ -8,8 +8,8 @@ import { getUserRole } from './roles.js';
  * cliente: solo si la tarea está en una marca asignada al cliente.
  */
 export async function canAccessTask(userId: string, taskId: string, _depth: number = 0): Promise<boolean> {
-  const task = await queryOne<{ brand_id: string; desk_id: string | null; responsable_user_id: string | null; parent_task_id: string | null; client_board_id: string | null; created_by: string | null }>(
-    'SELECT brand_id, desk_id, responsable_user_id, parent_task_id, client_board_id, created_by FROM tasks WHERE id = ?', [taskId]
+  const task = await queryOne<{ brand_id: string; desk_id: string | null; department_id: string | null; responsable_user_id: string | null; parent_task_id: string | null; client_board_id: string | null; created_by: string | null }>(
+    'SELECT brand_id, desk_id, department_id, responsable_user_id, parent_task_id, client_board_id, created_by FROM tasks WHERE id = ?', [taskId]
   );
   if (!task) return false;
 
@@ -38,6 +38,14 @@ export async function canAccessTask(userId: string, taskId: string, _depth: numb
         [task.desk_id, userId]
       );
       if (member) return true;
+    }
+    // Miembro de la mesa de su departamento (Planning, Creatividad, Desarrollo...)
+    if (task.department_id) {
+      const deDepto = await queryOne<{ n: number }>(
+        'SELECT 1 as n FROM desk_members dm JOIN desks dk ON dk.id = dm.desk_id WHERE dk.department_id = ? AND dm.user_id = ? LIMIT 1',
+        [task.department_id, userId]
+      );
+      if (deDepto) return true;
     }
     // En task_responsables
     const resp = await queryOne<{ n: number }>(
