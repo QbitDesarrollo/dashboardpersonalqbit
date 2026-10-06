@@ -277,7 +277,72 @@ timeSessionsRouter.post('/time-sessions/pause-mine', requireAuth, async (req: Au
   }
 });
 
-// ── Sugerencia de reanudar: última sesión auto-pausada reciente (12h) sin sesión activa nueva ──
+// ── Timer pausado solo (Tiusdei cerrado o pestaña dormida) ──
+// Última sesión auto-pausada (12 h) sin otra sesión después y sin atender. Además
+// del aviso, calcula cuánto se puede recuperar si la persona dice que siguió
+// trabajando: desde la pausa hasta ahora, solo dentro de su jornada marcada (sin
+// almuerzo), sin pisar otras sesiones y como máximo 3 h (pedido de Steven, 6-oct:
+// "se les pausa siempre las tareas"; de 173 auto-pausas en 14 días, 64 se
+// retomaron en la misma tarea).
+const MAX_RECUPERABLE_SEG = 3 * 3600;
+type Tramo = [number, number];
+function unirTramos(iv: Tramo[]): Tramo[] {
+  const s = iv.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0]);
+  const out: Tramo[] = [];
+  for (const [a, b] of s) { const u = out[out.length - 1]; if (u && a <= u[1]) u[1] = Math.max(u[1], b); else out.push([a, b]); }
+  return out;
+}
+function restarTramos(a: Tramo[], b: Tramo[]): Tramo[] {
+  let res = a;
+  for (const [b1, b2] of b) {
+    const next: Tramo[] = [];
+    for (const [a1, a2] of res) {
+      if (b2 <= a1 || b1 >= a2) { next.push([a1, a2]); continue; }
+      if (b1 > a1) next.push([a1, b1]);
+      if (b2 < a2) next.push([b2, a2]);
+    }
+    res = next;
+  }
+  return res;
+}
+function intersectarTramos(a: Tramo[], b: Tramo[]): Tramo[] {
+  const out: Tramo[] = [];
+  for (const [a1, a2] of a) for (const [b1, b2] of b) { const i = Math.max(a1, b1), f = Math.min(a2, b2); if (f > i) out.push([i, f]); }
+  return unirTramos(out);
+}
+async function pausaAutomaticaPendiente(userId: string) {
+  return queryOne<any>(
+    `SELECT te.id, te.task_id, t.titulo_tarea AS titulo, t.estado, te.end_time, te.duration_seconds
+     FROM time_entries te
+     JOIN tasks t ON t.id = te.task_id
+     WHERE te.user_id = ? AND te.status = 'completed'
+       AND te.description LIKE '%auto-pausada: Tiusdei cerrado%'
+       AND te.description NOT LIKE '%[atendida]%'
+       AND te.end_time > DATE_SUB(NOW(), INTERVAL 12 HOUR)
+       AND NOT EXISTS (SELECT 1 FROM time_entries t2 WHERE t2.user_id = te.user_id AND t2.id <> te.id AND t2.start_time >= te.end_time)
+     ORDER BY te.end_time DESC LIMIT 1`,
+    [userId]
+  );
+}
+/** Tramos recuperables entre la pausa y ahora (jornada marcada, sin almuerzo ni otras sesiones). */
+async function tramosRecuperables(userId: string, desde: Date): Promise<Tramo[]> {
+  const ini = new Date(desde).getTime(), fin = Date.now();
+  if (fin - ini > MAX_RECUPERABLE_SEG * 1000 || fin <= ini) return [];
+  const [asist, otras] = await Promise.all([
+    query<any[]>(`SELECT check_in, check_out, lunch_start, lunch_end FROM attendance WHERE user_id = ? AND check_in < ? AND (check_out IS NULL OR check_out > ?)`, [userId, new Date(fin), new Date(ini)]),
+    query<any[]>(`SELECT start_time, end_time FROM time_entries WHERE user_id = ? AND start_time < ? AND (end_time IS NULL OR end_time > ?)`, [userId, new Date(fin), new Date(ini)]),
+  ]);
+  let jornada: Tramo[] = [];
+  for (const a of asist) {
+    let iv: Tramo[] = [[new Date(a.check_in).getTime(), a.check_out ? new Date(a.check_out).getTime() : fin]];
+    if (a.lunch_start) iv = restarTramos(iv, [[new Date(a.lunch_start).getTime(), a.lunch_end ? new Date(a.lunch_end).getTime() : fin]]);
+    jornada = jornada.concat(iv);
+  }
+  const ocupado = otras.map((o) => [new Date(o.start_time).getTime(), o.end_time ? new Date(o.end_time).getTime() : fin] as Tramo);
+  return restarTramos(intersectarTramos([[ini, fin]], unirTramos(jornada)), unirTramos(ocupado));
+}
+const segDe = (iv: Tramo[]) => Math.floor(iv.reduce((s, [a, b]) => s + (b - a), 0) / 1000);
+
 timeSessionsRouter.get('/time-sessions/resume-suggestion', requireAuth, async (req: AuthRequest, res) => {
   try {
     const active = await queryOne<any>(
@@ -285,19 +350,57 @@ timeSessionsRouter.get('/time-sessions/resume-suggestion', requireAuth, async (r
       [req.userId]
     );
     if (active) { res.json({}); return; }
-    const row = await queryOne<any>(
-      `SELECT te.task_id, t.titulo_tarea AS titulo, te.end_time, te.duration_seconds
-       FROM time_entries te
-       JOIN tasks t ON t.id = te.task_id
-       WHERE te.user_id = ? AND te.status = 'completed'
-         AND te.description LIKE '%auto-pausada: Tiusdei cerrado%'
-         AND te.end_time > DATE_SUB(NOW(), INTERVAL 12 HOUR)
-       ORDER BY te.end_time DESC LIMIT 1`,
-      [req.userId]
-    );
-    res.json(row || {});
+    const row = await pausaAutomaticaPendiente(req.userId!);
+    if (!row) { res.json({}); return; }
+    const abierta = !['entregado', 'aprobado'].includes(row.estado);
+    const recuperable = abierta ? segDe(await tramosRecuperables(req.userId!, row.end_time)) : 0;
+    res.json({
+      task_id: row.task_id, titulo: row.titulo, end_time: row.end_time, duration_seconds: row.duration_seconds,
+      tarea_abierta: abierta, recuperable_seg: recuperable,
+    });
   } catch (e) {
     console.error('[TIME-SESSIONS] resume-suggestion error:', e);
     res.status(500).json({ error: 'Error' });
+  }
+});
+
+// Atender la pausa automática: 'recuperar' (suma el tiempo que siguió trabajando y
+// reanuda), 'reanudar' (solo reanuda) o 'descartar' (deja pausado y no vuelve a avisar)
+timeSessionsRouter.post('/time-sessions/resume-auto', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const accion = String(req.body?.accion || '');
+    if (!['recuperar', 'reanudar', 'descartar'].includes(accion)) return res.status(400).json({ error: 'Acción inválida' });
+    const active = await queryOne<any>(`SELECT id FROM time_entries WHERE user_id = ? AND status = 'active' LIMIT 1`, [req.userId]);
+    if (active && accion !== 'descartar') return res.status(409).json({ error: 'Ya tienes un timer corriendo' });
+    const row = await pausaAutomaticaPendiente(req.userId!);
+    if (!row) return res.status(404).json({ error: 'No hay una pausa automática pendiente' });
+    await query(`UPDATE time_entries SET description = CONCAT(IFNULL(description,''), ' [atendida]') WHERE id = ?`, [row.id]);
+    if (accion === 'descartar') return res.json({ ok: true, recuperado_seg: 0 });
+    if (['entregado', 'aprobado'].includes(row.estado) || !(await canAccessTask(req.userId!, row.task_id))) {
+      return res.status(409).json({ error: 'La tarea ya no está abierta' });
+    }
+    const toSql = (ms: number) => new Date(ms).toISOString().replace('T', ' ').replace('Z', '');
+    let recuperado = 0;
+    if (accion === 'recuperar') {
+      for (const [a, b] of await tramosRecuperables(req.userId!, row.end_time)) {
+        const seg = Math.floor((b - a) / 1000);
+        if (seg < 60) continue;
+        await query(
+          `INSERT INTO time_entries (id, task_id, user_id, start_time, end_time, duration_seconds, status, description)
+           VALUES (?, ?, ?, ?, ?, ?, 'completed', '[recuperado: siguió trabajando con Tiusdei cerrado o dormido]')`,
+          [uuid(), row.task_id, req.userId, toSql(a), toSql(b), seg]
+        );
+        recuperado += seg;
+      }
+      if (recuperado > 0) await query('UPDATE tasks SET tiempo_trabajado = tiempo_trabajado + ? WHERE id = ?', [recuperado, row.task_id]);
+    }
+    const now = toSql(Date.now());
+    const id = uuid();
+    await query(`INSERT INTO time_entries (id, task_id, user_id, start_time, status) VALUES (?, ?, ?, ?, 'active')`, [id, row.task_id, req.userId, now]);
+    await query(`UPDATE tasks SET timer_activo = 1, timer_inicio = ? WHERE id = ?`, [now, row.task_id]);
+    res.json({ ok: true, recuperado_seg: recuperado, titulo: row.titulo });
+  } catch (e) {
+    console.error('[TIME-SESSIONS] resume-auto error:', e);
+    res.status(500).json({ error: 'Error al reanudar' });
   }
 });

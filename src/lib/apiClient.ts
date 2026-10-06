@@ -1350,6 +1350,13 @@ export async function pauseMyTimer() {
   return res.json();
 }
 
+/** Atender un timer pausado solo: 'recuperar' (suma lo que siguió trabajando y reanuda), 'reanudar' o 'descartar'. */
+export async function resumeAutoTimer(accion: 'recuperar' | 'reanudar' | 'descartar') {
+  const res = await request('/api/data/time-sessions/resume-auto', { method: 'POST', body: JSON.stringify({ accion }) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'No se pudo reanudar');
+  return res.json() as Promise<{ ok: boolean; recuperado_seg: number; titulo?: string }>;
+}
+
 export async function getTimerResumeSuggestion() {
   const res = await request('/api/data/time-sessions/resume-suggestion');
   if (!res.ok) throw new Error(await res.text());

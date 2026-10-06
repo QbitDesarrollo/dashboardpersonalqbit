@@ -30,6 +30,8 @@ interface Miembro {
   presencia: 'online' | 'away' | 'offline';
   asistencia_hoy: { check_in: string; check_out: string | null; lunch_start: string | null; lunch_end: string | null } | null;
   timer: { task_id: string; titulo: string; status: 'active' | 'paused'; start_time: string; segundos: number } | null;
+  /** Timer pausado solo porque Tiusdei estuvo cerrado o la pestaña se durmió */
+  autopausa?: { titulo: string; end_time: string } | null;
   es_soporte?: boolean;
   primer_ingreso?: string | null;
   ingreso_tarde?: boolean;
@@ -314,12 +316,13 @@ export default function EquipoMesa() {
 
   // "Ahora mismo": quién está en qué
   const enReunion = (m: Miembro) => !!m.reunion_ahora && m.timer?.status !== 'active';
+  const autoPausado = (m: Miembro) => !m.timer && !!m.autopausa && !!m.asistencia_hoy && !m.asistencia_hoy.check_out;
   const ahora = {
     trabajando: miembros.filter((m) => m.timer?.status === 'active'),
     reunion: miembros.filter(enReunion),
-    pausa: miembros.filter((m) => m.timer?.status === 'paused' && !enReunion(m) && !(m.asistencia_hoy?.lunch_start && !m.asistencia_hoy?.lunch_end)),
+    pausa: miembros.filter((m) => (m.timer?.status === 'paused' || autoPausado(m)) && !enReunion(m) && !(m.asistencia_hoy?.lunch_start && !m.asistencia_hoy?.lunch_end)),
     almuerzo: miembros.filter((m) => !!m.asistencia_hoy?.lunch_start && !m.asistencia_hoy?.lunch_end && !enReunion(m)),
-    sinTarea: miembros.filter((m) => !m.timer && !enReunion(m) && !!m.asistencia_hoy && !m.asistencia_hoy.check_out && !(m.asistencia_hoy.lunch_start && !m.asistencia_hoy.lunch_end)),
+    sinTarea: miembros.filter((m) => !m.timer && !autoPausado(m) && !enReunion(m) && !!m.asistencia_hoy && !m.asistencia_hoy.check_out && !(m.asistencia_hoy.lunch_start && !m.asistencia_hoy.lunch_end)),
     fuera: miembros.filter((m) => !m.timer && !enReunion(m) && (!m.asistencia_hoy || !!m.asistencia_hoy.check_out)),
   };
   const conUtilizacion = miembros.filter((m) => m.utilizacion_hoy_pct != null);
@@ -453,6 +456,7 @@ export default function EquipoMesa() {
               else if (m.reunion_ahora) estadoAhora = { icon: <CheckCircle2 className="h-3.5 w-3.5" />, texto: `En reunión: «${m.reunion_ahora.summary}» hasta ${fmtHora(m.reunion_ahora.end)}`, cls: 'text-emerald-600 dark:text-emerald-400' };
               else if (enAlmuerzo) estadoAhora = { icon: <Utensils className="h-3.5 w-3.5" />, texto: `En almuerzo desde ${fmtHora(m.asistencia_hoy!.lunch_start)}`, cls: 'text-amber-600 dark:text-amber-400' };
               else if (m.timer?.status === 'paused') estadoAhora = { icon: <Pause className="h-3.5 w-3.5" />, texto: `Timer en pausa: «${m.timer.titulo}»`, cls: 'text-amber-600 dark:text-amber-400' };
+              else if (conectado && m.autopausa) estadoAhora = { icon: <Pause className="h-3.5 w-3.5" />, texto: `Timer pausado solo a las ${fmtHora(m.autopausa.end_time)} en «${m.autopausa.titulo}»: Tiusdei cerrado o la pestaña se durmió`, cls: 'text-amber-600 dark:text-amber-400' };
               else if (conectado) estadoAhora = { icon: <Clock className="h-3.5 w-3.5" />, texto: `Conectado desde ${fmtHora(m.asistencia_hoy!.check_in)} sin tarea activa`, cls: 'text-amber-600 dark:text-amber-400' };
               else if (m.asistencia_hoy?.check_out) estadoAhora = { icon: <Clock className="h-3.5 w-3.5" />, texto: `Salió a las ${fmtHora(m.asistencia_hoy.check_out)} (entró ${fmtHora(m.asistencia_hoy.check_in)})`, cls: 'text-muted-foreground' };
               else estadoAhora = { icon: <Clock className="h-3.5 w-3.5" />, texto: 'Sin ingreso registrado hoy', cls: 'text-muted-foreground' };
@@ -726,7 +730,7 @@ export default function EquipoMesa() {
 // Orden de preferencia: activos y en reunión primero, después pausados, conectados sin tarea y fuera
 function rangoMiembro(m: Miembro): number {
   if (m.timer?.status === 'active' || m.reunion_ahora) return 0;
-  if (m.timer?.status === 'paused') return 1;
+  if (m.timer?.status === 'paused' || (!m.timer && m.autopausa && m.asistencia_hoy && !m.asistencia_hoy.check_out)) return 1;
   if (m.asistencia_hoy && !m.asistencia_hoy.check_out) return 2;
   return 3;
 }

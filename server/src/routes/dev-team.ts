@@ -217,6 +217,18 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
     ]);
 
     const presence = new Map(getGlobalPresence().map((p) => [p.userId, p.status]));
+    // Timer pausado solo (Tiusdei cerrado o pestaña dormida) y sin otra sesión después:
+    // en las tarjetas sale como pausa, no como "conectado sin tarea"
+    const autopausas = await query<{ user_id: string; end_time: Date; titulo: string }[]>(
+      `SELECT te.user_id, te.end_time, t.titulo_tarea AS titulo FROM time_entries te JOIN tasks t ON t.id = te.task_id
+       WHERE te.user_id IN (${ph}) AND te.description LIKE '%auto-pausada%'
+         AND te.end_time >= ?
+         AND NOT EXISTS (SELECT 1 FROM time_entries t2 WHERE t2.user_id = te.user_id AND t2.id <> te.id AND t2.start_time >= te.end_time)
+       ORDER BY te.end_time DESC`,
+      [...memberIds, new Date(`${hoy}T00:00:00-05:00`)],
+    );
+    const autopausaPor = new Map<string, { titulo: string; end_time: Date }>();
+    for (const a of autopausas) if (!autopausaPor.has(a.user_id)) autopausaPor.set(a.user_id, { titulo: a.titulo, end_time: a.end_time });
     const memberSet = new Set(memberIds);
 
     // Responsables de cada tarea (titular + co-responsables), y cuántos del equipo
@@ -404,6 +416,7 @@ async function construirOverview(memberIds: string[], soloRecientes = false, opt
         presencia: presence.get(m.id) || 'offline',
         asistencia_hoy: att ? { check_in: att.check_in, check_out: att.check_out, lunch_start: att.lunch_start, lunch_end: att.lunch_end } : null,
         timer: timer ? { task_id: timer.task_id, titulo: timer.titulo_tarea, status: timer.status, start_time: timer.start_time, segundos: timerSeg } : null,
+        autopausa: timer ? null : (autopausaPor.get(m.id) ?? null),
         calendario_conectado: !!reu?.conectado,
         reunion_ahora: reu?.ahora ?? null,
         reuniones_hoy: reu?.eventos.length ?? 0,

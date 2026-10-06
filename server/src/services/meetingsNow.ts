@@ -127,9 +127,12 @@ function esReunion(ev: calendar_v3.Schema$Event, maxMin: number): EventoHoy | nu
   return { summary: ev.summary || '(Sin título)', start: s, end: e, duration_min: dur };
 }
 
-// Quién no deja leer su calendario (conexión vencida o sin permiso de calendario)
-const sinAcceso = new Map<string, string>();
-export function motivoSinAcceso(userId: string): string | null { return sinAcceso.get(userId) ?? null; }
+// Quién no deja leer su calendario (conexión vencida o sin permiso de calendario).
+// Se reintenta cada 10 min: sin esto, cada refresco del monitor volvía a pedirle a
+// Google los calendarios que ya sabemos que no se pueden leer.
+const sinAcceso = new Map<string, { motivo: string; at: number }>();
+const REINTENTO_SIN_ACCESO_MS = 10 * 60 * 1000;
+export function motivoSinAcceso(userId: string): string | null { return sinAcceso.get(userId)?.motivo ?? null; }
 
 const cacheEventos = new Map<string, { at: number; eventos: EventoHoy[] }>();
 /** Reuniones de la persona entre dos instantes; null = sin Google conectado o sin acceso. */
@@ -137,6 +140,8 @@ async function leerReuniones(userId: string, timeMin: string, timeMax: string, t
   const key = `${userId}|${timeMin}|${timeMax}`;
   const c = cacheEventos.get(key);
   if (c && Date.now() - c.at < ttlMs) return c.eventos;
+  const sa = sinAcceso.get(userId);
+  if (sa && Date.now() - sa.at < REINTENTO_SIN_ACCESO_MS) return c?.eventos ?? null;
   const client = await getAuthedClient(userId);
   if (!client) return null;
   try {
@@ -155,8 +160,8 @@ async function leerReuniones(userId: string, timeMin: string, timeMax: string, t
     return eventos;
   } catch (e) {
     const msg = (e as Error).message || '';
-    if (/scope/i.test(msg)) sinAcceso.set(userId, 'sin permiso de calendario');
-    else if (/refresh token|invalid_grant/i.test(msg)) sinAcceso.set(userId, 'conexión vencida');
+    if (/scope/i.test(msg)) sinAcceso.set(userId, { motivo: 'sin permiso de calendario', at: Date.now() });
+    else if (/refresh token|invalid_grant/i.test(msg)) sinAcceso.set(userId, { motivo: 'conexión vencida', at: Date.now() });
     console.error(`[REUNIONES] ${userId}:`, msg);
     // Si Google falla, usar lo último que teníamos (aunque esté vencido) para no parpadear
     return c?.eventos ?? (sinAcceso.has(userId) ? null : []);
