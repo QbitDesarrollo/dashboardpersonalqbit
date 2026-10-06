@@ -215,12 +215,12 @@ export async function getBrands(deskId?: string) {
   return res.json();
 }
 
-export async function createBrand(data: { nombre: string; cliente_id?: string | null; activo?: boolean }) {
+export async function createBrand(data: { nombre: string; cliente_id?: string | null; activo?: boolean; alias?: string | null }) {
   const res = await request('/api/data/brands', { method: 'POST', body: JSON.stringify(data) });
   return res.json();
 }
 
-export async function patchBrand(id: string, data: { nombre?: string; cliente_id?: string | null; activo?: boolean }) {
+export async function patchBrand(id: string, data: { nombre?: string; cliente_id?: string | null; activo?: boolean; alias?: string | null }) {
   const res = await request(`/api/data/brands/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
   return res.json();
 }

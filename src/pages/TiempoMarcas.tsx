@@ -308,7 +308,7 @@ export default function TiempoMarcas() {
       <p className="text-xs text-muted-foreground">
         Entregables: tareas que pasaron a Entregado o Aprobado dentro del mes (suma de su cantidad de entregables). Tareas: sesiones de timer del mes en tareas de la marca, entregadas o no.
         Reuniones: del Google Calendar de cada persona; solo las que aceptó u organizó (con invitados o videollamada), dentro de su jornada marcada y sin el tiempo en que tenía el timer corriendo (no se cuenta dos veces).
-        Una reunión va a la marca cuyo nombre (o el de uno de sus proyectos) aparece en el título; si no, queda en "internas / sin marca". Para que sume a la marca, pon la marca en el título (ej. «Skretting | Revisión de pauta»).
+        Una reunión va a la marca cuyo nombre, abreviatura (Administración &gt; Marcas, ej. MDN) o nombre de proyecto aparece en el título; si no, queda en "internas / sin marca". Para que sume a la marca, ponla en el título (ej. «Skretting | Revisión de pauta»).
         Estimadas: estimado de las tareas entregadas, o el tiempo estándar por tipo de entregable (Administración &gt; Configuración). Desvío: tareas contra estimadas; solo se muestra si al menos la mitad de lo entregado tiene estimado.
         Equivale a: total de la marca ÷ 160 h. % de su mes: horas de esa persona ÷ 160 h.
       </p>

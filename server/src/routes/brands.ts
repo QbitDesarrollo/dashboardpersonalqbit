@@ -5,6 +5,14 @@ import { getUserRole, hasRole } from '../utils/roles.js';
 
 export const brandsRouter = Router();
 
+// Abreviaturas de la marca para reconocer reuniones ("MDN" = Mall del Norte):
+// lista separada por comas, sin repetidas, máximo 255 caracteres.
+function limpiarAlias(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const lista = Array.from(new Set(v.split(',').map((s) => s.trim()).filter(Boolean)));
+  return lista.length ? lista.join(', ').slice(0, 255) : null;
+}
+
 brandsRouter.get('/brands', requireAuth, async (req: AuthRequest, res) => {
   try {
     const role = await getUserRole(req.userId!);
@@ -86,7 +94,7 @@ brandsRouter.post('/brands', requireAuth, async (req: AuthRequest, res) => {
     if (!allowed) return res.status(403).json({ error: 'Sin permisos' });
     const { nombre, cliente_id, activo } = req.body;
     const id = uuid();
-    await query('INSERT INTO brands (id, nombre, cliente_id, activo) VALUES (?, ?, ?, ?)', [id, nombre, cliente_id || null, activo !== false ? 1 : 0]);
+    await query('INSERT INTO brands (id, nombre, cliente_id, activo, alias) VALUES (?, ?, ?, ?, ?)', [id, nombre, cliente_id || null, activo !== false ? 1 : 0, limpiarAlias(req.body.alias)]);
     const row = await queryOne<any>('SELECT * FROM brands WHERE id = ?', [id]);
     res.status(201).json(row);
   } catch (e) {
@@ -121,6 +129,8 @@ brandsRouter.patch('/brands/:id', requireAuth, async (req: AuthRequest, res) => 
     const { id } = req.params;
     const { nombre, cliente_id, activo } = req.body;
     await query('UPDATE brands SET nombre = ?, cliente_id = ?, activo = ? WHERE id = ?', [nombre, cliente_id || null, activo !== false ? 1 : 0, id]);
+    // Las abreviaturas solo se tocan si vienen (otras pantallas editan la marca sin ellas)
+    if (req.body.alias !== undefined) await query('UPDATE brands SET alias = ? WHERE id = ?', [limpiarAlias(req.body.alias), id]);
     res.json({ success: true });
   } catch (e) {
     console.error(e);

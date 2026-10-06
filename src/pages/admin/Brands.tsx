@@ -37,6 +37,8 @@ interface Brand {
   nombre: string;
   cliente_id: string | null;
   activo: boolean;
+  /** Abreviaturas para reconocer la marca en el título de las reuniones ("MDN") */
+  alias?: string | null;
   clients?: { nombre: string };
 }
 
@@ -58,6 +60,7 @@ export default function AdminBrands() {
     nombre: '',
     cliente_id: '',
     activo: true,
+    alias: '',
   });
 
   useEffect(() => {
@@ -86,6 +89,7 @@ export default function AdminBrands() {
         nombre: formData.nombre,
         cliente_id: formData.cliente_id || null,
         activo: formData.activo,
+        alias: formData.alias.trim() || null,
       };
 
       if (selectedBrand) {
@@ -109,7 +113,7 @@ export default function AdminBrands() {
   };
 
   const resetForm = () => {
-    setFormData({ nombre: '', cliente_id: '', activo: true });
+    setFormData({ nombre: '', cliente_id: '', activo: true, alias: '' });
     setSelectedBrand(null);
   };
 
@@ -131,6 +135,7 @@ export default function AdminBrands() {
       nombre: brand.nombre,
       cliente_id: brand.cliente_id || '',
       activo: brand.activo,
+      alias: brand.alias || '',
     });
     setDialogOpen(true);
   };
@@ -195,6 +200,15 @@ export default function AdminBrands() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Abreviaturas</Label>
+                <Input
+                  value={formData.alias}
+                  onChange={(e) => setFormData({ ...formData, alias: e.target.value })}
+                  placeholder="Ej: MDN, Mall"
+                />
+                <p className="text-xs text-muted-foreground">Separadas por coma. Si aparecen en el título de una reunión, esa reunión suma a esta marca en Tiempo por marca.</p>
               </div>
               <div className="flex items-center justify-between">
                 <Label>Activa</Label>
@@ -271,7 +285,7 @@ export default function AdminBrands() {
                 ) : (
                   brands.map((brand) => (
                     <TableRow key={brand.id} className="border-border hover:bg-muted/50">
-                      <TableCell className="font-medium">{brand.nombre}</TableCell>
+                      <TableCell className="font-medium">{brand.nombre}{brand.alias && <span className="ml-2 text-xs font-normal text-muted-foreground" title="Abreviaturas para reconocer reuniones">({brand.alias})</span>}</TableCell>
                       <TableCell>{brand.clients?.nombre || '-'}</TableCell>
                       <TableCell>
                         <Badge variant={brand.activo ? "default" : "secondary"}>

@@ -33,8 +33,8 @@ interface Regla { brand_id: string; frase: string; tokens: string[] }
 async function reglasDeMarcas(): Promise<Regla[]> {
   const [brands, projects] = await Promise.all([
     // Con las tareas de los últimos 6 meses, para desempatar palabras compartidas
-    query<{ id: string; nombre: string; tareas: number }[]>(
-      `SELECT b.id, b.nombre, (SELECT COUNT(*) FROM tasks t WHERE t.brand_id = b.id AND t.created_at >= DATE_SUB(NOW(), INTERVAL 180 DAY)) AS tareas
+    query<{ id: string; nombre: string; alias: string | null; tareas: number }[]>(
+      `SELECT b.id, b.nombre, b.alias, (SELECT COUNT(*) FROM tasks t WHERE t.brand_id = b.id AND t.created_at >= DATE_SUB(NOW(), INTERVAL 180 DAY)) AS tareas
        FROM brands b WHERE b.activo = 1`),
     query<{ brand_id: string; nombre: string }[]>('SELECT brand_id, nombre FROM projects WHERE brand_id IS NOT NULL'),
   ]);
@@ -51,6 +51,11 @@ async function reglasDeMarcas(): Promise<Regla[]> {
     const n = norm(b.nombre);
     if (n.length < 2 || n === 'qbit') continue;
     reglas.push({ brand_id: b.id, frase: n, tokens: tokensDe(n).filter((w) => duenoDe.get(w)?.id === b.id) });
+  }
+  // Abreviaturas de Administración > Marcas ("MDN" = Mall del Norte), como palabra completa
+  for (const b of brands) for (const a of String(b.alias || '').split(',')) {
+    const n = norm(a);
+    if (n.length >= 2) reglas.push({ brand_id: b.id, frase: n, tokens: [] });
   }
   // Nombres de proyecto ("Proyecta Connect" → Alba del Bosque), solo como frase completa
   for (const p of projects) {
