@@ -26,22 +26,31 @@ const norm = (s: string) => String(s || '').toLowerCase().normalize('NFD').repla
 // Palabras demasiado comunes para identificar una marca por sí solas
 const GENERICAS = new Set(['qbit', 'grupo', 'alimentos', 'real', 'moderna', 'solution', 'solutions', 'comercial', 'industrial',
   'universidad', 'catolica', 'mall', 'norte', 'cafe', 'agua', 'precio', 'vista', 'ciudad', 'salud', 'prime', 'life', 'vision',
-  'reunion', 'reporte', 'pauta', 'daily', 'sync', 'revision', 'status', 'equipo', 'cliente', 'clientes', 'proyecto', 'marca', 'web']);
+  'reunion', 'reporte', 'pauta', 'daily', 'sync', 'revision', 'status', 'equipo', 'cliente', 'clientes', 'proyecto', 'marca', 'web',
+  'plan', 'club', 'show', 'group', 'security', 'medios', 'contenido', 'contenidos', 'diseno', 'campana', 'campanas', 'estrategia',
+  'propuesta', 'kickoff', 'seguimiento', 'presentacion', 'interna', 'interno', 'mensual', 'semanal']);
 interface Regla { brand_id: string; frase: string; tokens: string[] }
 async function reglasDeMarcas(): Promise<Regla[]> {
   const [brands, projects] = await Promise.all([
-    query<{ id: string; nombre: string }[]>('SELECT id, nombre FROM brands WHERE activo = 1'),
+    // Con las tareas de los últimos 6 meses, para desempatar palabras compartidas
+    query<{ id: string; nombre: string; tareas: number }[]>(
+      `SELECT b.id, b.nombre, (SELECT COUNT(*) FROM tasks t WHERE t.brand_id = b.id AND t.created_at >= DATE_SUB(NOW(), INTERVAL 180 DAY)) AS tareas
+       FROM brands b WHERE b.activo = 1`),
     query<{ brand_id: string; nombre: string }[]>('SELECT brand_id, nombre FROM projects WHERE brand_id IS NOT NULL'),
   ]);
-  // Una palabra solo identifica a una marca si ninguna otra la usa
-  const usos = new Map<string, number>();
+  // Una palabra identifica a una sola marca: si varias la usan ("Pycca" en Club Pycca y en
+  // Pycca - Plan de Fidelización), se la queda la que más tareas tiene
+  const duenoDe = new Map<string, { id: string; tareas: number }>();
   const tokensDe = (n: string) => Array.from(new Set(n.split(' ').filter((w) => w.length >= 4 && !GENERICAS.has(w))));
-  for (const b of brands) for (const w of tokensDe(norm(b.nombre))) usos.set(w, (usos.get(w) || 0) + 1);
+  for (const b of brands) for (const w of tokensDe(norm(b.nombre))) {
+    const d = duenoDe.get(w);
+    if (!d || Number(b.tareas) > d.tareas) duenoDe.set(w, { id: b.id, tareas: Number(b.tareas) });
+  }
   const reglas: Regla[] = [];
   for (const b of brands) {
     const n = norm(b.nombre);
     if (n.length < 2 || n === 'qbit') continue;
-    reglas.push({ brand_id: b.id, frase: n, tokens: tokensDe(n).filter((w) => usos.get(w) === 1) });
+    reglas.push({ brand_id: b.id, frase: n, tokens: tokensDe(n).filter((w) => duenoDe.get(w)?.id === b.id) });
   }
   // Nombres de proyecto ("Proyecta Connect" → Alba del Bosque), solo como frase completa
   for (const p of projects) {
