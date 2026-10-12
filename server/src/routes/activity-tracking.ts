@@ -29,9 +29,10 @@ activityTrackingRouter.post('/activity-tracking/snapshot', requireAuth, async (r
     // 30+ events/minute = 100% activity
     const activityPercent = Math.min(100, Math.round((totalEvents / 30) * 100));
     // Sin actividad en la pestana hay dos casos MUY distintos:
-    //  - pestana visible y nadie toca nada -> la persona se fue: IDLE (se descuenta)
-    //  - pestana oculta -> esta trabajando en otro programa (Illustrator, Premiere,
-    //    Figma): NO es idle. Antes esto descontaba horas enteras a los disenadores.
+    //  - Tiusdei con el foco y nadie toca nada -> la persona se fue: IDLE (se descuenta)
+    //  - pestana oculta o ventana sin foco (`tab_hidden`) -> esta trabajando en otro
+    //    programa (Illustrator, Premiere, Figma), aunque Tiusdei se vea en otro
+    //    monitor: NO es idle. Antes esto descontaba horas enteras a los disenadores.
     const tabHidden = tab_hidden === true || tab_hidden === 1 || tab_hidden === '1';
     const isIdle = activityPercent < 10 && !tabHidden ? 1 : 0;
 

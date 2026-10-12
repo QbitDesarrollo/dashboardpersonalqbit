@@ -2,9 +2,15 @@ import { query, queryOne, uuid } from '../db/mysql.js';
 
 /**
  * Runs every 60 seconds. Checks for idle users with active timers.
- * - Sends notifications to admins if a user is idle
+ * - Notifies admins if a user is REALLY idle (setting `timedoctor_idle_notify`, off by default)
  * - Auto-pauses sessions if setting enabled
  * - Auto-closes attendance records from previous days
+ *
+ * Idle = the last N one-minute snapshots were all idle (Tiusdei in front and no
+ * keyboard/mouse). It used to be "no snapshot for N minutes", which is what happens
+ * when the tab is in the background or the computer sleeps: it notified every admin
+ * and executive about people who were working in Illustrator (616 notices to 14
+ * people on 12-oct, ~59.600 in total). Steven's incident, 12-oct.
  */
 export async function runInactivityMonitor() {
   try {
@@ -15,8 +21,12 @@ export async function runInactivityMonitor() {
     const autoPauseRow = await queryOne<{ value: string }>(
       `SELECT value FROM site_settings WHERE \`key\` = 'timedoctor_auto_pause_idle'`
     );
-    const idleThresholdMinutes = parseInt(idleThresholdRow?.value || '5');
+    const idleThresholdMinutes = Math.max(1, parseInt(idleThresholdRow?.value || '5') || 5);
     const autoPause = autoPauseRow?.value === '1';
+    const notifyRow = await queryOne<{ value: string }>(
+      `SELECT value FROM site_settings WHERE \`key\` = 'timedoctor_idle_notify'`
+    );
+    const notify = notifyRow?.value === '1';
 
     // Find active sessions
     const activeSessions = await query<any[]>(
@@ -29,20 +39,17 @@ export async function runInactivityMonitor() {
 
     const now = new Date();
 
-    for (const session of activeSessions) {
-      // Check last activity snapshot
-      const lastSnapshot = await queryOne<any>(
-        `SELECT snapshot_at, is_idle FROM activity_snapshots
-         WHERE time_entry_id = ? ORDER BY snapshot_at DESC LIMIT 1`,
-        [session.id]
+    for (const session of (autoPause || notify) ? activeSessions : []) {
+      // Really idle: the last N snapshots (one per minute) are all idle
+      const ultimos = await query<{ is_idle: number }[]>(
+        `SELECT is_idle FROM activity_snapshots
+         WHERE time_entry_id = ? AND snapshot_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)
+         ORDER BY snapshot_at DESC LIMIT ?`,
+        [session.id, idleThresholdMinutes + 1, idleThresholdMinutes]
       );
+      const idleMinutes = idleThresholdMinutes;
 
-      if (!lastSnapshot) continue; // No snapshots yet, skip
-
-      const lastActivityTime = new Date(lastSnapshot.snapshot_at);
-      const idleMinutes = Math.floor((now.getTime() - lastActivityTime.getTime()) / 60000);
-
-      if (idleMinutes >= idleThresholdMinutes) {
+      if (ultimos.length >= idleThresholdMinutes && ultimos.every((u) => Number(u.is_idle) === 1)) {
         // User is idle
         if (autoPause) {
           // Auto-pause the session
@@ -60,7 +67,7 @@ export async function runInactivityMonitor() {
           [`%${session.nombre}%inactiv%`]
         );
 
-        if (!recentAlert) {
+        if (notify && !recentAlert) {
           // Get admin/ejecutivo users to notify
           const admins = await query<{ id: string }[]>(
             `SELECT id FROM profiles WHERE rol IN ('admin','ejecutivo') AND activo = 1`

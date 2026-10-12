@@ -20,11 +20,14 @@ export function useActivityTracker(activeSessionId: string | null, onSesionCerra
   const counters = useRef<ActivityCounts>({ keyboard: 0, mouse: 0, scroll: 0, click: 0 });
   const intervalRef = useRef<number | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
-  // Cuanto de este minuto la pestana estuvo OCULTA (la persona en otro programa).
-  // Sin esto, trabajar en Illustrator/Premiere contaba como "inactivo" y se
-  // descontaba del tiempo: en la pestana de Tiusdei no hay teclas ni clics.
+  // Cuanto de este minuto la persona estuvo FUERA de Tiusdei: pestana oculta o
+  // ventana sin el foco (trabajando en otro programa). Sin esto, trabajar en
+  // Illustrator/Premiere contaba como "inactivo" y se descontaba del tiempo. Antes
+  // solo se miraba la pestana oculta, y con Tiusdei visible en un segundo monitor
+  // a Jose Hidalgo se le descontaron ~4 h en un dia (incidencia de Steven, 12-oct).
+  const estaFuera = () => document.hidden || !document.hasFocus();
   const hiddenMsRef = useRef<number>(0);
-  const hiddenSinceRef = useRef<number | null>(document.hidden ? Date.now() : null);
+  const hiddenSinceRef = useRef<number | null>(estaFuera() ? Date.now() : null);
   const onSesionCerradaRef = useRef(onSesionCerrada);
   // Set once the server answered 404: nothing more is sent for that session.
   const cerradaRef = useRef(false);
@@ -42,7 +45,7 @@ export function useActivityTracker(activeSessionId: string | null, onSesionCerra
       hiddenSinceRef.current = Date.now();
     }
     hiddenMsRef.current = 0;
-    const tabHidden = hiddenMs > 30_000; // mas de medio minuto fuera de la pestana
+    const tabHidden = hiddenMs > 30_000; // mas de medio minuto fuera de Tiusdei (otra pestana u otro programa)
 
     try {
       await api.postActivitySnapshot(activeSessionId, snapshot, tabHidden);
@@ -73,9 +76,10 @@ export function useActivityTracker(activeSessionId: string | null, onSesionCerra
       setTimeout(() => { mouseMoveThrottled = false; }, 500);
     };
 
+    // Entrar y salir de Tiusdei: pestana visible/oculta y ventana con/sin foco
     const onVisibility = () => {
-      if (document.hidden) {
-        hiddenSinceRef.current = Date.now();
+      if (estaFuera()) {
+        if (hiddenSinceRef.current === null) hiddenSinceRef.current = Date.now();
       } else if (hiddenSinceRef.current !== null) {
         hiddenMsRef.current += Date.now() - hiddenSinceRef.current;
         hiddenSinceRef.current = null;
@@ -87,6 +91,8 @@ export function useActivityTracker(activeSessionId: string | null, onSesionCerra
     window.addEventListener('scroll', onScroll, { passive: true, capture: true });
     window.addEventListener('click', onClick, { passive: true });
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('blur', onVisibility);
+    window.addEventListener('focus', onVisibility);
 
     // Flush every 60 seconds
     intervalRef.current = window.setInterval(flush, 60000);
@@ -97,6 +103,8 @@ export function useActivityTracker(activeSessionId: string | null, onSesionCerra
       window.removeEventListener('scroll', onScroll, { capture: true } as any);
       window.removeEventListener('click', onClick);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('blur', onVisibility);
+      window.removeEventListener('focus', onVisibility);
       if (intervalRef.current) clearInterval(intervalRef.current);
       // Final flush on cleanup
       flush();
