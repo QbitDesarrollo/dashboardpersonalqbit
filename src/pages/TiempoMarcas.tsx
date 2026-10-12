@@ -4,7 +4,9 @@ import * as api from '@/lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertTriangle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 // Tiempo por marca: entregables entregados en el mes vs. horas que el equipo
@@ -96,6 +98,85 @@ export default function TiempoMarcas() {
   };
   const internasAbiertas = abiertas.has('__internas__');
 
+  // Descargar lo que se ve (mes, mesa y persona elegidos) en un Excel con números
+  // reales, para sumar y filtrar (pedido de Steven, 12-oct)
+  const [descargando, setDescargando] = useState(false);
+  const descargarExcel = async () => {
+    if (!data) return;
+    setDescargando(true);
+    try {
+      const XLSX = await import('xlsx');
+      const r1 = (n: number) => Math.round(n * 10) / 10;
+      const nombreMes = meses.find((m) => m.value === mes)?.label.replace(' (en curso)', '') || mes;
+      const nombreMesa = deskId === 'all' ? 'Todas las mesas'
+        : ((Array.isArray(desks) ? desks : []) as { id: string; nombre: string }[]).find((d) => d.id === deskId)?.nombre || '';
+      const hoja = (filas: Record<string, unknown>[], anchos: number[]) => {
+        const ws = XLSX.utils.json_to_sheet(filas);
+        ws['!cols'] = anchos.map((w) => ({ wch: w }));
+        return ws;
+      };
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, hoja([
+        { Dato: 'Mes', Valor: nombreMes },
+        { Dato: 'Mesa', Valor: nombreMesa },
+        { Dato: 'Persona', Valor: nombrePersona || 'Todas' },
+        { Dato: 'Entregables entregados', Valor: tot.entregables },
+        { Dato: 'Tareas entregadas', Valor: tot.tareas },
+        { Dato: 'Horas en tareas (timer)', Valor: r1(tot.horasTareas) },
+        { Dato: 'Horas en reuniones con marca', Valor: r1(tot.reuMarca) },
+        { Dato: 'Horas en reuniones internas / sin marca', Valor: r1(reuInternas) },
+        { Dato: 'Horas totales', Valor: r1(totalH) },
+        { Dato: '% del total en reuniones', Valor: pctDe(reuTotal, totalH) },
+        { Dato: 'Horas estimadas (de lo entregado)', Valor: r1(tot.est) },
+        { Dato: 'Equivale a (personas a tiempo completo, 160 h)', Valor: r1(totalH / 160) },
+        { Dato: 'Calendarios leídos', Valor: calendario?.leidos ?? '' },
+        { Dato: 'Calendarios sin acceso', Valor: (calendario?.sin_acceso ?? []).map((x) => `${x.nombre} (${x.motivo})`).join(', ') },
+        { Dato: 'Generado', Valor: new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' }) },
+      ], [46, 60]), 'Resumen');
+      XLSX.utils.book_append_sheet(wb, hoja([
+        ...filas.map((f) => {
+          const ht = tareasDe(f), hr = f.horas_reuniones ?? 0, total = f.horas_total ?? ht + hr;
+          const desvio = f.horas_estimadas > 0 && f.sin_estimar <= f.tareas_entregadas / 2 ? Math.round(((ht - f.horas_estimadas) / f.horas_estimadas) * 100) : null;
+          return {
+            Marca: f.marca, Entregables: f.entregables, 'Tareas entregadas': f.tareas_entregadas,
+            'Horas tareas': ht, 'Horas reuniones': hr, 'Horas total': total, '% reuniones': pctDe(hr, total),
+            'Horas estimadas': f.horas_estimadas, 'Entregadas sin estimar': f.sin_estimar, 'Desvío %': desvio ?? '',
+            'h tarea / entregable': f.horas_por_entregable ?? '', 'Equivale a (personas)': r1(total / 160), '% de 160 h': f.pct_mes_persona, Personas: f.personas,
+          };
+        }),
+        ...(reuInternas > 0 ? [{ Marca: 'Reuniones internas / sin marca', 'Horas reuniones': reuInternas, 'Horas total': reuInternas, 'Equivale a (personas)': r1(reuInternas / 160), Personas: sinMarca?.por_persona.length ?? 0 }] : []),
+      ], [30, 12, 12, 12, 12, 12, 11, 12, 12, 10, 12, 12, 10, 9]), 'Por marca');
+      XLSX.utils.book_append_sheet(wb, hoja(
+        filas.flatMap((f) => (f.por_persona ?? []).map((p) => ({
+          Marca: f.marca, Persona: p.nombre, 'Tareas con timer': p.tareas,
+          'Horas tareas': p.horas_tareas ?? p.horas, 'Horas reuniones': p.horas_reuniones ?? 0, 'Horas total': p.horas,
+          '% de la marca': p.pct_marca, '% de su mes (160 h)': p.pct_mes,
+        }))),
+        [30, 26, 12, 12, 12, 12, 12, 16],
+      ), 'Marca x persona');
+      XLSX.utils.book_append_sheet(wb, hoja(
+        personas.map((p) => ({
+          Persona: p.nombre, 'Horas tareas': p.horas_tareas ?? p.horas, 'Horas reuniones': p.horas_reuniones ?? 0,
+          'De ellas internas': p.horas_reuniones_internas ?? 0, 'Horas total': p.horas, '% reuniones': p.pct_reuniones ?? 0,
+          '% de su mes (160 h)': p.pct_mes, Marcas: p.marcas.map((m) => `${m.marca} ${m.horas} h`).join(', '),
+        })),
+        [26, 12, 12, 12, 12, 11, 16, 80],
+      ), 'Por persona');
+      if (sinMarca?.por_persona.length) {
+        XLSX.utils.book_append_sheet(wb, hoja(
+          sinMarca.por_persona.map((p) => ({ Persona: p.nombre, Horas: p.horas, '% de su mes (160 h)': p.pct_mes })),
+          [26, 10, 16],
+        ), 'Reuniones internas');
+      }
+      const limpio = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+      XLSX.writeFile(wb, ['tiempo-por-marca', mes, deskId !== 'all' ? limpio(nombreMesa) : '', nombrePersona ? limpio(nombrePersona) : ''].filter(Boolean).join('_') + '.xlsx');
+    } catch (e) {
+      toast.error('No se pudo generar el Excel', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setDescargando(false);
+    }
+  };
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
@@ -122,6 +203,10 @@ export default function TiempoMarcas() {
             <SelectTrigger className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
             <SelectContent>{meses.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
           </Select>
+          <Button variant="outline" className="h-9" onClick={descargarExcel} disabled={!data || isLoading || descargando} title="Descargar en Excel lo que se ve con estos filtros">
+            {descargando ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Download className="h-4 w-4 mr-1.5" />}
+            Descargar Excel
+          </Button>
         </div>
       </div>
 
