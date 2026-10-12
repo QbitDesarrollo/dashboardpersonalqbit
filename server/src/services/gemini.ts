@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, type FunctionDeclaration, type ChatSession, type Part } from '@google/generative-ai';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
@@ -32,7 +32,18 @@ PROHIBIDO — Si el usuario pregunta algo que NO esté relacionado con Tiusdei o
 "Lo siento, solo puedo ayudarte con temas relacionados a Tiusdei y la gestión de tu trabajo. ¿En qué puedo asistirte con tus tareas o proyectos?"
 
 Si se te proporciona contexto de tareas o proyectos, úsalo para dar respuestas precisas y accionables.
-Responde en formato markdown cuando sea apropiado.`;
+Responde en formato markdown cuando sea apropiado.
+
+HERRAMIENTAS — Puedes consultar Tiusdei en vivo con buscar_tareas, ver_tarea, carga_de_persona y resumen_marca.
+Úsalas siempre que la pregunta dependa de datos actuales (tareas, fechas, responsables, carga, marcas) en vez de suponer.
+Nunca inventes tareas, fechas ni números: si una herramienta no devuelve el dato, dilo. Cita los títulos de las tareas y sus fechas.`;
+
+/** Herramientas que el modelo puede pedir durante el chat (Nerudia). */
+export interface HerramientasChat {
+  declaraciones: FunctionDeclaration[];
+  ejecutar: (nombre: string, args: Record<string, unknown>) => Promise<object>;
+}
+const MAX_RONDAS_HERRAMIENTAS = 4;
 
 // Simple per-user rate limiter
 const userLastRequest = new Map<string, number>();
@@ -71,7 +82,8 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 
 export async function chatWithGemini(
   messages: GeminiMessage[],
-  additionalContext?: string
+  additionalContext?: string,
+  herramientas?: HerramientasChat,
 ): Promise<string> {
   const ai = getGenAI();
 
@@ -82,7 +94,22 @@ export async function chatWithGemini(
   const model = ai.getGenerativeModel({
     model: 'gemini-2.5-flash',
     systemInstruction: { role: 'user' as const, parts: [{ text: systemInstructionText }] },
+    ...(herramientas ? { tools: [{ functionDeclarations: herramientas.declaraciones }] } : {}),
   });
+
+  // Enviar y, si el modelo pide herramientas, ejecutarlas y devolverle el resultado
+  const enviar = async (chat: ChatSession, contenido: string): Promise<string> => {
+    let result = await chat.sendMessage(contenido);
+    for (let ronda = 0; herramientas && ronda < MAX_RONDAS_HERRAMIENTAS; ronda++) {
+      const llamadas = result.response.functionCalls();
+      if (!llamadas?.length) break;
+      const respuestas: Part[] = await Promise.all(llamadas.map(async (c) => ({
+        functionResponse: { name: c.name, response: await herramientas.ejecutar(c.name, (c.args || {}) as Record<string, unknown>) },
+      })));
+      result = await chat.sendMessage(respuestas);
+    }
+    return result.response.text() || 'No pude armar una respuesta con esos datos. ¿Puedes reformular la pregunta?';
+  };
 
   // Build chat history (all messages except the last one)
   const historyMessages = messages.slice(0, -1);
@@ -108,8 +135,7 @@ export async function chatWithGemini(
   return withRetry(async () => {
     try {
       const chat = model.startChat({ history });
-      const result = await chat.sendMessage(lastMessage.content);
-      return result.response.text();
+      return await enviar(chat, lastMessage.content);
     } catch (e: any) {
       // If chat with history fails for non-429 reasons, try without history
       const msg = e?.message || '';
@@ -117,8 +143,7 @@ export async function chatWithGemini(
       if (!is429 && history.length > 0) {
         console.warn('[GEMINI] Chat with history failed, retrying without history');
         const chat = model.startChat({});
-        const result = await chat.sendMessage(lastMessage.content);
-        return result.response.text();
+        return await enviar(chat, lastMessage.content);
       }
       throw e;
     }

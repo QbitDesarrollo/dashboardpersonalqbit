@@ -134,7 +134,8 @@ tiempoMarcasRouter.get('/metrics/tiempo-por-marca', requireAuth, async (req: Aut
 
     // Reuniones → marca (o sin marca). Con mesa elegida: solo marcas de esa mesa, y
     // las internas solo de sus integrantes.
-    const marcasMesa = deskId ? new Set(deskBrands.map((d) => d.brand_id)) : null;
+    // Una mesa sin marcas asignadas (Desarrollo, Planning, Pycca - Loialty) trabaja con todas
+    const marcasMesa = deskId && deskBrands.length ? new Set(deskBrands.map((d) => d.brand_id)) : null;
     const miembrosMesa = deskId ? new Set(deskMiembros.map((d) => d.user_id)) : null;
     const reuMarca = new Map<string, Map<string, number>>(); // brand → user → seg
     const reuInterna = new Map<string, number>();            // user → seg

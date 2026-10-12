@@ -6,6 +6,8 @@ export interface Comment {
   id: string;
   task_id: string;
   user_id: string;
+  /** Comentario original al que responde (hilo de un nivel) */
+  reply_to_id?: string | null;
   comentario: string;
   contenido_html?: string;
   image_url?: string;

@@ -69,6 +69,7 @@ import { crearRouterMinutaPublica } from './routes/public-minuta.js';
 import { crearRouterMinutaEnlace } from './routes/minuta-enlace.js';
 import { initErrorCapture, errorLogMiddleware } from './utils/errorLog.js';
 import { setSocketIO } from './services/whatsapp.js';
+import { avisoTimerMiddleware } from './utils/realtime.js';
 import { apiTokensRouter } from './routes/api-tokens.js';
 import { mcpRouter } from './routes/mcp.js';
 
@@ -116,6 +117,8 @@ app.use(cors({
 
 // Body parser with size limits
 app.use(express.json({ limit: '2mb' }));
+// Avisa a los otros dispositivos del usuario cuando su timer cambia
+app.use('/api/data', avisoTimerMiddleware);
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // Static uploads

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CommandDialog,
@@ -18,19 +18,24 @@ export function GlobalSearch() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  // Solo la última búsqueda puede mostrar resultados: la de "sk" (más lenta, con
+  // más coincidencias) no debe pisar la de "skretting" si llega después
+  const ultimaBusqueda = useRef(0);
   const search = useCallback(async (q: string) => {
+    const n = ++ultimaBusqueda.current;
     if (!q || q.length < 2) {
       setResults(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
     try {
       const res = await api.globalSearch(q);
-      setResults(res);
+      if (n === ultimaBusqueda.current) setResults(res);
     } catch {
-      setResults({ tasks: [], deliverables: [] });
+      if (n === ultimaBusqueda.current) setResults({ tasks: [], deliverables: [] });
     } finally {
-      setLoading(false);
+      if (n === ultimaBusqueda.current) setLoading(false);
     }
   }, []);
 
@@ -76,7 +81,7 @@ export function GlobalSearch() {
           <span className="text-xs">⌘</span>K
         </kbd>
       </button>
-      <CommandDialog open={open} onOpenChange={setOpen}>
+      <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={false}>
         <CommandInput
           placeholder="Buscar tareas, proyectos, clientes, incidencias..."
           value={query}

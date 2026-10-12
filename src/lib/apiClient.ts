@@ -640,10 +640,10 @@ export async function getComments(taskId: string) {
   return res.json();
 }
 
-export async function createComment(taskId: string, comentario: string, image_url?: string, contenido_html?: string) {
+export async function createComment(taskId: string, comentario: string, image_url?: string, contenido_html?: string, reply_to_id?: string) {
   const res = await request(`/api/data/tasks/${taskId}/comments`, {
     method: 'POST',
-    body: JSON.stringify({ comentario, image_url, contenido_html }),
+    body: JSON.stringify({ comentario, image_url, contenido_html, reply_to_id }),
   });
   return res.json();
 }

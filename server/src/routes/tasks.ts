@@ -10,6 +10,8 @@ import { sendEmail, taskAssignmentEmail, taskHandoffEmail } from '../services/em
 import { processCommentMentions } from '../utils/mentions.js';
 import { autoSyncTaskToCalendar } from '../utils/googleCalendarSync.js';
 import { sinHtmlVacio } from '../utils/html.js';
+import { emitirComentario } from '../utils/realtime.js';
+import { raizDeRespuesta, avisarRespuesta } from '../utils/commentReplies.js';
 
 const createTaskSchema = z.object({
   titulo_tarea: z.string().min(1, 'Título requerido').max(500),
@@ -1398,7 +1400,7 @@ tasksRouter.get('/tasks/:taskId/comments', requireAuth, async (req: AuthRequest,
     if (!allowed) return res.status(403).json({ error: 'Sin acceso a esta tarea' });
 
     const rows = await query<any[]>(
-      `SELECT c.id, c.task_id, c.user_id, c.comentario, c.contenido_html, c.image_url, c.created_at,
+      `SELECT c.id, c.task_id, c.user_id, c.reply_to_id, c.comentario, c.contenido_html, c.image_url, c.created_at,
               p.nombre as user_nombre, p.avatar_url as user_avatar_url,
               COUNT(cl.id) as likes_count,
               MAX(CASE WHEN cl.user_id = ? THEN 1 ELSE 0 END) as liked_by_me
@@ -1434,19 +1436,26 @@ tasksRouter.post('/tasks/:taskId/comments', requireAuth, async (req: AuthRequest
     const imgUrl = typeof image_url === 'string' && image_url.startsWith('http') ? image_url : null;
     if (!text && !html && !imgUrl) return res.status(400).json({ error: 'El comentario no puede estar vacío' });
 
+    // Respuesta a otro comentario: se cuelga del comentario original de la tarea
+    const replyTo = req.body?.reply_to_id ? await raizDeRespuesta(taskId, req.body.reply_to_id) : null;
+    if (req.body?.reply_to_id && !replyTo) return res.status(400).json({ error: 'El comentario al que respondes ya no existe' });
+
     const id = uuid();
     await query(
-      'INSERT INTO comments (id, task_id, user_id, comentario, contenido_html, image_url) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, taskId, req.userId, text || '', html, imgUrl]
+      'INSERT INTO comments (id, task_id, user_id, reply_to_id, comentario, contenido_html, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, taskId, req.userId, replyTo, text || '', html, imgUrl]
     );
 
     const row = await queryOne<any>(
-      `SELECT c.id, c.task_id, c.user_id, c.comentario, c.contenido_html, c.image_url, c.created_at,
+      `SELECT c.id, c.task_id, c.user_id, c.reply_to_id, c.comentario, c.contenido_html, c.image_url, c.created_at,
               p.nombre as user_nombre, p.avatar_url as user_avatar_url
        FROM comments c LEFT JOIN profiles p ON p.id = c.user_id WHERE c.id = ?`,
       [id]
     );
     const comment = row ? { ...row, user: row.user_nombre ? { nombre: row.user_nombre, avatar_url: row.user_avatar_url || null } : null, likes_count: 0, liked_by_me: false } : null;
+    // En vivo para quienes tienen la tarea abierta (antes solo salía por socket)
+    emitirComentario(taskId, comment);
+    if (replyTo && req.userId) avisarRespuesta(taskId, replyTo, req.userId).catch(() => {});
 
     // Avisar a los seguidores de la tarea que hay un comentario nuevo.
     (async () => {

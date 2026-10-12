@@ -257,6 +257,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               : { type: 'task', url: '/tareas' },
           });
         });
+        // Timer cambiado en otro dispositivo o pestaña del mismo usuario: avisar a la página
+        socket.on('timer:changed', () => window.dispatchEvent(new CustomEvent('tiusdei:timer-changed')));
         socketRef.current = socket;
       }).catch(() => {});
     }

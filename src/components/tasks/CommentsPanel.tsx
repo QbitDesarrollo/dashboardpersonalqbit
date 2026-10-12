@@ -8,8 +8,9 @@ import {
   MessageSquare, Send, Loader2, AtSign, Smile, ImagePlus, X, Heart, Trash2,
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered,
   Heading1, Heading2, AlignLeft, AlignCenter, AlignRight, Indent,
-  Quote, Link as LinkIcon,
+  Quote, Link as LinkIcon, Reply,
 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn, getInitials } from '@/lib/utils';
@@ -157,6 +158,10 @@ export function CommentsPanel({ taskId, deskId }: CommentsPanelProps) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Respuesta dentro de un comentario (hilo de un nivel)
+  const [respondiendoA, setRespondiendoA] = useState<string | null>(null);
+  const [textoRespuesta, setTextoRespuesta] = useState('');
+  const [enviandoRespuesta, setEnviandoRespuesta] = useState(false);
 
   // Emoji picker
   const [showEmoji, setShowEmoji] = useState(false);
@@ -465,6 +470,24 @@ export function CommentsPanel({ taskId, deskId }: CommentsPanelProps) {
 
   useEffect(() => { handleSubmitRef.current = handleSubmit; }, [handleSubmit]);
 
+  // ── RESPONDER ─────────────────────────────────────────────────────────────
+  const enviarRespuesta = async () => {
+    const texto = textoRespuesta.trim();
+    if (!texto || !respondiendoA || enviandoRespuesta) return;
+    setEnviandoRespuesta(true);
+    try {
+      const created = await api.createComment(taskId, texto, undefined, undefined, respondiendoA);
+      if (created?.error) throw new Error(created.error);
+      setComments(prev => (prev.some(c => c.id === created.id) ? prev : [...prev, created]));
+      setRespondiendoA(null);
+      setTextoRespuesta('');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo enviar la respuesta');
+    } finally {
+      setEnviandoRespuesta(false);
+    }
+  };
+
   // ── DELETE COMMENT ────────────────────────────────────────────────────────
   const handleDeleteComment = async (commentId: string) => {
     if (!confirm('¿Estás seguro de que deseas eliminar este comentario?')) return;
@@ -493,6 +516,96 @@ export function CommentsPanel({ taskId, deskId }: CommentsPanelProps) {
       toast.error('No se pudo registrar el like');
     }
   };
+
+  // Hilos: comentarios raíz (o respuestas cuyo original se borró) y sus respuestas
+  const idsComentarios = new Set(comments.map((c) => c.id));
+  const raices = comments.filter((c) => !c.reply_to_id || !idsComentarios.has(c.reply_to_id));
+  const respuestasDe = (id: string) => comments.filter((c) => c.reply_to_id === id);
+  const renderComentario = (c: Comment, esRespuesta: boolean) => (
+        <div key={c.id} className={cn('p-3 rounded-lg text-sm group', esRespuesta ? 'bg-muted/30' : 'bg-muted/50')}>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-2">
+              <Avatar className="h-6 w-6">
+                {c.user?.avatar_url ? (
+                  <AvatarImage src={c.user.avatar_url} alt={c.user.nombre} className="object-cover" />
+                ) : null}
+                <AvatarFallback className="bg-primary/20 text-primary text-[10px] font-semibold">
+                  {getInitials(c.user?.nombre || 'U')}
+                </AvatarFallback>
+              </Avatar>
+              <span className="font-semibold text-foreground">{c.user?.nombre || 'Usuario'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {format(new Date(c.created_at), "d MMM, HH:mm", { locale: es })}
+              </span>
+              {(c.user_id === user?.id || isAdmin) && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteComment(c.id)}
+                  disabled={deletingId === c.id}
+                  className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all p-0.5 rounded"
+                  title="Eliminar comentario"
+                >
+                  {deletingId === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="pl-8">
+            {c.contenido_html ? (
+              <div
+                className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 [&_a]:text-primary [&_a]:underline"
+                dangerouslySetInnerHTML={{ __html: highlightMentionsInHtml(c.contenido_html, users.map(u => u.nombre)) }}
+              />
+            ) : c.comentario && c.comentario.trim() && c.comentario.trim() !== ' ' ? (
+              <p className="text-foreground/90 whitespace-pre-wrap break-words">
+                {renderCommentText(c.comentario, users.map(u => u.nombre))}
+              </p>
+            ) : null}
+
+            {c.image_url && (
+              <a href={c.image_url} target="_blank" rel="noopener noreferrer" className="mt-2 block">
+                <img
+                  src={c.image_url}
+                  alt="imagen adjunta"
+                  className="max-h-64 max-w-full rounded-lg border border-border object-contain hover:opacity-90 transition-opacity cursor-pointer"
+                />
+              </a>
+            )}
+
+            {/* Like button */}
+            <div className="mt-2 flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => handleLike(c.id)}
+                className={cn(
+                  'flex items-center gap-1 text-xs rounded-full px-2 py-0.5 transition-colors',
+                  c.liked_by_me
+                    ? 'text-rose-500 bg-rose-500/10 hover:bg-rose-500/20'
+                    : 'text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100',
+                )}
+                title={c.liked_by_me ? 'Quitar like' : 'Me gusta'}
+              >
+                <Heart className={cn('h-3.5 w-3.5', c.liked_by_me && 'fill-current')} />
+                {(c.likes_count ?? 0) > 0 && <span>{c.likes_count}</span>}
+              </button>
+              {!esRespuesta && (
+                <button
+                  type="button"
+                  onClick={() => { setRespondiendoA(respondiendoA === c.id ? null : c.id); setTextoRespuesta(''); }}
+                  className="flex items-center gap-1 text-xs rounded-full px-2 py-0.5 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                  title="Responder a este comentario"
+                >
+                  <Reply className="h-3.5 w-3.5" />
+                  Responder
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+  );
 
   const editorIsEmpty = !editor || (editor.getText().trim() === '' && !pendingImage);
   const canSend = !editorIsEmpty && !sending;
@@ -618,80 +731,41 @@ export function CommentsPanel({ taskId, deskId }: CommentsPanelProps) {
         ) : comments.length === 0 ? (
           <p className="text-sm text-muted-foreground py-2">No hay comentarios aún. ¡Sé el primero!</p>
         ) : (
-          comments.map((c) => (
-            <div key={c.id} className="p-3 rounded-lg bg-muted/50 text-sm group">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <div className="flex items-center gap-2">
-                  <Avatar className="h-6 w-6">
-                    {c.user?.avatar_url ? (
-                      <AvatarImage src={c.user.avatar_url} alt={c.user.nombre} className="object-cover" />
-                    ) : null}
-                    <AvatarFallback className="bg-primary/20 text-primary text-[10px] font-semibold">
-                      {getInitials(c.user?.nombre || 'U')}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="font-semibold text-foreground">{c.user?.nombre || 'Usuario'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    {format(new Date(c.created_at), "d MMM, HH:mm", { locale: es })}
-                  </span>
-                  {(c.user_id === user?.id || isAdmin) && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteComment(c.id)}
-                      disabled={deletingId === c.id}
-                      className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all p-0.5 rounded"
-                      title="Eliminar comentario"
-                    >
-                      {deletingId === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="pl-8">
-                {c.contenido_html ? (
-                  <div
-                    className="prose prose-sm dark:prose-invert max-w-none text-foreground/90 [&_a]:text-primary [&_a]:underline"
-                    dangerouslySetInnerHTML={{ __html: highlightMentionsInHtml(c.contenido_html, users.map(u => u.nombre)) }}
-                  />
-                ) : c.comentario && c.comentario.trim() && c.comentario.trim() !== ' ' ? (
-                  <p className="text-foreground/90 whitespace-pre-wrap break-words">
-                    {renderCommentText(c.comentario, users.map(u => u.nombre))}
-                  </p>
-                ) : null}
-
-                {c.image_url && (
-                  <a href={c.image_url} target="_blank" rel="noopener noreferrer" className="mt-2 block">
-                    <img
-                      src={c.image_url}
-                      alt="imagen adjunta"
-                      className="max-h-64 max-w-full rounded-lg border border-border object-contain hover:opacity-90 transition-opacity cursor-pointer"
-                    />
-                  </a>
-                )}
-
-                {/* Like button */}
-                <div className="mt-2 flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => handleLike(c.id)}
-                    className={cn(
-                      'flex items-center gap-1 text-xs rounded-full px-2 py-0.5 transition-colors',
-                      c.liked_by_me
-                        ? 'text-rose-500 bg-rose-500/10 hover:bg-rose-500/20'
-                        : 'text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100',
+          raices.map((c) => {
+            const respuestas = respuestasDe(c.id);
+            return (
+              <div key={c.id}>
+                {renderComentario(c, false)}
+                {(respuestas.length > 0 || respondiendoA === c.id) && (
+                  <div className="ml-6 mt-2 pl-3 border-l-2 border-primary/20 space-y-2">
+                    {respuestas.map((r) => renderComentario(r, true))}
+                    {respondiendoA === c.id && (
+                      <div className="space-y-2">
+                        <Textarea
+                          autoFocus
+                          value={textoRespuesta}
+                          onChange={(e) => setTextoRespuesta(e.target.value)}
+                          onKeyDown={(e) => {
+                            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); enviarRespuesta(); }
+                            if (e.key === 'Escape') { setRespondiendoA(null); setTextoRespuesta(''); }
+                          }}
+                          placeholder={`Responder a ${(c.user?.nombre || 'este comentario').trim()}… (usa @ para mencionar)`}
+                          className="min-h-[70px] text-sm"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button type="button" variant="ghost" size="sm" onClick={() => { setRespondiendoA(null); setTextoRespuesta(''); }}>Cancelar</Button>
+                          <Button type="button" size="sm" disabled={!textoRespuesta.trim() || enviandoRespuesta} onClick={enviarRespuesta}>
+                            {enviandoRespuesta ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Reply className="h-4 w-4 mr-1" />}
+                            Responder
+                          </Button>
+                        </div>
+                      </div>
                     )}
-                    title={c.liked_by_me ? 'Quitar like' : 'Me gusta'}
-                  >
-                    <Heart className={cn('h-3.5 w-3.5', c.liked_by_me && 'fill-current')} />
-                    {(c.likes_count ?? 0) > 0 && <span>{c.likes_count}</span>}
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

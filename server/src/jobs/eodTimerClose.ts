@@ -1,5 +1,6 @@
 import { query, queryOne } from '../db/mysql.js';
 import { createNotification } from '../utils/notifications.js';
+import { avisarCambioTimer } from '../utils/realtime.js';
 
 /**
  * Cierre DURO de timers al final del día (incidencia ca963e24).
@@ -78,6 +79,7 @@ export async function runEodTimerClose(): Promise<void> {
         );
       }
       cerrados.push({ user_id: s.user_id, nombre: nombreDe[s.user_id] || 'Alguien', titulo: s.titulo_tarea || 'una tarea', capped });
+      avisarCambioTimer(s.user_id);
     }
 
     // 2) Timers legacy sin sesión (solo tasks.timer_activo) → cerrarlos igual

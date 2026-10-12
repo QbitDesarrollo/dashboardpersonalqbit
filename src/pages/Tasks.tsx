@@ -638,6 +638,34 @@ export default function Tasks() {
     }
   };
 
+  // Timer cambiado en otro dispositivo o pestaña (aviso por socket) o al volver a esta
+  // pestaña: recargar la lista y el detalle abierto (incidencia de Steven, 28-ago: había
+  // que refrescar a mano para ver el timer que se dio en el celular)
+  const recargarPorTimer = useRef<() => void>(() => {});
+  recargarPorTimer.current = () => { fetchData(); if (detailDialogOpen) reloadSelectedTask(); };
+  useEffect(() => {
+    let espera: number | undefined;
+    let ultimaVuelta = 0;
+    const alCambiar = () => {
+      window.clearTimeout(espera);
+      espera = window.setTimeout(() => recargarPorTimer.current(), 600);
+    };
+    const alVolver = () => {
+      if (document.hidden || Date.now() - ultimaVuelta < 30_000) return;
+      ultimaVuelta = Date.now();
+      alCambiar();
+    };
+    window.addEventListener('tiusdei:timer-changed', alCambiar);
+    document.addEventListener('visibilitychange', alVolver);
+    window.addEventListener('focus', alVolver);
+    return () => {
+      window.clearTimeout(espera);
+      window.removeEventListener('tiusdei:timer-changed', alCambiar);
+      document.removeEventListener('visibilitychange', alVolver);
+      window.removeEventListener('focus', alVolver);
+    };
+  }, []);
+
   const abrirNuevaTarea = () => {
     setTareaEditando(null);
     setDialogOpen(true);

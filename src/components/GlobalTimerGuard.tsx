@@ -25,7 +25,7 @@ const fmtMin = (seg: number) => {
  * - Después de la hora de cierre (20:00 ECU): modal "¿Sigues trabajando?" —
  *   confirmar protege 3 horas; sin respuesta en 30 min se pausa solo.
  * - Al volver: si un timer se pausó solo, pregunta si siguió trabajando y ofrece
- *   recuperar ese tiempo (dentro de la jornada, máx. 3 h) y reanudar.
+ *   recuperar ese tiempo (dentro de la jornada, máx. 10 h) y reanudar.
  */
 export function GlobalTimerGuard() {
   const activeRef = useRef(false);

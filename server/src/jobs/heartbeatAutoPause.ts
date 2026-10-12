@@ -1,6 +1,7 @@
 import { query } from '../db/mysql.js';
 import { createNotification } from '../utils/notifications.js';
 import { sendEmail, timerAutoPausedEmail } from '../services/email.js';
+import { avisarCambioTimer } from '../utils/realtime.js';
 
 /**
  * Auto-pausa por latido (heartbeat): mientras Tiusdei está abierto, el frontend
@@ -55,6 +56,7 @@ export async function runHeartbeatAutoPause(): Promise<void> {
           [capped, s.task_id]
         );
       }
+      avisarCambioTimer(s.user_id);
 
       const hrs = Math.floor(capped / 3600); const mins = Math.floor((capped % 3600) / 60);
       await createNotification(

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
 import { chatWithGemini, summarizeContent, buildTaskContext, checkRateLimit, type GeminiMessage } from '../services/gemini.js';
+import { declaracionesNerudia, ejecutarHerramientaNerudia } from '../services/nerudiaTools.js';
 
 export const geminiRouter = Router();
 
@@ -157,8 +158,12 @@ geminiRouter.post('/gemini/chat', requireAuth, async (req: AuthRequest, res) => 
       { role: 'user', content: message },
     ];
 
-    // Call Gemini
-    const response = await chatWithGemini(allMessages, additionalContext);
+    // Call Gemini (con herramientas de consulta en vivo, salvo para clientes)
+    const herramientas = userRole === 'cliente' ? undefined : {
+      declaraciones: declaracionesNerudia,
+      ejecutar: (nombre: string, args: Record<string, unknown>) => ejecutarHerramientaNerudia(userId, nombre, args),
+    };
+    const response = await chatWithGemini(allMessages, additionalContext, herramientas);
 
     // Save both messages
     const userMsgId = uuid();

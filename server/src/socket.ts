@@ -6,6 +6,7 @@ import { canAccessTask } from './utils/taskAccess.js';
 import { sendEmail, chatMentionEmail } from './services/email.js';
 import { processCommentMentions } from './utils/mentions.js';
 import { setSocketIO } from './services/whatsapp.js';
+import { setRealtimeServer } from './utils/realtime.js';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
@@ -135,6 +136,7 @@ export function setupSocket(httpServer: HttpServer): void {
 
   // Pass Socket.io instance to WhatsApp service for real-time events
   setSocketIO(io);
+  setRealtimeServer(io);
 
   io.on('connection', (socket: Socket & { userId?: string }) => {
     const userId = socket.userId;

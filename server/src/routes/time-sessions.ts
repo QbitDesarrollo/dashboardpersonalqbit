@@ -88,6 +88,21 @@ timeSessionsRouter.post('/time-sessions/start', requireAuth, async (req: AuthReq
 });
 
 // Stop a session
+// Apaga el timer de la tarea si SIGUE marcado como corriendo, sumando el tramo desde
+// timer_inicio (como hace el PATCH de la tarea). En el flujo de la fila de Tareas la
+// tarea ya llega pausada (el PATCH va primero), así que aquí no se suma nada y no se
+// duplica; sirve cuando se detiene desde otro lugar u otro dispositivo, que antes
+// dejaba la tarea "corriendo" para siempre (incidencia de Steven, 28-ago).
+async function apagarTimerDeTarea(taskId: string | null | undefined): Promise<void> {
+  if (!taskId) return;
+  await query(
+    `UPDATE tasks SET tiempo_trabajado = tiempo_trabajado + LEAST(43200, GREATEST(0, COALESCE(TIMESTAMPDIFF(SECOND, timer_inicio, NOW()), 0))),
+            timer_activo = 0, timer_inicio = NULL
+     WHERE id = ? AND timer_activo = 1`,
+    [taskId]
+  );
+}
+
 timeSessionsRouter.post('/time-sessions/:id/stop', requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
@@ -111,10 +126,12 @@ timeSessionsRouter.post('/time-sessions/:id/stop', requireAuth, async (req: Auth
       [nowStr, effectiveSeconds, id]
     );
 
-    // OJO: aquí NO se suma a tasks.tiempo_trabajado. El flujo interactivo
+    // OJO: aquí NO se suma la sesión a tasks.tiempo_trabajado. El flujo interactivo
     // (TaskTimer) ya manda el delta legacy al pausar; sumar aquí también
     // duplicaba el tiempo de la tarea (se detectaron 291 tareas en 2.0x).
-    // Los jobs de auto-pausa/cierre sí suman porque ahí no hay cliente.
+    // Solo si la tarea quedó marcada como corriendo (nadie mandó ese delta) se
+    // apaga y se suma su tramo. Los jobs de auto-pausa/cierre suman aparte.
+    await apagarTimerDeTarea(session.task_id);
 
     res.json({ success: true, duration_seconds: effectiveSeconds });
   } catch (e) {
@@ -134,7 +151,7 @@ timeSessionsRouter.post('/time-sessions/:id/pause', requireAuth, async (req: Aut
     if (!session) return res.status(404).json({ error: 'Sesión activa no encontrada' });
 
     await query(`UPDATE time_entries SET status = 'paused' WHERE id = ?`, [id]);
-    await query(`UPDATE tasks SET timer_activo = 0 WHERE id = ?`, [session.task_id]);
+    await apagarTimerDeTarea(session.task_id);
 
     res.json({ success: true });
   } catch (e) {
@@ -281,10 +298,11 @@ timeSessionsRouter.post('/time-sessions/pause-mine', requireAuth, async (req: Au
 // Última sesión auto-pausada (12 h) sin otra sesión después y sin atender. Además
 // del aviso, calcula cuánto se puede recuperar si la persona dice que siguió
 // trabajando: desde la pausa hasta ahora, solo dentro de su jornada marcada (sin
-// almuerzo), sin pisar otras sesiones y como máximo 3 h (pedido de Steven, 6-oct:
+// almuerzo), sin pisar otras sesiones y como máximo 10 h (pedido de Steven, 6-oct:
 // "se les pausa siempre las tareas"; de 173 auto-pausas en 14 días, 64 se
-// retomaron en la misma tarea).
-const MAX_RECUPERABLE_SEG = 3 * 3600;
+// retomaron en la misma tarea). 10 h y no 3 (incidencia de Edmundo, 12-oct): en
+// una cobertura o producción la computadora queda suspendida casi toda la jornada.
+const MAX_RECUPERABLE_SEG = 10 * 3600;
 type Tramo = [number, number];
 function unirTramos(iv: Tramo[]): Tramo[] {
   const s = iv.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0]);

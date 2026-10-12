@@ -68,6 +68,26 @@ export function TimeSessionProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => { refreshSession(); }, [refreshSession]);
 
+  // El timer pudo cambiar en otro dispositivo (aviso por socket) o mientras la pestaña
+  // estaba en segundo plano: volver a pedirlo para no mostrar uno viejo
+  useEffect(() => {
+    let ultimo = 0;
+    const alCambiar = () => { refreshSession(); };
+    const alVolver = () => {
+      if (document.hidden || Date.now() - ultimo < 10_000) return;
+      ultimo = Date.now();
+      refreshSession();
+    };
+    window.addEventListener('tiusdei:timer-changed', alCambiar);
+    document.addEventListener('visibilitychange', alVolver);
+    window.addEventListener('focus', alVolver);
+    return () => {
+      window.removeEventListener('tiusdei:timer-changed', alCambiar);
+      document.removeEventListener('visibilitychange', alVolver);
+      window.removeEventListener('focus', alVolver);
+    };
+  }, [refreshSession]);
+
   // Activity tracking. If the server says the session is over (stopped or paused
   // elsewhere), refresh it so this tab stops tracking a closed session.
   useActivityTracker(isTracking ? activeSession?.id || null : null, refreshSession);
