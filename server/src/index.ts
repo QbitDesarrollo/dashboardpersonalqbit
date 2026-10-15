@@ -72,6 +72,7 @@ import { setSocketIO } from './services/whatsapp.js';
 import { avisoTimerMiddleware } from './utils/realtime.js';
 import { apiTokensRouter } from './routes/api-tokens.js';
 import { mcpRouter } from './routes/mcp.js';
+import { mcpProyectosRouter } from './routes/mcp-proyectos.js';
 
 // --- Validate required env vars at startup ---
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'tiusdei-secret-change-me') {
@@ -248,6 +249,7 @@ app.use('/api/data', crearRouterMinutaEnlace({ runner: runnerIa, correo: { envia
 app.use('/api/data', minutasRouter);
 app.use('/api/data', apiTokensRouter);
 app.use('/api', mcpMinutasRouter);
+app.use('/api', mcpProyectosRouter);
 app.use('/api', mcpRouter);
 app.use('/api/config', configRouter);
 app.use('/api/email', emailRouter);

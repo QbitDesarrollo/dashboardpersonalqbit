@@ -12,6 +12,7 @@ import { logActivity, logTaskChanges } from '../utils/activity.js';
 import { spawnNextRecurrence } from './tasks.js';
 import { processCommentMentions } from '../utils/mentions.js';
 import { fechaSql, hoyEcuador } from '../utils/fechas.js';
+import { ERROR_PROYECTO, mensajeProyecto, proyectoDeMarca } from './mcp-proyectos.js';
 
 /**
  * API del MCP de Tiusdei.
@@ -334,6 +335,7 @@ mcpRouter.get('/tasks', requireApiToken, async (req: AuthRequest, res) => {
 
     const fQuery = str(q.query);
     const fBrand = str(q.brandId);
+    const fProject = str(q.projectId);
     const fDesk = str(q.deskId);
     const fAssignee = str(q.assigneeId);
     const fMine = bool(q.mine);
@@ -382,7 +384,7 @@ mcpRouter.get('/tasks', requireApiToken, async (req: AuthRequest, res) => {
     // Huella de filtros — todo menos cursor/pageSize. `mine` se resuelve a userId
     // dentro de la huella para que dos usuarios no compartan cursor.
     const fp = filtersFingerprint({
-      query: fQuery ?? null, brandId: fBrand ?? null, deskId: fDesk ?? null,
+      query: fQuery ?? null, brandId: fBrand ?? null, projectId: fProject ?? null, deskId: fDesk ?? null,
       assigneeId: fAssignee ?? null, mine: fMine ? userId : null, overdue: fOverdue,
       dueFrom: fDueFrom ?? null, dueTo: fDueTo ?? null,
       estado: estado ?? null, prioridad: prioridad ?? null,
@@ -429,6 +431,7 @@ mcpRouter.get('/tasks', requireApiToken, async (req: AuthRequest, res) => {
     const params: string[] = [...visParams];
     if (fQuery) { conds.push('t.titulo_tarea LIKE ?'); params.push(`%${fQuery}%`); }
     if (fBrand) { conds.push('t.brand_id = ?'); params.push(fBrand); }
+    if (fProject) { conds.push('t.project_id = ?'); params.push(fProject); }
     if (fDesk) { conds.push('t.desk_id = ?'); params.push(fDesk); }
     if (fAssignee) {
       conds.push('(t.responsable_user_id = ? OR t.id IN (SELECT task_id FROM task_responsables WHERE user_id = ?))');
@@ -455,7 +458,7 @@ mcpRouter.get('/tasks', requireApiToken, async (req: AuthRequest, res) => {
     }
 
     const listSql = `
-      SELECT t.id, t.titulo_tarea, b.nombre AS brand_nombre, d.nombre AS desk_nombre,
+      SELECT t.id, t.titulo_tarea, b.nombre AS brand_nombre, d.nombre AS desk_nombre, pj.nombre AS project_nombre,
              t.estado, t.prioridad,
              DATE_FORMAT(t.fecha_entrega, '%Y-%m-%d') AS fecha_entrega,
              p.nombre AS resp_nombre,
@@ -463,6 +466,7 @@ mcpRouter.get('/tasks', requireApiToken, async (req: AuthRequest, res) => {
       FROM tasks t
       LEFT JOIN brands b ON b.id = t.brand_id
       LEFT JOIN desks d ON d.id = t.desk_id
+      LEFT JOIN projects pj ON pj.id = t.project_id
       LEFT JOIN profiles p ON p.id = t.responsable_user_id
       WHERE ${whereList}
       ORDER BY t.updated_at DESC, t.id DESC
@@ -514,6 +518,7 @@ mcpRouter.get('/tasks', requireApiToken, async (req: AuthRequest, res) => {
         title: r.titulo_tarea,
         brand: r.brand_nombre ?? null,
         desk: r.desk_nombre ?? null,
+        project: r.project_nombre ?? null,
         status: STATUS_REVERSE[r.estado] ?? r.estado,
         priority: PRIORITY_REVERSE[r.prioridad] ?? r.prioridad,
         dueDate: r.fecha_entrega ?? null,
@@ -550,7 +555,7 @@ mcpRouter.get('/tasks/:id', requireApiToken, async (req: AuthRequest, res) => {
 
     const row = await queryOne<any>(
       `SELECT t.id, t.titulo_tarea, t.detalle, t.estado, t.prioridad,
-              t.brand_id, b.nombre AS brand_nombre,
+              t.brand_id, b.nombre AS brand_nombre, t.project_id, pj.nombre AS project_nombre,
               t.desk_id, d.nombre AS desk_nombre,
               t.task_type_id, tt.nombre AS task_type_nombre,
               t.department_id, dep.nombre AS department_nombre,
@@ -564,6 +569,7 @@ mcpRouter.get('/tasks/:id', requireApiToken, async (req: AuthRequest, res) => {
               DATE_FORMAT(t.updated_at, '%Y-%m-%dT%H:%i:%s') AS updated_at
        FROM tasks t
        LEFT JOIN brands b ON b.id = t.brand_id
+       LEFT JOIN projects pj ON pj.id = t.project_id
        LEFT JOIN desks d ON d.id = t.desk_id
        LEFT JOIN task_types tt ON tt.id = t.task_type_id
        LEFT JOIN departments dep ON dep.id = t.department_id
@@ -603,6 +609,7 @@ mcpRouter.get('/tasks/:id', requireApiToken, async (req: AuthRequest, res) => {
       title: row.titulo_tarea,
       detail: row.detalle ?? null,
       brand: row.brand_id ? { id: row.brand_id, name: row.brand_nombre ?? null } : null,
+      project: row.project_id ? { id: row.project_id, name: row.project_nombre ?? null } : null,
       desk: row.desk_id ? { id: row.desk_id, name: row.desk_nombre ?? null } : null,
       status: STATUS_REVERSE[row.estado] ?? row.estado,
       priority: PRIORITY_REVERSE[row.prioridad] ?? row.prioridad,
@@ -644,6 +651,8 @@ const createTaskSchema = z.object({
   dueDate: z.string().min(1),
   detail: z.string().max(5000).nullable().optional(),
   links: z.array(z.string()).max(20).optional().default([]),
+  /** Optional: an active project of the same brand (list_projects). */
+  projectId: z.string().min(1).nullable().optional(),
 });
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -796,6 +805,11 @@ async function createOneTask(
       departmentId = dept.id;
     }
 
+    // ── Proyecto (opcional, de la misma marca) ──
+    if (body.projectId && !(await proyectoDeMarca(body.projectId, body.brandId))) {
+      return { ok: false, status: 400, error: ERROR_PROYECTO, message: mensajeProyecto(body.projectId) };
+    }
+
     // ── Insert ──
     const id = uuid();
     const enlaces = body.links && body.links.length > 0 ? JSON.stringify(body.links) : null;
@@ -805,12 +819,12 @@ async function createOneTask(
     await query(
       `INSERT INTO tasks (id, check_done, brand_id, desk_id, titulo_tarea, detalle, cantidad_entregables,
         responsable_user_id, department_id, prioridad, estado, fecha_inicio, fecha_entrega, enlaces,
-        task_type_id, tipo_entregable_id, created_by, recurrence_type)
-       VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none')`,
+        task_type_id, tipo_entregable_id, created_by, recurrence_type, project_id)
+       VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?)`,
       [
         id, body.brandId, deskId, body.title, body.detail || null, deliverableTypeId ? deliverableQuantity : 1,
         primaryResponsable, departmentId, prioridad, estado,
-        body.startDate || null, body.dueDate, enlaces, taskTypeId, deliverableTypeId, userId ?? null,
+        body.startDate || null, body.dueDate, enlaces, taskTypeId, deliverableTypeId, userId ?? null, body.projectId || null,
       ]
     );
 
@@ -1094,6 +1108,8 @@ const updateTaskSchema = z.object({
   startDate: z.string().nullable().optional(),
   dueDate: z.string().optional(),
   rescheduleReason: z.string().optional(),
+  /** Move to another project of the task's brand, or null to take it out of its project. */
+  projectId: z.string().min(1).nullable().optional(),
 });
 
 mcpRouter.patch('/tasks/:id', requireApiToken, async (req: AuthRequest, res) => {
@@ -1107,7 +1123,7 @@ mcpRouter.patch('/tasks/:id', requireApiToken, async (req: AuthRequest, res) => 
     const body = parsed.data;
 
     const oldRow = await queryOne<any>(
-      `SELECT id, created_by, responsable_user_id, titulo_tarea, detalle, prioridad,
+      `SELECT id, created_by, responsable_user_id, titulo_tarea, detalle, prioridad, brand_id, project_id,
               task_type_id, department_id, tipo_entregable_id, fecha_inicio, fecha_entrega, fecha_cliente, client_board_id
        FROM tasks WHERE id = ?`,
       [taskId],
@@ -1128,6 +1144,13 @@ mcpRouter.patch('/tasks/:id', requireApiToken, async (req: AuthRequest, res) => 
     const values: unknown[] = [];
     const logData: Record<string, unknown> = {};
 
+    if (body.projectId !== undefined) {
+      if (body.projectId && !(await proyectoDeMarca(body.projectId, oldRow.brand_id))) {
+        res.status(400).json({ error: ERROR_PROYECTO, message: mensajeProyecto(body.projectId) });
+        return;
+      }
+      fields.push('project_id = ?'); values.push(body.projectId); logData.project_id = body.projectId;
+    }
     if (body.title !== undefined) { fields.push('titulo_tarea = ?'); values.push(body.title); logData.titulo_tarea = body.title; }
     if (body.detail !== undefined) { fields.push('detalle = ?'); values.push(body.detail || null); logData.detalle = body.detail || null; }
 

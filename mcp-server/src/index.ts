@@ -114,11 +114,34 @@ const createTaskShape = {
   dueDate: z.string().describe("Fecha en formato YYYY-MM-DD"),
   detail: z.string(),
   links: z.array(z.string()).optional(),
+  projectId: z
+    .string()
+    .optional()
+    .describe("Optional. Project of the same brand (id from list_projects with this brandId). Omit when the task has no project."),
 };
 
 /** Construye un servidor MCP fresco ligado al token de un usuario. */
 function buildServer(token: string): McpServer {
   const server = new McpServer({ name: "tiusdei-mcp", version: "1.0.0" });
+
+  /** Projects (optional grouping of tasks inside a brand). */
+  server.registerTool(
+    "list_projects",
+    {
+      description:
+        "List active Tiusdei projects visible to the current token: id, name, brand, status (En curso, Pausado, Terminado, Cancelado), leader, endDate, tasks and done. A project belongs to one brand and is OPTIONAL for a task: use it to set or filter projectId in create_task, create_tasks, update_task and search_tasks only when the task belongs to one. Filter by brandId to get the projects valid for a task of that brand.",
+      inputSchema: {
+        brandId: z.string().optional().describe("Solo proyectos de esta marca (id de list_brands)"),
+        status: z.string().optional().describe("En curso | Pausado | Terminado | Cancelado"),
+      },
+    },
+    async (input) => {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(input)) if (v) qs.set(k, String(v));
+      const proyectos = await callTiusdei(token, `/projects${qs.toString() ? `?${qs}` : ""}`);
+      return { content: [{ type: "text", text: JSON.stringify(proyectos) }] };
+    },
+  );
 
   /** Lista las marcas visibles para el token actual. Devuelve [{ id, name }]. */
   server.registerTool(
@@ -200,6 +223,7 @@ function buildServer(token: string): McpServer {
       inputSchema: {
         query: z.string().optional().describe("Texto libre; busca en el título de la tarea"),
         brandId: z.string().optional().describe("Filtra por marca (id de list_brands)"),
+        projectId: z.string().optional().describe("Filtra por proyecto (id de list_projects)"),
         deskId: z.string().optional().describe("Filtra por mesa (id de list_desks)"),
         assigneeId: z.string().optional().describe("Filtra por responsable (id de list_assignees)"),
         mine: z.boolean().optional().describe("Solo tareas donde el dueño del token es responsable"),
@@ -229,7 +253,7 @@ function buildServer(token: string): McpServer {
     "get_task",
     {
       description:
-        "Get the full detail of ONE Tiusdei task by id (obtained from search_tasks). Returns title, detail, brand, desk, status, priority, taskType, department, deliverableType, deliverableQuantity, assignees, dates, links and url. Does NOT include comments or activity history. Use it when the user picks a task from a search_tasks list.",
+        "Get the full detail of ONE Tiusdei task by id (obtained from search_tasks). Returns title, detail, brand, project (or null), desk, status, priority, taskType, department, deliverableType, deliverableQuantity, assignees, dates, links and url. Does NOT include comments or activity history. Use it when the user picks a task from a search_tasks list.",
       inputSchema: { taskId: z.string().describe("Task id from search_tasks") },
     },
     async ({ taskId }) => {
@@ -360,6 +384,11 @@ function buildServer(token: string): McpServer {
           .optional()
           .describe("How many units of deliverableType. Defaults to 1. Ignored if deliverableType is not set in this same call."),
         links: z.array(z.string()).optional().describe("Reemplaza la lista de enlaces"),
+        projectId: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Move the task to another project of its brand (id from list_projects), or null to take it out of its project."),
         startDate: z.string().optional().describe("Fecha de inicio YYYY-MM-DD"),
         dueDate: z.string().optional().describe("Fecha de entrega YYYY-MM-DD (exige rescheduleReason si cambia)"),
         rescheduleReason: z.string().optional().describe("Motivo del cambio de fecha de entrega: INTERNO|CLIENTE|ALCANCE|FUERZA_MAYOR|SIN_CLASIFICAR"),
