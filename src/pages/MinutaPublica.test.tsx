@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 
 const abrir = () => render(
-  <MemoryRouter initialEntries={[`/m/${TOKEN}`]}>
+  <MemoryRouter initialEntries={[`/m/${TOKEN}`]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <Routes><Route path="/m/:token" element={<MinutaPublica />} /></Routes>
   </MemoryRouter>,
 );

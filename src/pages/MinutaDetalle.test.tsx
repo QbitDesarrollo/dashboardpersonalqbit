@@ -185,7 +185,8 @@ describe('MinutaDetalle · PDF', () => {
 
   it('exporta un solo PDF, sin los puntos internos', async () => {
     renderDetalle();
-    fireEvent.click(await screen.findByRole('button', { name: 'Exportar PDF' }));
+    const exportButton = await screen.findByRole('button', { name: 'Exportar PDF' });
+    await act(async () => { fireEvent.click(exportButton); });
     expect(minutaPdf.exportarMinutaPdf).toHaveBeenCalledWith(minuta, { soloVisibles: true });
     expect(screen.queryByRole('button', { name: 'PDF para el cliente' })).not.toBeInTheDocument();
   });

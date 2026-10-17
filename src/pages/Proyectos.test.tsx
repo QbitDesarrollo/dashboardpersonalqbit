@@ -24,7 +24,7 @@ beforeEach(() => {
   m.getProfiles.mockResolvedValue([{ id: 'u1', nombre: 'Even Fierro', rol: 'admin' }, { id: 'c1', nombre: 'Cliente', rol: 'cliente' }] as never);
 });
 
-const mostrar = (ruta = '/proyectos') => render(<MemoryRouter initialEntries={[ruta]}><Proyectos /></MemoryRouter>);
+const mostrar = (ruta = '/proyectos') => render(<MemoryRouter initialEntries={[ruta]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Proyectos /></MemoryRouter>);
 
 describe('Proyectos', () => {
   it('marca los proyectos que no tienen líder', async () => {

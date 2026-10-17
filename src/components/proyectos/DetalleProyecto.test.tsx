@@ -23,7 +23,7 @@ const proyecto = (p: Partial<Project>): Project => ({
 beforeEach(() => { vi.clearAllMocks(); });
 const mostrar = (p: Project, reporteInicial?: string) => {
   m.getProject.mockResolvedValue({ project: p, tasks: [] });
-  render(<MemoryRouter><DetalleProyecto project={p} personas={PERSONAS} onBack={() => {}} reporteInicial={reporteInicial} /></MemoryRouter>);
+  render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><DetalleProyecto project={p} personas={PERSONAS} onBack={() => {}} reporteInicial={reporteInicial} /></MemoryRouter>);
 };
 
 describe('DetalleProyecto', () => {

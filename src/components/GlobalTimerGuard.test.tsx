@@ -1,50 +1,51 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor, cleanup } from '@testing-library/react';
-import { toast } from 'sonner';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as api from '@/lib/apiClient';
 import { GlobalTimerGuard } from './GlobalTimerGuard';
 
 vi.mock('@/lib/apiClient', () => ({
   timerHeartbeat: vi.fn(async () => ({ active: false })),
   getTimerResumeSuggestion: vi.fn(),
-  pauseMyTimer: vi.fn(), patchTask: vi.fn(), startTimeSession: vi.fn(),
+  resumeAutoTimer: vi.fn(async () => ({ ok: true, recuperado_seg: 0 })),
 }));
-vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
-const PAUSA = { task_id: 't1', titulo: 'Proyecta Connect', end_time: '2026-09-24T08:48:00.000Z', duration_seconds: 360 };
+const PAUSE = { task_id: 't1', titulo: 'Demo task', end_time: '2026-10-17T14:00:00.000Z', duration_seconds: 360 };
 
-async function montarYEsperar() {
-  render(<GlobalTimerGuard />);
-  await waitFor(() => expect(api.getTimerResumeSuggestion).toHaveBeenCalled());
-  await new Promise((r) => setTimeout(r, 0));
-  cleanup();
+async function dismissPause() {
+  const view = render(<GlobalTimerGuard />);
+  await screen.findByRole('alertdialog', { name: 'Tu timer se pausó solo' });
+  fireEvent.click(screen.getByRole('button', { name: 'Dejarlo pausado' }));
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  view.unmount();
 }
 
-describe('GlobalTimerGuard · aviso de pausa automática', () => {
+describe('GlobalTimerGuard automatic pause notice', () => {
   beforeEach(() => {
     localStorage.clear();
-    vi.mocked(toast).mockClear();
-    vi.mocked(api.getTimerResumeSuggestion).mockReset().mockResolvedValue(PAUSA);
+    vi.clearAllMocks();
+    vi.mocked(api.getTimerResumeSuggestion).mockResolvedValue(PAUSE);
+  });
+  afterEach(cleanup);
+
+  it('does not repeat an acknowledged pause after reopening the app', async () => {
+    await dismissPause();
+    render(<GlobalTimerGuard />);
+    await waitFor(() => expect(api.getTimerResumeSuggestion).toHaveBeenCalledTimes(2));
+    expect(api.resumeAutoTimer).toHaveBeenCalledWith('descartar');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
-  it('avisa una sola vez por cada pausa, aunque Tiusdei se abra de nuevo', async () => {
-    await montarYEsperar();
-    await montarYEsperar();
-    await montarYEsperar();
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(toast).mock.calls[0][0]).toMatch(/Proyecta Connect.*se pausó solo/);
+  it('shows a new pause even when a previous pause was acknowledged', async () => {
+    await dismissPause();
+    vi.mocked(api.getTimerResumeSuggestion).mockResolvedValue({ ...PAUSE, end_time: '2026-10-17T15:00:00.000Z' });
+    render(<GlobalTimerGuard />);
+    expect(await screen.findByRole('alertdialog', { name: 'Tu timer se pausó solo' })).toHaveTextContent('Demo task');
   });
 
-  it('si hay una pausa nueva, vuelve a avisar', async () => {
-    await montarYEsperar();
-    vi.mocked(api.getTimerResumeSuggestion).mockResolvedValue({ ...PAUSA, end_time: '2026-09-24T15:10:00.000Z' });
-    await montarYEsperar();
-    expect(toast).toHaveBeenCalledTimes(2);
-  });
-
-  it('sin pausa reciente no avisa nada', async () => {
+  it('does not show a notice without a recent automatic pause', async () => {
     vi.mocked(api.getTimerResumeSuggestion).mockResolvedValue({});
-    await montarYEsperar();
-    expect(toast).not.toHaveBeenCalled();
+    render(<GlobalTimerGuard />);
+    await waitFor(() => expect(api.getTimerResumeSuggestion).toHaveBeenCalled());
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 });

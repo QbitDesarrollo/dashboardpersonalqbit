@@ -66,7 +66,7 @@ describe('ReportesProyecto', () => {
   it('muestra los últimos reportes y el resto con "Ver todos"; abre el que elijas', async () => {
     m.listarReportes.mockResolvedValue([
       fila({ id: 'r4', periodo_desde: '2026-09-28', periodo_hasta: '2026-09-29', parcial: true }),
-      fila({}), fila({ id: 'r2', periodo_desde: '2026-09-14', periodo_hasta: '2026-09-20', estado: 'aprobado' }),
+      fila({ id: 'r3' }), fila({ id: 'r2', periodo_desde: '2026-09-14', periodo_hasta: '2026-09-20', estado: 'aprobado' }),
       fila({ id: 'r1', periodo_desde: '2026-09-07', periodo_hasta: '2026-09-13', estado: 'aprobado' }),
     ]);
     mostrar();
