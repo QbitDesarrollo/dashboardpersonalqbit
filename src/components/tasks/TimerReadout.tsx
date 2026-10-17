@@ -6,9 +6,9 @@ export function TimerReadout({ time, running, large = false }: { time: string; r
       role="timer"
       aria-label="Tiempo trabajado"
       className={cn(
-        'shrink-0 whitespace-nowrap font-mono font-medium tabular-nums tracking-tight',
+        'shrink-0 whitespace-nowrap font-mono tabular-nums tracking-tight',
         large ? 'text-xl' : 'text-sm',
-        running ? 'text-teal-700 dark:text-primary' : 'text-muted-foreground',
+        running ? 'font-semibold text-emerald-700 dark:text-emerald-400' : 'font-medium text-muted-foreground',
       )}
     >
       {time}

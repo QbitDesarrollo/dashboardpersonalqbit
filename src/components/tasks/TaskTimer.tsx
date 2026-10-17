@@ -110,7 +110,7 @@ export function TaskTimer({
         <div className={cn(
           "flex items-center gap-1.5 px-2 py-1 rounded-md border",
           isRunning
-            ? "border-primary/15 bg-primary/5 text-teal-700 dark:text-primary"
+            ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
             : "border-transparent bg-muted text-muted-foreground"
         )}>
           <Timer className="h-3 w-3" />
@@ -137,11 +137,14 @@ export function TaskTimer({
   }
 
   return (
-    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+    <div className={cn(
+      "flex items-center gap-3 p-3 rounded-lg border",
+      isRunning ? "border-emerald-500/40 bg-emerald-500/20" : "border-transparent bg-muted/50",
+    )}>
       <div className="flex items-center gap-2">
         <Timer className={cn(
           "h-5 w-5",
-          isRunning ? "text-teal-700 dark:text-primary" : "text-muted-foreground"
+          isRunning ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"
         )} />
         <TimerReadout time={formattedTime} running={isRunning} large />
       </div>
