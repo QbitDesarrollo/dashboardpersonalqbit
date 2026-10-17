@@ -139,7 +139,7 @@ export function TaskTimer({
   return (
     <div className={cn(
       "flex items-center gap-3 p-3 rounded-lg border",
-      isRunning ? "border-emerald-500/40 bg-emerald-500/20" : "border-transparent bg-muted/50",
+      isRunning ? "border-emerald-500/30 bg-emerald-500/10 dark:bg-emerald-500/20" : "border-transparent bg-muted/50",
     )}>
       <div className="flex items-center gap-2">
         <Timer className={cn(
@@ -157,7 +157,7 @@ export function TaskTimer({
               size="sm"
               disabled={pending}
               onClick={() => { void runAction(handleStop); }}
-              className="gap-1"
+              className="gap-1 bg-card text-card-foreground hover:bg-neutral-100 dark:hover:bg-neutral-800"
             >
               <Pause className="h-4 w-4" />
               Pausar
@@ -179,7 +179,7 @@ export function TaskTimer({
             size="sm"
             disabled={pending}
             onClick={() => setConfirmReset(true)}
-            className="gap-1 text-muted-foreground hover:bg-red-100 hover:text-red-700 focus-visible:bg-red-100 focus-visible:text-red-700 focus-visible:ring-destructive dark:hover:bg-red-950 dark:hover:text-red-400 dark:focus-visible:bg-red-950 dark:focus-visible:text-red-400"
+            className="gap-1 bg-card text-muted-foreground hover:bg-red-100 hover:text-red-700 focus-visible:bg-red-100 focus-visible:text-red-700 focus-visible:ring-destructive dark:hover:bg-red-950 dark:hover:text-red-400 dark:focus-visible:bg-red-950 dark:focus-visible:text-red-400"
             title="Reiniciar el timer (borra el tiempo acumulado)"
           >
             <RotateCcw className="h-4 w-4" />
