@@ -191,7 +191,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto p-4 sm:p-6" aria-describedby="task-detail-standalone-desc">
+      <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle className="text-xl flex items-center gap-2 pr-8">
             <span className="flex-1">{task?.titulo_tarea || 'Detalle de Tarea'}</span>
@@ -214,7 +214,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange }: TaskDetailDialo
               </Button>
             )}
           </DialogTitle>
-          <DialogDescription id="task-detail-standalone-desc">Información completa, timer, comentarios y entregables.</DialogDescription>
+          <DialogDescription>Información completa, timer, comentarios y entregables.</DialogDescription>
         </DialogHeader>
 
         {loading && (

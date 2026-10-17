@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as api from '@/lib/apiClient';
 import { toast } from 'sonner';
+import { formatTaskTimer, taskElapsedSeconds } from '@/lib/taskTimer';
+import { useTimerClock } from './useTimerClock';
 
 interface UseTaskTimerProps {
   taskId: string;
@@ -15,46 +17,19 @@ interface UseTaskTimerProps {
 }
 
 export function useTaskTimer({ taskId, initialTime, isActive, startTime, estimatedHours, warnEnabled, taskTitle }: UseTaskTimerProps) {
-  const [elapsedTime, setElapsedTime] = useState(initialTime);
+  const [savedTime, setSavedTime] = useState(initialTime);
   const [isRunning, setIsRunning] = useState(isActive);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef = useRef<Date | null>(startTime ? new Date(startTime) : null);
+  const [timerStart, setTimerStart] = useState(startTime);
+  const now = useTimerClock(isRunning);
+  const elapsedTime = taskElapsedSeconds(savedTime, isRunning ? timerStart : null, now);
   const warnThresholdRef = useRef(0); // Pieza 2: umbral de aviso de timer largo
   const overWarnedRef = useRef(false); // aviso de horas estimadas superadas
 
-  // Calculate elapsed time when timer was already running
   useEffect(() => {
-    if (isActive && startTime) {
-      const start = new Date(startTime);
-      const now = new Date();
-      const additionalSeconds = Math.floor((now.getTime() - start.getTime()) / 1000);
-      setElapsedTime(initialTime + additionalSeconds);
-      startTimeRef.current = start;
-    } else {
-      setElapsedTime(initialTime);
-    }
+    setSavedTime(initialTime);
+    setTimerStart(isActive ? startTime : null);
     setIsRunning(isActive);
   }, [initialTime, isActive, startTime]);
-
-  // Timer interval
-  useEffect(() => {
-    if (isRunning) {
-      intervalRef.current = setInterval(() => {
-        setElapsedTime((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [isRunning]);
 
   const startTimer = useCallback(async () => {
     try {
@@ -90,20 +65,21 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime, estimat
         const ok = window.confirm(confirmMsg);
         if (!ok) {
           toast.info('Cancelado. El timer anterior sigue corriendo.');
-          return;
+          return false;
         }
 
         // Pausar la anterior con el tiempo correspondiente
         try {
-          await api.patchTask(otro.id, {
+          const paused = await api.patchTask(otro.id, {
             timer_activo: false,
             timer_inicio: null,
             tiempo_trabajado_delta: timeToSum,
           });
+          if (paused?.error) throw new Error(paused.error);
         } catch (e) {
           console.error('[TIMER] No se pudo pausar el timer anterior:', e);
           toast.error('No se pudo pausar el timer anterior. Revisa manualmente.');
-          return;
+          return false;
         }
       }
 
@@ -112,11 +88,13 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime, estimat
       const result: any = await api.patchTask(taskId, { timer_activo: true, timer_inicio: now });
       if (result?.error) throw new Error(result.error);
 
-      startTimeRef.current = new Date(now);
+      setTimerStart(now);
       setIsRunning(true);
       toast.success(otro ? 'Timer iniciado (la anterior se pausó)' : 'Timer iniciado');
+      return true;
     } catch (error: any) {
       toast.error('Error al iniciar timer', { description: error.message });
+      return false;
     }
   }, [taskId]);
 
@@ -124,8 +102,8 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime, estimat
     try {
       // Calculate additional time since timer started
       let additionalTime = 0;
-      if (startTimeRef.current) {
-        additionalTime = Math.floor((new Date().getTime() - startTimeRef.current.getTime()) / 1000);
+      if (timerStart) {
+        additionalTime = taskElapsedSeconds(0, timerStart, Date.now());
       }
 
       // GUARDA: si la diferencia es > 3h, muy probable que el usuario olvidó pausar
@@ -159,14 +137,16 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime, estimat
       if (result?.error) throw new Error(result.error);
 
       // Actualizar elapsed local (el refetch de onUpdate trae el total real del server)
-      setElapsedTime(initialTime + additionalTime);
+      setSavedTime(savedTime + additionalTime);
       setIsRunning(false);
-      startTimeRef.current = null;
+      setTimerStart(null);
       toast.success(additionalTime === 0 ? 'Timer pausado (sin cambios)' : 'Timer pausado');
+      return true;
     } catch (error: any) {
       toast.error('Error al pausar timer', { description: error.message });
+      return false;
     }
-  }, [taskId, initialTime]);
+  }, [taskId, savedTime, timerStart]);
 
   // Pieza 2 (Timer control): avisar cada 2h "¿Sigues trabajando?" y pausar si dice que no.
   useEffect(() => {
@@ -202,30 +182,21 @@ export function useTaskTimer({ taskId, initialTime, isActive, startTime, estimat
       });
       if (result?.error) throw new Error(result.error);
       
-      setElapsedTime(0);
+      setSavedTime(0);
       setIsRunning(false);
-      startTimeRef.current = null;
+      setTimerStart(null);
       toast.success('Timer reiniciado');
+      return true;
     } catch (error: any) {
       toast.error('Error al reiniciar timer', { description: error.message });
+      return false;
     }
   }, [taskId]);
-
-  const formatTime = useCallback((seconds: number) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    if (hrs > 0) {
-      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }, []);
 
   return {
     elapsedTime,
     isRunning,
-    formattedTime: formatTime(elapsedTime),
+    formattedTime: formatTaskTimer(elapsedTime),
     startTimer,
     stopTimer,
     resetTimer,

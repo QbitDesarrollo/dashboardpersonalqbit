@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Play, Pause, RotateCcw, Timer, AlertTriangle } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { useTaskTimer } from '@/hooks/useTaskTimer';
 import { cn } from '@/lib/utils';
 import * as api from '@/lib/apiClient';
+import { notifyTaskTimerChanged } from '@/lib/taskTimer';
+import { TimerReadout } from './TimerReadout';
 
 interface TaskTimerProps {
   taskId: string;
@@ -36,6 +38,17 @@ export function TaskTimer({
   onUpdate
 }: TaskTimerProps) {
   const [confirmReset, setConfirmReset] = useState(false);
+  const [pending, setPending] = useState(false);
+  const actionInProgress = useRef(false);
+  const runAction = async (action: () => Promise<void>) => {
+    if (actionInProgress.current) return;
+    actionInProgress.current = true;
+    setPending(true);
+    try { await action(); } finally {
+      actionInProgress.current = false;
+      setPending(false);
+    }
+  };
   const { formattedTime, isRunning, startTimer, stopTimer, resetTimer } = useTaskTimer({
     taskId,
     initialTime,
@@ -47,7 +60,7 @@ export function TaskTimer({
     taskTitle,
   });
   const handleStart = async () => {
-    await startTimer();
+    if (!(await startTimer())) return;
     // Also start Time Doctor session for screenshots & activity tracking
     try {
       const { session: active } = await api.getActiveTimeSession();
@@ -60,11 +73,12 @@ export function TaskTimer({
     } catch {
       // Time session is optional, don't block timer
     }
+    notifyTaskTimerChanged();
     onUpdate?.();
   };
 
   const handleStop = async () => {
-    await stopTimer();
+    if (!(await stopTimer())) return;
     // Also stop Time Doctor session
     try {
       const { session: active } = await api.getActiveTimeSession();
@@ -74,17 +88,19 @@ export function TaskTimer({
     } catch {
       // Time session is optional
     }
+    notifyTaskTimerChanged();
     onUpdate?.();
   };
 
   const handleReset = async () => {
-    await resetTimer();
+    if (!(await resetTimer())) return;
     try {
       const { session: active } = await api.getActiveTimeSession();
       if (active && active.task_id === taskId) {
         await api.stopTimeSession(active.id);
       }
     } catch {}
+    notifyTaskTimerChanged();
     onUpdate?.();
   };
 
@@ -92,20 +108,22 @@ export function TaskTimer({
     return (
       <div className="flex items-center gap-1">
         <div className={cn(
-          "flex items-center gap-1 font-mono text-sm px-1.5 py-1 rounded",
+          "flex items-center gap-1.5 px-2 py-1 rounded-md border",
           isRunning
-            ? "bg-primary/20 text-primary animate-pulse"
-            : "bg-muted text-muted-foreground"
+            ? "border-primary/15 bg-primary/5 text-teal-700 dark:text-primary"
+            : "border-transparent bg-muted text-muted-foreground"
         )}>
           <Timer className="h-3 w-3" />
-          {formattedTime}
+          <TimerReadout time={formattedTime} running={isRunning} />
         </div>
         {canEdit && (
           <Button
             variant="ghost"
             size="icon"
             className="h-7 w-7"
-            onClick={isRunning ? handleStop : handleStart}
+            aria-label={isRunning ? 'Pausar timer' : 'Iniciar timer'}
+            disabled={pending}
+            onClick={() => { void runAction(isRunning ? handleStop : handleStart); }}
           >
             {isRunning ? (
               <Pause className="h-3.5 w-3.5" />
@@ -123,14 +141,9 @@ export function TaskTimer({
       <div className="flex items-center gap-2">
         <Timer className={cn(
           "h-5 w-5",
-          isRunning ? "text-primary animate-pulse" : "text-muted-foreground"
+          isRunning ? "text-teal-700 dark:text-primary" : "text-muted-foreground"
         )} />
-        <span className={cn(
-          "font-mono text-xl font-semibold",
-          isRunning ? "text-primary" : "text-foreground"
-        )}>
-          {formattedTime}
-        </span>
+        <TimerReadout time={formattedTime} running={isRunning} large />
       </div>
 
       {canEdit && (
@@ -139,7 +152,8 @@ export function TaskTimer({
             <Button
               variant="secondary"
               size="sm"
-              onClick={handleStop}
+              disabled={pending}
+              onClick={() => { void runAction(handleStop); }}
               className="gap-1"
             >
               <Pause className="h-4 w-4" />
@@ -149,7 +163,8 @@ export function TaskTimer({
             <Button
               variant="default"
               size="sm"
-              onClick={handleStart}
+              disabled={pending}
+              onClick={() => { void runAction(handleStart); }}
               className="gap-1"
             >
               <Play className="h-4 w-4" />
@@ -159,6 +174,7 @@ export function TaskTimer({
           <Button
             variant="ghost"
             size="sm"
+            disabled={pending}
             onClick={() => setConfirmReset(true)}
             className="gap-1 text-muted-foreground hover:text-destructive"
             title="Reiniciar el timer (borra el tiempo acumulado)"
@@ -184,7 +200,8 @@ export function TaskTimer({
                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  onClick={() => { setConfirmReset(false); handleReset(); }}
+                  disabled={pending}
+                  onClick={() => { setConfirmReset(false); void runAction(handleReset); }}
                 >
                   Sí, borrar el tiempo
                 </AlertDialogAction>

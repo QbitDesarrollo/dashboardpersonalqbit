@@ -84,6 +84,7 @@ import { TimeSessionProvider, useTimeSession } from '@/contexts/TimeSessionConte
 import { usePendientesReportes } from '@/hooks/usePendientesReportes';
 import { GlobalTimerGuard } from '@/components/GlobalTimerGuard';
 import { CheckInWidget } from '@/components/time-doctor/CheckInWidget';
+import { ActiveTaskTimer } from '@/components/tasks/ActiveTaskTimer';
 
 interface NavItem {
   title: string;
@@ -670,8 +671,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Main content */}
       <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 w-full lg:w-auto">
         {/* Header */}
-        <header className="h-14 sm:h-16 shrink-0 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-30">
-          <div className="h-full px-3 sm:px-4 flex items-center justify-between gap-2 min-w-0">
+        <header className="min-h-14 sm:h-16 shrink-0 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-30">
+          <div className="min-h-14 sm:h-full px-3 sm:px-4 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 min-w-0">
             <div className="flex items-center gap-2 sm:gap-4 min-w-0">
               <Button
                 variant="ghost"
@@ -691,7 +692,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 {sidebarCollapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
               </Button>
               <div className="min-w-0">
-                <h1 className="text-base sm:text-lg font-semibold text-foreground truncate">
+                <h1 className="max-w-40 md:max-w-48 text-base sm:text-lg font-semibold text-foreground truncate">
                   {filteredNav.find(n => n.href === location.pathname)?.title || 
                    adminNavigation.find(n => n.href === location.pathname)?.title || 
                    'TIUSDEI Portal'}
@@ -699,7 +700,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-1 sm:gap-2">
+            <ActiveTaskTimer />
+
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
               <GlobalSearch />
               {profile?.rol === 'admin' && (
                 <Button
