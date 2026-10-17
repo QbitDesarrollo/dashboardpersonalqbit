@@ -179,7 +179,7 @@ export function TaskTimer({
             size="sm"
             disabled={pending}
             onClick={() => setConfirmReset(true)}
-            className="gap-1 text-muted-foreground hover:text-destructive"
+            className="gap-1 text-muted-foreground hover:bg-red-100 hover:text-red-700 focus-visible:bg-red-100 focus-visible:text-red-700 focus-visible:ring-destructive dark:hover:bg-red-950 dark:hover:text-red-400 dark:focus-visible:bg-red-950 dark:focus-visible:text-red-400"
             title="Reiniciar el timer (borra el tiempo acumulado)"
           >
             <RotateCcw className="h-4 w-4" />
