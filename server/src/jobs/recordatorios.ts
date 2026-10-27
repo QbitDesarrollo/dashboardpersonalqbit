@@ -143,17 +143,17 @@ export async function runRecordatorios(): Promise<void> {
           const { hoy } = await yaEnviado(u.id, 'checkin', fecha);
           if (hoy > 0) continue;
           const nombre = String(u.nombre || '').trim().split(' ')[0] || 'Hola';
-          await createNotification(u.id, 'Aún no marcas tu ingreso de hoy en Tiusdei. Cuando llegues, dale a "Ingresar" en Asistencia.');
+          await createNotification(u.id, 'Aún no hay actividad tuya hoy en Tiusdei. Cuando empieces, dale play a tu tarea o marca tu ingreso en Asistencia: el ingreso se registra solo con tu primera actividad.');
           if (emailOk && u.email) {
             const { html, text } = await renderEmail({
               accent: 'amber',
               preheader: 'Recordatorio de ingreso',
-              headline: 'Aún no marcas tu ingreso de hoy',
+              headline: 'Aún no hay actividad tuya hoy',
               greeting: `Hola ${esc(nombre)},`,
-              intro: 'Todavía no aparece tu ingreso de hoy en Tiusdei. Si ya estás trabajando, márcalo en <strong>Asistencia</strong> para que tu día quede registrado; si es un día libre o permiso, ignora este mensaje.',
-              cta: { text: 'Marcar ingreso', url: `${frontendUrl}/dashboard` },
+              intro: 'Todavía no aparece actividad tuya hoy en Tiusdei. Cuando empieces, dale play a la tarea en la que trabajas (o marca tu ingreso en <strong>Asistencia</strong>): tu ingreso se registra solo con tu primera actividad. Si es un día libre o permiso, ignora este mensaje.',
+              cta: { text: 'Ir a mis tareas', url: `${frontendUrl}/tareas` },
             });
-            await sendEmail({ to: u.email, subject: 'Recordatorio: aún no marcas tu ingreso en Tiusdei', html, text });
+            await sendEmail({ to: u.email, subject: 'Recordatorio: aún no hay actividad tuya hoy en Tiusdei', html, text });
           }
           await registrar(u.id, 'checkin', fecha);
           console.log(`[RECORDATORIOS] checkin → ${u.nombre}`);

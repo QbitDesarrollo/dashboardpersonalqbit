@@ -7,6 +7,7 @@ import { sendEmail, chatMentionEmail } from './services/email.js';
 import { processCommentMentions } from './utils/mentions.js';
 import { setSocketIO } from './services/whatsapp.js';
 import { setRealtimeServer } from './utils/realtime.js';
+import { asegurarIngreso } from './services/ingresoAutomatico.js';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
@@ -211,6 +212,7 @@ export function setupSocket(httpServer: HttpServer): void {
         const comment = row ? { ...row, user: row.user_nombre ? { nombre: row.user_nombre } : null, likes_count: 0, liked_by_me: false } : null;
 
         io.to(`task:${taskId}`).emit('comment:new', comment);
+        asegurarIngreso(userId).catch(() => {});
 
         // Detectar @menciones (notif in-app + email centralizado).
         // Ver: server/src/utils/mentions.ts

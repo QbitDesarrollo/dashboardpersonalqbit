@@ -260,6 +260,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         });
         // Timer cambiado en otro dispositivo o pestaña del mismo usuario: avisar a la página
         socket.on('timer:changed', () => window.dispatchEvent(new CustomEvent('tiusdei:timer-changed')));
+        socket.on('attendance:changed', () => window.dispatchEvent(new CustomEvent('tiusdei:asistencia-changed')));
         socketRef.current = socket;
       }).catch(() => {});
     }

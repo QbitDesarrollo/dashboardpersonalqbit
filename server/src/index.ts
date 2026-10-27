@@ -70,6 +70,7 @@ import { crearRouterMinutaEnlace } from './routes/minuta-enlace.js';
 import { initErrorCapture, errorLogMiddleware } from './utils/errorLog.js';
 import { setSocketIO } from './services/whatsapp.js';
 import { avisoTimerMiddleware } from './utils/realtime.js';
+import { ingresoAutomaticoMiddleware } from './services/ingresoAutomatico.js';
 import { apiTokensRouter } from './routes/api-tokens.js';
 import { mcpRouter } from './routes/mcp.js';
 import { mcpProyectosRouter } from './routes/mcp-proyectos.js';
@@ -120,6 +121,8 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }));
 // Avisa a los otros dispositivos del usuario cuando su timer cambia
 app.use('/api/data', avisoTimerMiddleware);
+// La primera acción de trabajo del día marca el ingreso si la persona no lo hizo
+app.use('/api/data', ingresoAutomaticoMiddleware);
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // Static uploads

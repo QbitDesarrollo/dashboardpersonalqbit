@@ -13,6 +13,8 @@ interface Attendance {
   total_seconds: number;
   lunch_start?: string | null;
   lunch_end?: string | null;
+  /** 1 = registrado solo con la primera actividad del día (play, editar o comentar una tarea) */
+  auto_check_in?: number | boolean;
 }
 
 function parseErrorMsg(e: any): string {
@@ -44,6 +46,29 @@ export function CheckInWidget() {
   }, []);
 
   useEffect(() => { fetchToday(); }, [fetchToday]);
+
+  // Ingreso automático con la primera actividad del día (aviso por socket) o timer
+  // cambiado: volver a pedir la asistencia y avisar si el ingreso se registró solo
+  const teniaIngreso = useRef(false);
+  useEffect(() => { teniaIngreso.current = !!attendance; }, [attendance]);
+  useEffect(() => {
+    const recargar = async () => {
+      const antes = teniaIngreso.current;
+      try {
+        const d = await api.getTodayAttendance();
+        setAttendance(d.attendance || null);
+        if (!antes && d.attendance?.auto_check_in) {
+          toast.info('Registramos tu ingreso automáticamente con tu primera actividad del día');
+        }
+      } catch { /* sin conexión: se reintenta en el próximo aviso */ }
+    };
+    window.addEventListener('tiusdei:asistencia-changed', recargar);
+    window.addEventListener('tiusdei:timer-changed', recargar);
+    return () => {
+      window.removeEventListener('tiusdei:asistencia-changed', recargar);
+      window.removeEventListener('tiusdei:timer-changed', recargar);
+    };
+  }, []);
 
   // Elapsed timer with clean ref-based cleanup
   useEffect(() => {
@@ -211,6 +236,7 @@ export function CheckInWidget() {
               </div>
               <div className="text-[10px] text-muted-foreground">
                 Desde {fmtHora(attendance.check_in)}
+                {!!attendance.auto_check_in && <span title="Se registró solo con tu primera actividad del día en Tiusdei"> · automático</span>}
               </div>
               {isOnLunch && (
                 <div className="flex items-center justify-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">

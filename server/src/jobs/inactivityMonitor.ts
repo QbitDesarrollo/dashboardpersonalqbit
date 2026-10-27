@@ -91,7 +91,7 @@ export async function runInactivityMonitor() {
     // Auto-close attendance from previous days
     const today = now.toISOString().slice(0, 10);
     const openOld = await query<any[]>(
-      `SELECT id, check_in FROM attendance WHERE check_out IS NULL AND DATE(check_in) < ?`,
+      `SELECT id, user_id, check_in, COALESCE(auto_check_in, 0) AS auto_check_in FROM attendance WHERE check_out IS NULL AND DATE(check_in) < ?`,
       [today]
     );
 
@@ -100,6 +100,24 @@ export async function runInactivityMonitor() {
       // Close at midnight of the check-in day
       const midnight = new Date(checkIn);
       midnight.setHours(23, 59, 59, 0);
+      // Automatic check-in (first activity of the day, nobody clicked check-out):
+      // close at the last activity of that day instead of midnight, so the day is
+      // not inflated to midnight.
+      if (Number(att.auto_check_in) === 1) {
+        const ult = await queryOne<{ t: Date | null }>(
+          `SELECT GREATEST(
+             COALESCE((SELECT MAX(COALESCE(end_time, last_heartbeat, start_time)) FROM time_entries WHERE user_id = ? AND start_time BETWEEN ? AND ?), '1970-01-01'),
+             COALESCE((SELECT MAX(created_at) FROM activity_log WHERE user_id = ? AND created_at BETWEEN ? AND ?), '1970-01-01'),
+             COALESCE((SELECT MAX(created_at) FROM comments WHERE user_id = ? AND created_at BETWEEN ? AND ?), '1970-01-01')
+           ) AS t`,
+          [att.user_id, checkIn, midnight, att.user_id, checkIn, midnight, att.user_id, checkIn, midnight]
+        );
+        // The automatic check-in was created by an activity, so with nothing after it
+        // the day ends right there (one minute), never at midnight
+        const t = ult?.t ? new Date(ult.t) : null;
+        const fin = t && t.getTime() > checkIn.getTime() ? t.getTime() : checkIn.getTime() + 60_000;
+        midnight.setTime(Math.min(fin, midnight.getTime()));
+      }
       const totalSeconds = Math.floor((midnight.getTime() - checkIn.getTime()) / 1000);
       const midnightStr = midnight.toISOString().replace('T', ' ').replace('Z', '');
 

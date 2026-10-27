@@ -33,6 +33,11 @@ export function avisoTimerMiddleware(req: Request, res: Response, next: NextFunc
   next();
 }
 
+/** La asistencia de hoy cambió (ingreso automático): el widget de Asistencia se recarga. */
+export function avisarAsistencia(userId?: string | null): void {
+  if (io && userId) io.to(`user:${userId}`).emit('attendance:changed', { at: Date.now() });
+}
+
 /** Comentario nuevo a quienes tienen la tarea abierta (sala `task:<id>`). */
 export function emitirComentario(taskId: string, comment: unknown): void {
   if (io && comment) io.to(`task:${taskId}`).emit('comment:new', comment);
