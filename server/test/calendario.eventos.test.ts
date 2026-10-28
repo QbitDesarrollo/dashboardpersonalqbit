@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { calendar_v3 } from 'googleapis';
-import { aEventoCalendario, enlaceDeReunion, esReunionReal, esTareaTiusdei } from '../src/calendario/eventos.js';
+import { aEventoCalendario, enlaceDeReunion, esReunionReal, esReunionVisible, esTareaTiusdei } from '../src/calendario/eventos.js';
 
 const reunion = (extra: Partial<calendar_v3.Schema$Event> = {}): calendar_v3.Schema$Event => ({
   id: 'ev1',
@@ -83,5 +83,25 @@ describe('eventos del calendario · enlace para entrar', () => {
   it('la API entrega el enlace junto al evento', () => {
     expect(aEventoCalendario(reunion({ hangoutLink: 'https://meet.google.com/abc-defg-hij' })).enlace)
       .toEqual({ url: 'https://meet.google.com/abc-defg-hij', plataforma: 'meet' });
+  });
+});
+
+describe('eventos del calendario · reuniones que ve la persona', () => {
+  const sinResponder = reunion({
+    hangoutLink: 'https://meet.google.com/abc-defg-hij',
+    attendees: [{ email: 'yo@qbit.com.ec', self: true, responseStatus: 'needsAction' }, { email: 'equipo@qbit.com.ec' }],
+  });
+
+  it('muestra las invitaciones que todavía no respondió (el monitor no las cuenta como horas)', () => {
+    expect(esReunionVisible(sinResponder)).toBe(true);
+    expect(esReunionReal(sinResponder)).toBe(false);
+    expect(aEventoCalendario(sinResponder).es_reunion).toBe(true);
+  });
+
+  it('no muestra las que rechazó, las tareas de Tiusdei ni los bloqueos personales', () => {
+    expect(esReunionVisible(reunion({ attendees: [{ self: true, responseStatus: 'declined' }, { email: 'x@y.com' }] }))).toBe(false);
+    expect(esReunionVisible(reunion({ summary: '[Tiusdei] Tarea', hangoutLink: 'https://meet.google.com/abc-defg-hij' }))).toBe(false);
+    expect(esReunionVisible(reunion({ summary: 'Hora de almorzar', attendees: [] }))).toBe(false);
+    expect(esReunionVisible(reunion({ status: 'cancelled' }))).toBe(false);
   });
 });

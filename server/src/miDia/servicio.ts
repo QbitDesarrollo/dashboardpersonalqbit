@@ -7,7 +7,7 @@ export async function miDia(userId: string, now = Date.now()) {
   const inicioDia = new Date(`${hoy}T00:00:00-05:00`), finDia = new Date(inicioDia.getTime() + 86400000);
   const rango = semanas(now);
   const [datos, reuniones, actual, anterior] = await Promise.all([
-    consultarDia(userId, hoy, inicioDia, finDia), reunionesDeHoy([userId]),
+    consultarDia(userId, hoy, inicioDia, finDia), reunionesDeHoy([userId], { visibles: true }),
     consultarCumplimiento(userId, rango.actual.desde, rango.actual.hasta),
     consultarCumplimiento(userId, rango.anterior.desde, rango.anterior.hasta),
   ]);

@@ -11,23 +11,36 @@ export function esTareaTiusdei(summary: string | null | undefined): boolean {
   return (summary || '').startsWith(PREFIJO_TAREA);
 }
 
-/**
- * ¿El evento es una reunión de verdad para la persona dueña del calendario?
- * Con hora (no de día completo), no cancelado, no marcado "disponible", no es una
- * tarea de Tiusdei, con al menos otro invitado o con link de videollamada, y que
- * la persona organizó, aceptó o marcó "quizás".
- */
-export function esReunionReal(ev: calendar_v3.Schema$Event): boolean {
+function cumpleReglasComunes(ev: calendar_v3.Schema$Event): boolean {
   if (ev.status === 'cancelled' || ev.transparency === 'transparent') return false;
   if (esTareaTiusdei(ev.summary)) return false;
   if (!ev.start?.dateTime || !ev.end?.dateTime) return false;
-  const invitados = ev.attendees || [];
-  const otros = invitados.filter((a) => !a.self && !a.resource).length;
+  const otros = (ev.attendees || []).filter((a) => !a.self && !a.resource).length;
   const conLink = !!(ev.hangoutLink || ev.conferenceData);
-  if (otros === 0 && !conLink) return false;
-  const yo = invitados.find((a) => a.self);
-  if (yo && !yo.organizer && yo.responseStatus !== 'accepted' && yo.responseStatus !== 'tentative') return false;
-  return true;
+  return otros > 0 || conLink; // sin invitados ni link es un bloqueo personal
+}
+
+const respuestaPropia = (ev: calendar_v3.Schema$Event) => (ev.attendees || []).find((a) => a.self);
+
+/**
+ * Reunión que cuenta como tiempo para el monitor (decisión del 6-oct-2026): con
+ * hora, no cancelada, no "disponible", no es tarea de Tiusdei, con otro invitado
+ * o link de videollamada, y que la persona organizó, aceptó o marcó "quizás".
+ */
+export function esReunionReal(ev: calendar_v3.Schema$Event): boolean {
+  if (!cumpleReglasComunes(ev)) return false;
+  const yo = respuestaPropia(ev);
+  return !yo || !!yo.organizer || yo.responseStatus === 'accepted' || yo.responseStatus === 'tentative';
+}
+
+/**
+ * Reunión que la persona ve en Tiusdei (Tareas, dashboard, ventana flotante): las
+ * mismas reglas, pero también las invitaciones que aún no respondió; solo se
+ * ocultan las que rechazó.
+ */
+export function esReunionVisible(ev: calendar_v3.Schema$Event): boolean {
+  if (!cumpleReglasComunes(ev)) return false;
+  return respuestaPropia(ev)?.responseStatus !== 'declined';
 }
 
 export type Plataforma = 'meet' | 'zoom' | 'teams' | 'otro';
@@ -86,7 +99,7 @@ export function aEventoCalendario(ev: calendar_v3.Schema$Event): EventoCalendari
     htmlLink: ev.htmlLink || '',
     status: ev.status,
     es_tarea_tiusdei: esTareaTiusdei(ev.summary),
-    es_reunion: esReunionReal(ev),
+    es_reunion: esReunionVisible(ev),
     enlace: enlaceDeReunion(ev),
     ubicacion: ev.location || '',
   };

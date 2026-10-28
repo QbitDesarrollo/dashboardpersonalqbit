@@ -1,7 +1,7 @@
 import { google, type calendar_v3 } from 'googleapis';
 import { query } from '../db/mysql.js';
 import { getAuthedClient } from '../utils/googleAuth.js';
-import { esReunionReal } from '../calendario/eventos.js';
+import { esReunionReal, esReunionVisible } from '../calendario/eventos.js';
 
 // Reuniones de cada persona, leídas de su Google Calendar (si lo tiene
 // conectado). Sirve para que el monitor y las vistas de equipo muestren
@@ -112,8 +112,10 @@ async function tiempoConTimer(userIds: string[], desdeMs: number): Promise<Map<s
 const TZ = 'America/Guayaquil';
 
 /** ¿Este evento del calendario cuenta como reunión de la persona? (reglas arriba, en calendario/eventos.ts) */
-function esReunion(ev: calendar_v3.Schema$Event, maxMin: number): EventoHoy | null {
-  if (!esReunionReal(ev)) return null;
+// visibles: lo que la persona ve en su propio día (incluye invitaciones sin responder);
+// sin ese flag, la regla del monitor que suma horas.
+function esReunion(ev: calendar_v3.Schema$Event, maxMin: number, visibles = false): EventoHoy | null {
+  if (!(visibles ? esReunionVisible(ev) : esReunionReal(ev))) return null;
   const s = ev.start!.dateTime!, e = ev.end!.dateTime!;
   const dur = Math.round((new Date(e).getTime() - new Date(s).getTime()) / 60000);
   if (dur <= 0 || dur > maxMin) return null;
@@ -129,8 +131,8 @@ export function motivoSinAcceso(userId: string): string | null { return sinAcces
 
 const cacheEventos = new Map<string, { at: number; eventos: EventoHoy[] }>();
 /** Reuniones de la persona entre dos instantes; null = sin Google conectado o sin acceso. */
-async function leerReuniones(userId: string, timeMin: string, timeMax: string, ttlMs: number, maxResults: number, maxMin: number): Promise<EventoHoy[] | null> {
-  const key = `${userId}|${timeMin}|${timeMax}`;
+async function leerReuniones(userId: string, timeMin: string, timeMax: string, ttlMs: number, maxResults: number, maxMin: number, visibles = false): Promise<EventoHoy[] | null> {
+  const key = `${userId}|${timeMin}|${timeMax}|${visibles ? 'visibles' : 'monitor'}`;
   const c = cacheEventos.get(key);
   if (c && Date.now() - c.at < ttlMs) return c.eventos;
   const sa = sinAcceso.get(userId);
@@ -143,7 +145,7 @@ async function leerReuniones(userId: string, timeMin: string, timeMax: string, t
     let pageToken: string | undefined;
     do {
       const resp = await cal.events.list({ calendarId: 'primary', timeMin, timeMax, maxResults, singleEvents: true, orderBy: 'startTime', pageToken });
-      for (const ev of resp.data.items || []) { const r = esReunion(ev, maxMin); if (r) eventos.push(r); }
+      for (const ev of resp.data.items || []) { const r = esReunion(ev, maxMin, visibles); if (r) eventos.push(r); }
       pageToken = resp.data.nextPageToken || undefined;
     } while (pageToken);
     cacheEventos.set(key, { at: Date.now(), eventos });
@@ -166,9 +168,9 @@ function ventanaHoy(): { timeMin: string; timeMax: string } {
   return { timeMin: new Date(`${hoy}T00:00:00-05:00`).toISOString(), timeMax: new Date(`${hoy}T23:59:59-05:00`).toISOString() };
 }
 // Hoy: caché de 2 min (el monitor consulta cada 30 s y las vistas de equipo cada 60 s)
-async function eventosDe(userId: string): Promise<EventoHoy[] | null> {
+async function eventosDe(userId: string, visibles = false): Promise<EventoHoy[] | null> {
   const { timeMin, timeMax } = ventanaHoy();
-  return leerReuniones(userId, timeMin, timeMax, 2 * 60 * 1000, 250, 24 * 60);
+  return leerReuniones(userId, timeMin, timeMax, 2 * 60 * 1000, 250, 24 * 60, visibles);
 }
 // Últimos N días: caché de 10 min; eventos de más de 12 h no son reuniones
 async function eventosRango(userId: string, dias: number): Promise<EventoHoy[] | null> {
@@ -209,7 +211,7 @@ export async function reunionesPorDia(userIds: string[], dias: number): Promise<
   return out;
 }
 
-export async function reunionesDeHoy(userIds: string[]): Promise<Map<string, ReunionesUsuario>> {
+export async function reunionesDeHoy(userIds: string[], opciones: { visibles?: boolean } = {}): Promise<Map<string, ReunionesUsuario>> {
   const out = new Map<string, ReunionesUsuario>();
   if (!userIds.length) return out;
   const conectados = await conGoogle(userIds);
@@ -220,7 +222,7 @@ export async function reunionesDeHoy(userIds: string[]): Promise<Map<string, Reu
   await Promise.all(userIds.map(async (uid) => {
     const vacio: ReunionesUsuario = { conectado: false, eventos: [], ahora: null, hoy_seg: 0, hasta_ahora_seg: 0, fuera_jornada_seg: 0 };
     if (!conectados.has(uid)) { out.set(uid, vacio); return; }
-    const eventos = await eventosDe(uid);
+    const eventos = await eventosDe(uid, opciones.visibles);
     if (!eventos) { out.set(uid, vacio); return; }
     let ahora: EventoHoy | null = null;
     for (const ev of eventos) {
