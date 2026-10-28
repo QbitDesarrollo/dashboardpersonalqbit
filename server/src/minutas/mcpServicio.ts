@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import { moverPunto } from './domain.js';
 import { cargarDetalle, insertarNota } from './consultas.js';
-import { guardarEvidencia, leerPendiente } from './archivos.js';
+import { guardarEvidencia, leerPendiente, quitarArchivoPendiente } from './archivos.js';
 import type { cerrarMcpSchema, editarMcpSchema, subirEvidenciaMcpSchema } from './esquemas.js';
 import { minutaParaAgente } from './formatoMcp.js';
 import { ErrorMinuta } from './servicio.js';
@@ -19,9 +19,14 @@ export async function subirEvidencia(b: z.infer<typeof subirEvidenciaMcpSchema>,
   // No se escribe un archivo si el destino no existe.
   if (b.pointId) await enTransaccion((conn) => exigirPunto(conn, b.pointId!));
   const archivo = await guardarEvidencia(b.fileBase64, b.fileName, b.mimeType, userId);
-  if (b.pointId) await enTransaccion((conn) => adjuntarEvidencia(conn, b.pointId!, {
-    tipo: archivo.type, nombre: archivo.name, url: archivo.url,
-  }, userId, archivo.id));
+  try {
+    if (b.pointId) await enTransaccion((conn) => adjuntarEvidencia(conn, b.pointId!, {
+      tipo: archivo.type, nombre: archivo.name, url: archivo.url,
+    }, userId, archivo.id));
+  } catch (e) {
+    await quitarArchivoPendiente(archivo);
+    throw e;
+  }
   return { evidenceId: archivo.id, url: archivo.url, type: archivo.type, name: archivo.name, pointId: b.pointId ?? null };
 }
 
@@ -35,7 +40,7 @@ export async function cerrarPuntoMcp(id: string, b: z.infer<typeof cerrarMcpSche
           if (vinculada.item_id !== id) throw new ErrorMinuta(400, 'La evidencia pertenece a otro punto.', 'TIUSDEI_VALIDATION');
           continue;
         }
-        const archivo = await leerPendiente(e.evidenceId);
+        const archivo = await leerPendiente(e.evidenceId, userId);
         await adjuntarEvidencia(conn, id, { tipo: archivo.type, nombre: archivo.name, url: archivo.url }, userId, archivo.id);
       } else {
         const drive = 'driveFileId' in e;
@@ -49,6 +54,12 @@ export async function cerrarPuntoMcp(id: string, b: z.infer<typeof cerrarMcpSche
     const minuta = await accionarPunto(conn, id, 'completar', { resolucion: b.whatWasDone }, userId);
     await insertarNota(id, 'nota', 'Cerrado vía MCP', { userId, via: 'mcp' }, conn);
     return minuta;
+  }).catch((e: unknown) => {
+    // Dos cierres pueden competir por el mismo id antes de que exista su fila.
+    if (e && typeof e === 'object' && 'code' in e && ['ER_DUP_ENTRY', 'ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'].includes(String(e.code))) {
+      throw new ErrorMinuta(400, 'La evidencia ya está en uso; vuelve a consultar el punto.', 'TIUSDEI_VALIDATION');
+    }
+    throw e;
   });
   return puntoParaAgente(minutaId, id);
 }

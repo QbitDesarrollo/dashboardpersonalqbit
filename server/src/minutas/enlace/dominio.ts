@@ -64,7 +64,7 @@ export function minutaParaCliente(m: MinutaInterna, urlImagen: (e: EvidenciaInte
         responsable_cliente: p.responsable_cliente, fecha_compromiso: p.fecha_compromiso, resolucion: p.resolucion,
         aprobado_via: p.aprobado_via, aprobado_por_nombre: p.aprobado_via === 'enlace' ? p.aprobado_por_nombre : null, aprobado_en: p.aprobado_en,
         evidencias: p.evidencias.map((e) => ({ id: e.id, tipo: e.tipo, nombre: e.nombre, url: e.tipo === 'imagen' || e.tipo === 'archivo' ? urlImagen(e) : e.url })),
-        notas: p.notas.map((n) => ({ id: n.id, tipo: n.tipo, texto: n.texto, created_at: n.created_at, autor_nombre: n.via === 'enlace' ? n.autor_nombre ?? null : null })),
+        notas: p.notas.filter((n) => n.via !== 'mcp').map((n) => ({ id: n.id, tipo: n.tipo, texto: n.texto, created_at: n.created_at, autor_nombre: n.via === 'enlace' ? n.autor_nombre ?? null : null })),
       })),
   };
 }

@@ -1,8 +1,11 @@
-import { beforeAll, afterAll, beforeEach, describe, it, expect } from 'vitest';
+import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import type { AddressInfo } from 'net';
 import fs from 'fs/promises';
 import path from 'path';
+import { instalarSubidaEvidencia } from '../src/minutas/limiteCuerpo.js';
+import { archivosEstaticos } from '../src/utils/estaticos.js';
+import * as repoPuntos from '../src/minutas/puntos/consultas.js';
 import { mcpMinutasRouter } from '../src/routes/mcp-minutas.js';
 import { query, uuid } from '../src/db/mysql.js';
 import { minutasRouter } from '../src/routes/minutas.js';
@@ -23,7 +26,8 @@ const archivos = new Set<string>();
 beforeAll(async () => {
   // Same parser ordering as production: only this upload may exceed 2 MB.
   const app = express();
-  app.post('/api/minuta-evidence', express.json({ limit: '15mb' }));
+  instalarSubidaEvidencia(app, (_req, _res, next) => next());
+  app.use('/uploads', archivosEstaticos(path.join(process.cwd(), 'uploads')));
   app.use(express.json({ limit: '2mb' }));
   app.use('/api', mcpMinutasRouter, crearRouterMinutaPublica({ limitePorMinuto: 10000 }));
   app.use('/web', minutasRouter, filesRouter);
@@ -35,7 +39,9 @@ beforeAll(async () => {
 afterAll(async () => {
   for (const archivo of archivos) {
     await fs.unlink(archivo).catch(() => undefined);
-    await fs.unlink(path.join(path.dirname(archivo), '.pendientes', `${path.parse(archivo).name}.json`)).catch(() => undefined);
+    for (const dir of [path.join(path.dirname(archivo), '.pendientes'), path.join(process.cwd(), 'uploads-privado', 'evidencias-pendientes')]) {
+      await fs.unlink(path.join(dir, `${path.parse(archivo).name}.json`)).catch(() => undefined);
+    }
   }
   await cerrar();
   await cerrarLimpieza();
@@ -61,6 +67,68 @@ const subir = async (bytes = PNG, mimeType = 'image/png', pointId?: string) => {
 };
 const cerrarPunto = (body: unknown, id = puntos[0], quien = token) => llamar(`${url}/api/minuta-points/${id}/close`, quien, 'POST', body);
 const editar = (body: unknown, id = puntos[0]) => llamar(`${url}/api/minuta-points/${id}`, token, 'PATCH', body);
+
+describe('regresiones del verificador', () => {
+  it.each([{ bytes: Buffer.from('ffd8ffdb', 'hex'), mime: 'image/jpeg', ext: 'jpg' }, { bytes: Buffer.from('524946460000000057454250', 'hex'), mime: 'image/webp', ext: 'webp' }, { bytes: PNG, mime: 'image/png', ext: 'png' }])('sube $mime sin usar el nombre como ruta', async ({ bytes, mime, ext }) => {
+    const r = await llamar(`${url}/api/minuta-evidence`, token, 'POST', { fileBase64: bytes.toString('base64'), fileName: '../../x.png', mimeType: mime });
+    expect(r.status).toBe(201);
+    expect(new URL(r.body.url).pathname).toMatch(new RegExp(`^/uploads/editor/[a-f0-9-]{36}\\.${ext}$`));
+    archivos.add(path.join(process.cwd(), 'uploads', 'editor', path.basename(r.body.url)));
+    expect(await fs.readFile([...archivos].at(-1)!)).toEqual(bytes);
+    expect((await fetch(`${url}/uploads/editor/.pendientes/${r.body.evidenceId}.json`)).status).toBe(404);
+    await expect(fs.access(path.join(process.cwd(), 'uploads', 'editor', '.pendientes', `${r.body.evidenceId}.json`))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  it('rechaza base64 inválido y peticiones sin token', async () => {
+    const body = { fileBase64: 'abc', fileName: 'x.png', mimeType: 'image/png' };
+    expect(await llamar(`${url}/api/minuta-evidence`, token, 'POST', body)).toMatchObject({ status: 400, body: { error: 'TIUSDEI_VALIDATION' } });
+    expect((await llamar(`${url}/api/minuta-evidence`, null, 'POST', body)).status).toBe(401);
+  });
+  it('no permite usar pendientes de otro dueño y conserva el punto sin cambios', async () => {
+    const ev = await subir(); const antes = await leer();
+    const otro = await crearTokenApi(await crearUsuario('Otro', 'equipo'));
+    expect(await cerrarPunto({ whatWasDone: 'Trabajo completado', evidence: [{ evidenceId: ev.body.evidenceId }] }, puntos[0], otro)).toMatchObject({ status: 400, body: { error: 'TIUSDEI_VALIDATION' } });
+    expect(await leer()).toEqual(antes);
+  });
+  it('cierres concurrentes del mismo pendiente no producen un 500', async () => {
+    const ev = await subir();
+    const body = { whatWasDone: 'Trabajo completado', evidence: [{ evidenceId: ev.body.evidenceId }] };
+    const resultados = await Promise.all([cerrarPunto(body, puntos[0]), cerrarPunto(body, puntos[1])]);
+    expect(resultados.map((r) => r.status).sort()).toEqual([200, 400]);
+    expect(resultados.find((r) => r.status === 400)?.body.error).toBe('TIUSDEI_VALIDATION');
+    expect((await leer()).body.points.flatMap((p: { evidence: unknown[] }) => p.evidence)).toHaveLength(1);
+  });
+  it.each(['ER_DUP_ENTRY', 'ER_LOCK_DEADLOCK'])('devuelve VALIDATION ante contención %s y revierte el cierre', async (code) => {
+    const ev = await subir(); const antes = await leer();
+    const fallo = vi.spyOn(repoPuntos, 'insertarEvidencia').mockRejectedValueOnce(Object.assign(new Error('contención simulada'), { code }));
+    try { expect(await cerrarPunto({ whatWasDone: 'Trabajo completado', evidence: [{ evidenceId: ev.body.evidenceId }] })).toMatchObject({ status: 400, body: { error: 'TIUSDEI_VALIDATION' } }); }
+    finally { fallo.mockRestore(); }
+    expect(await leer()).toEqual(antes);
+  });
+  it('limpia archivos si falla la inserción de una subida con pointId', async () => {
+    const dir = path.join(process.cwd(), 'uploads', 'editor');
+    await fs.mkdir(dir, { recursive: true });
+    const antes = (await fs.readdir(dir)).sort();
+    const fallo = vi.spyOn(repoPuntos, 'insertarEvidencia').mockRejectedValueOnce(new Error('fallo de inserción simulado'));
+    try { expect((await subir(PNG, 'image/png', puntos[0])).status).toBe(500); }
+    finally { fallo.mockRestore(); }
+    const despues = (await fs.readdir(dir)).sort();
+    for (const f of despues.filter((f) => !antes.includes(f) && f.endsWith('.png'))) archivos.add(path.join(dir, f));
+    expect(despues).toEqual(antes);
+    expect((await leer()).body.points[0].evidence).toEqual([]);
+  });
+  it('no expone actividad MCP en el enlace público, pero sí internamente', async () => {
+    await cerrarPunto({ whatWasDone: 'Trabajo completado', evidence: [{ url: 'https://example.com' }] });
+    await llamar(`${url}/api/minuta-points/${puntos[0]}/reopen`, token, 'POST', { reason: 'Corregir color' });
+    const { activar } = await import('../src/minutas/enlace/repositorio.js');
+    await activar(minuta, 'notas-public-token', 'ABCDEF');
+    const entrada = await llamar(`${url}/api/public/minuta/notas-public-token/entrar`, null, 'POST', { codigo: 'ABCDEF', nombre: 'Cliente' });
+    const publica = await llamar(`${url}/api/public/minuta/notas-public-token`, { ...usuario, token: entrada.body.sesion });
+    expect(publica.status).toBe(200);
+    expect(JSON.stringify(publica.body)).not.toContain('vía MCP');
+    expect((await leer()).body.points[0].notes).toHaveLength(2);
+    expect((await llamar(`${url}/web/minutas/${minuta}`, usuario)).body.items[0].notas).toHaveLength(2);
+  });
+});
 
 describe('upload_minuta_evidence', () => {
   it.each([{ bytes: PNG, mime: 'image/png', type: 'imagen' }, { bytes: PDF, mime: 'application/pdf', type: 'archivo' }])('sube contenido real $mime', async ({ bytes, mime, type }) => {

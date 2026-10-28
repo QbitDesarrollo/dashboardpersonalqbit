@@ -1,4 +1,12 @@
-import type { NextFunction, Request, Response } from 'express';
+import express, { type Express, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
+
+import { requireApiToken } from '../middleware/apiToken.js';
+
+/** El mismo limiter de toda la API corre una sola vez, antes de autenticar y analizar el cuerpo. */
+export function instalarSubidaEvidencia(app: Express, limiter: RequestHandler) {
+  app.use('/api/', limiter);
+  app.post('/api/minuta-evidence', requireApiToken, express.json({ limit: '15mb' }), cuerpoDemasiadoGrande);
+}
 
 /**
  * La subida de evidencia por MCP manda el archivo en base64 dentro del JSON. Si el cuerpo

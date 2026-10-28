@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { cuerpoDemasiadoGrande } from './minutas/limiteCuerpo.js';
+import { instalarSubidaEvidencia } from './minutas/limiteCuerpo.js';
+import { archivosEstaticos } from './utils/estaticos.js';
 import { verifySignedPath } from './utils/signedUrl.js';
 import path from 'path';
 import http from 'http';
@@ -120,8 +121,21 @@ app.use(cors({
   maxAge: 86400,
 }));
 
-// Body parser with size limits
-app.post('/api/minuta-evidence', express.json({ limit: '15mb' }), cuerpoDemasiadoGrande);
+// General API: ~20 users per IP (office/shared network).
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5000,
+  message: { error: 'Demasiadas peticiones, intenta más tarde' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res, _next, options) => {
+    console.warn(`[RATE-LIMIT] 429 ip=${req.ip} ${req.method} ${req.originalUrl.split('?')[0]}`);
+    res.status(options.statusCode).json(options.message);
+  },
+});
+
+// Authenticate and rate-limit evidence before its larger parser; keep 2 MB elsewhere.
+instalarSubidaEvidencia(app, apiLimiter);
 app.use(express.json({ limit: '2mb' }));
 // Avisa a los otros dispositivos del usuario cuando su timer cambia
 app.use('/api/data', avisoTimerMiddleware);
@@ -141,26 +155,7 @@ app.use('/uploads/screenshots', (req, res, next) => {
   }
   next();
 });
-app.use('/uploads', express.static(uploadsDir, {
-  maxAge: '7d',
-  etag: true,
-  lastModified: true,
-  setHeaders: (res, filePath) => {
-    // Nada servido desde /uploads debe poder ejecutar scripts en el origen de la app.
-    // (sandbox no afecta a <img>; se exceptúa .pdf para no romper el visor del navegador)
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (!/\.pdf$/i.test(filePath)) {
-      res.setHeader('Content-Security-Policy', 'sandbox');
-    }
-    if (/\.(svg|html?|xml|xhtml|js)$/i.test(filePath)) {
-      res.setHeader('Content-Disposition', 'attachment');
-    }
-    // Favicon: short cache so admin changes take effect quickly
-    if (filePath.includes('favicon')) {
-      res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
-    }
-  },
-}));
+app.use('/uploads', archivosEstaticos(uploadsDir));
 
 // --- Rate Limiting ---
 
@@ -175,21 +170,6 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
-
-// General API: ~20 users per IP (office/shared network)
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5000,
-  message: { error: 'Demasiadas peticiones, intenta más tarde' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Log every cut so a shared office IP hitting the limit is visible in the logs.
-  handler: (req, res, _next, options) => {
-    console.warn(`[RATE-LIMIT] 429 ip=${req.ip} ${req.method} ${req.originalUrl.split('?')[0]}`);
-    res.status(options.statusCode).json(options.message);
-  },
-});
-app.use('/api/', apiLimiter);
 
 // --- Routes ---
 app.use('/api', publicFormsPublicRouter);

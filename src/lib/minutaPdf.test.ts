@@ -30,6 +30,17 @@ const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
 const imagen: Imagen = { dataUrl: PNG, ancho: 800, alto: 450, formato: 'PNG' };
 
 describe('puntosPdf', () => {
+  it('excluye actividad MCP del PDF del cliente, no del interno', async () => {
+    const m = { ...minuta, items: [punto({ notas: [
+      { id: 'mcp', tipo: 'nota' as const, texto: 'Cerrado vía MCP', via: 'mcp' as const, created_at: '2026-09-24T15:00:00Z', autor: null },
+      { id: 'cliente', tipo: 'nota' as const, texto: 'Comentario compartido', via: 'enlace' as const, created_at: '2026-09-24T15:00:00Z', autor: null },
+    ] })] };
+    expect(puntosPdf(m, { soloVisibles: true })[0].notas.map((n) => n.texto)).toEqual(['Comentario compartido']);
+    expect(puntosPdf(m)[0].notas).toHaveLength(2);
+    const pdf = new TextDecoder('latin1').decode(await generarMinutaPdf(m, { soloVisibles: true }, { cargarImagen: async () => null }));
+    expect(pdf).not.toContain('MCP');
+    expect(pdf).toContain('Comentario compartido');
+  });
   it('un bloque por punto con lo que el lector necesita: responsable, estado, compromiso si sigue abierto, lo hecho y la evidencia', () => {
     const [abierto, hecho, cliente] = puntosPdf(minuta);
     expect(abierto).toMatchObject({

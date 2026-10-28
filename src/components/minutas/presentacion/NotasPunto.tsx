@@ -4,13 +4,14 @@ import { fechaLocal } from '@/lib/minutas';
 import { cn } from '@/lib/utils';
 
 /** What the client said about the point during meetings, oldest first. */
-export function NotasPunto({ notas, titulo = 'Lo que dijo el cliente' }: { notas: NotaVista[]; titulo?: string }) {
-  if (notas.length === 0) return null;
+export function NotasPunto({ notas, titulo = 'Lo que dijo el cliente' }: { notas: (NotaVista & { via?: string })[]; titulo?: string }) {
+  const compartidas = notas.filter((n) => n.via !== 'mcp');
+  if (compartidas.length === 0) return null;
   return (
     <section className="space-y-3">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{titulo}</h2>
       <ul className="space-y-2">
-        {notas.map((n) => {
+        {compartidas.map((n) => {
           const ajuste = n.tipo === 'ajuste';
           return (
             <li

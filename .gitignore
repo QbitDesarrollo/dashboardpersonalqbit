@@ -39,3 +39,4 @@ server/.env.bak.*
 
 # Test database credentials (local only)
 server/.env.test
+server/uploads-privado

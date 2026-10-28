@@ -47,7 +47,7 @@ export function puntosPdf(m: Minuta, { soloVisibles = false }: Opciones = {}): P
         : null,
       imagenes: p.evidencias.filter((e) => e.tipo === 'imagen').map((e) => ({ nombre: e.nombre, url: e.url })),
       enlaces: p.evidencias.filter((e) => e.tipo !== 'imagen').map((e) => ({ nombre: e.nombre, origen: origen(e.url), url: e.url })),
-      notas: p.notas.map((n) => ({
+      notas: p.notas.filter((n) => !soloVisibles || n.via !== 'mcp').map((n) => ({
         etiqueta: `${n.tipo === 'ajuste' ? 'Ajuste pedido' : 'Nota'}${n.autor_nombre ? ` por ${n.autor_nombre}` : ''}`,
         texto: n.texto,
       })),

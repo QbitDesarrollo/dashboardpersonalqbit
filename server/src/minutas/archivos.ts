@@ -7,7 +7,7 @@ import { formatoEvidencia } from './domain.js';
 
 export const MAX_EVIDENCIA = 10 * 1024 * 1024;
 export const directorioEditor = () => path.join(process.cwd(), 'uploads', 'editor');
-const directorioPendientes = () => path.join(directorioEditor(), '.pendientes');
+export const directorioPendientes = () => path.join(process.cwd(), 'uploads-privado', 'evidencias-pendientes');
 
 export interface ArchivoPendiente { id: string; url: string; type: 'imagen' | 'archivo'; name: string; userId: string; archivo: string }
 
@@ -22,21 +22,36 @@ export async function guardarEvidencia(base64: string, name: string, mime: strin
   const id = uuid();
   const archivo = `${id}.${ext}`;
   await fs.mkdir(directorioPendientes(), { recursive: true });
+  await fs.mkdir(directorioEditor(), { recursive: true });
   const destino = path.join(directorioEditor(), archivo);
-  await fs.writeFile(destino, bytes, { flag: 'wx' });
-  if (ext !== 'pdf' && !ensureRealImage(destino)) throw new ErrorMinuta(400, 'Imagen inválida', 'TIUSDEI_UNSUPPORTED_FILE');
   const base = (process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec').replace(/\/$/, '');
   const registro: ArchivoPendiente = { id, archivo, url: `${base}/uploads/editor/${archivo}`, type: ext === 'pdf' ? 'archivo' : 'imagen', name, userId };
-  // El archivo oculto conserva nombre y dueño sin exponer metadatos por express.static.
-  await fs.writeFile(path.join(directorioPendientes(), `${id}.json`), JSON.stringify(registro), { flag: 'wx' });
-  return registro;
+  try {
+    await fs.writeFile(destino, bytes, { flag: 'wx' });
+    if (ext !== 'pdf' && !ensureRealImage(destino)) throw new ErrorMinuta(400, 'Imagen inválida', 'TIUSDEI_UNSUPPORTED_FILE');
+    // Fuera de uploads: estos metadatos nunca pertenecen al árbol público.
+    await fs.writeFile(path.join(directorioPendientes(), `${id}.json`), JSON.stringify(registro), { flag: 'wx' });
+    return registro;
+  } catch (e) {
+    await quitarArchivoPendiente(registro);
+    throw e;
+  }
 }
 
-export async function leerPendiente(id: string): Promise<ArchivoPendiente> {
+export async function quitarArchivoPendiente(archivo: ArchivoPendiente): Promise<void> {
+  for (const destino of [path.join(directorioEditor(), archivo.archivo), path.join(directorioPendientes(), `${archivo.id}.json`)]) {
+    await fs.unlink(destino).catch((e: NodeJS.ErrnoException) => { if (e.code !== 'ENOENT') throw e; });
+  }
+}
+
+/** Solo el dueño del token que subió el archivo puede adjuntarlo; otro dueño recibe VALIDATION. */
+export async function leerPendiente(id: string, userId: string): Promise<ArchivoPendiente> {
   if (!/^[a-f0-9-]{36}$/i.test(id)) throw new ErrorMinuta(400, 'evidenceId inválido', 'TIUSDEI_VALIDATION');
+  let datos: ArchivoPendiente;
   try {
-    const datos = JSON.parse(await fs.readFile(path.join(directorioPendientes(), `${id}.json`), 'utf8')) as ArchivoPendiente;
+    datos = JSON.parse(await fs.readFile(path.join(directorioPendientes(), `${id}.json`), 'utf8')) as ArchivoPendiente;
     await fs.access(path.join(directorioEditor(), datos.archivo));
-    return datos;
   } catch { throw new ErrorMinuta(404, 'Evidencia no encontrada', 'TIUSDEI_NOT_FOUND'); }
+  if (datos.userId !== userId) throw new ErrorMinuta(400, 'Solo quien subió la evidencia pendiente puede adjuntarla.', 'TIUSDEI_VALIDATION');
+  return datos;
 }

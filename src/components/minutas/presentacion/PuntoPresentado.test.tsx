@@ -10,6 +10,14 @@ const punto = (p: Partial<Punto>): Punto => ({
 });
 
 describe('PuntoPresentado', () => {
+  it('no presenta actividad interna del MCP al cliente', () => {
+    render(<PuntoPresentado codigo="3.1" punto={punto({ notas: [
+      { id: 'mcp', tipo: 'nota', texto: 'Reabierto vía MCP: corregir color', via: 'mcp', created_at: '2026-09-24T15:00:00Z', autor: null },
+      { id: 'cliente', tipo: 'nota', texto: 'Comentario visible', via: 'enlace', created_at: '2026-09-24T15:00:00Z', autor: null },
+    ] })} />);
+    expect(screen.queryByText(/vía MCP/)).not.toBeInTheDocument();
+    expect(screen.getByText('Comentario visible')).toBeInTheDocument();
+  });
   it('muestra el código, el estado para el cliente y la fecha de compromiso', () => {
     render(<PuntoPresentado punto={punto({ fecha_compromiso: '2026-10-03' })} codigo="3.1" />);
     expect(screen.getByText('3.1')).toBeInTheDocument();
