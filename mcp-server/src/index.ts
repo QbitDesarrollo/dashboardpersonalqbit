@@ -15,7 +15,7 @@
  */
 
 import "dotenv/config";
-import express, { type Request, type Response } from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -536,7 +536,12 @@ function buildServer(token: string): McpServer {
 }
 
 const app = express();
-app.use(express.json());
+// upload_minuta_evidence manda el archivo en base64: 10 MB de archivo son ~13,4 MB de JSON.
+app.use(express.json({ limit: "16mb" }));
+app.use((err: Error & { type?: string }, _req: Request, res: Response, next: NextFunction) => {
+  if (err?.type !== "entity.too.large") return next(err);
+  res.status(413).json({ error: "TIUSDEI_FILE_TOO_LARGE", message: "El archivo pesa más de 10 MB." });
+});
 
 // Streamable HTTP sin estado: un server + transporte fresco por request.
 app.post("/mcp", async (req: Request, res: Response) => {
