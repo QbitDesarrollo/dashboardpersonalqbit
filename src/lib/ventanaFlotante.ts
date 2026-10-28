@@ -37,7 +37,14 @@ export function subtareaLista(task: { check_done?: boolean; estado?: string }): 
 }
 export function entregaFlotante(fecha: string, now: number): string {
   const dia = fecha.slice(0, 10);
-  const hora = fecha.match(/[T ](\d{2}:\d{2})/)?.[1];
-  const etiqueta = dia === fechaReunion(now) ? 'hoy' : new Date(`${dia}T12:00:00-05:00`).toLocaleDateString('es-EC', { timeZone: 'America/Guayaquil', day: 'numeric', month: 'short' });
-  return `Entrega ${etiqueta}${hora ? ` ${hora}` : ''}`;
+  const hoy = fechaReunion(now);
+  if (dia === hoy) return 'Entrega hoy';
+  const manana = new Date(`${hoy}T12:00:00-05:00`).getTime() + 86400000;
+  if (dia === fechaReunion(manana)) return 'Entrega mañana';
+  const fechaCivil = new Date(`${dia}T12:00:00-05:00`);
+  const formato = new Intl.DateTimeFormat('es-EC', { timeZone: 'America/Guayaquil', day: 'numeric', month: 'short', ...(dia > hoy ? { weekday: 'short' as const } : {}) });
+  const partes = formato.formatToParts(fechaCivil);
+  const parte = (tipo: Intl.DateTimeFormatPartTypes) => partes.find(p => p.type === tipo)?.value.replace(/\.$/, '') ?? '';
+  const etiqueta = [dia > hoy ? parte('weekday') : '', parte('day'), parte('month')].filter(Boolean).join(' ');
+  return dia < hoy ? `Vencida · ${etiqueta}` : `Entrega ${etiqueta}`;
 }

@@ -81,6 +81,30 @@ describe('floating timer', () => {
     await waitFor(() => expect(pip.close).toHaveBeenCalled());
     expect(api.patchTask).toHaveBeenCalledWith('a', expect.objectContaining({ timer_activo: false, timer_inicio: null, tiempo_trabajado_delta: expect.any(Number) }));
   });
+  it('uses compact app controls, date-only overdue text and no redundant close', async () => {
+    vi.mocked(api.getTask).mockResolvedValue({ titulo_tarea: task.titulo, prioridad: 'alta', fecha_entrega: '2020-09-25T00:00:00Z' });
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => {});
+    renderUI();
+    const view = await open();
+    expect(await view.findByText('Vencida · 25 sept')).toHaveClass('text-destructive');
+    expect(view.getByRole('heading')).toHaveAttribute('title', task.titulo);
+    expect(view.queryByRole('button', { name: 'Cerrar ventana flotante' })).toBeNull();
+    expect(pip.document.querySelector('details')).toBeNull();
+    expect(view.queryByRole('progressbar')).toBeNull();
+    expect(view.queryByText(/Hoy:/)).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: 'Ir a Tiusdei' }));
+    expect(focus).toHaveBeenCalledOnce();
+    expect(api.patchTask).not.toHaveBeenCalled();
+    focus.mockRestore();
+  });
+  it('mirrors light/dark theme on opening and subsequent changes', async () => {
+    document.documentElement.classList.add('dark');
+    renderUI();
+    await open();
+    expect(pip.document.documentElement).toHaveClass('dark');
+    document.documentElement.classList.remove('dark');
+    await waitFor(() => expect(pip.document.documentElement).not.toHaveClass('dark'));
+  });
   it('finishes with the same check_done field as the task list', async () => {
     renderUI();
     const view = await open();
@@ -112,9 +136,10 @@ describe('floating timer', () => {
     renderUI();
     const view = await open();
     expect((await view.findByText('Subtareas 1/2 · Siguiente: Revisar copy')).textContent).toContain('Revisar copy');
-    const join = await view.findByRole('link', { name: 'Entrar a Meet' });
+    expect(await view.findByText('Ahora · Revisión de avance')).toBeInTheDocument();
+    const join = await view.findByRole('link', { name: 'Entrar' });
     expect(join.getAttribute('href')).toBe('https://meet.google.com/abc');
-    expect(view.getByText('Hoy: 2 reuniones').textContent).toBe('Hoy: 2 reuniones');
+    expect(view.queryByText('Hoy: 2 reuniones')).toBeNull();
     fireEvent.click(join);
     expect(Object.keys(localStorage).some(key => key.includes('reunion:ingreso:meeting'))).toBe(true);
   });
@@ -123,7 +148,7 @@ describe('floating timer', () => {
     renderUI();
     const view = await open();
     fireEvent.click(view.getByText('Cambiar tarea'));
-    fireEvent.click(await view.findByRole('button', { name: 'Revisar campaña', hidden: true }));
+    fireEvent.click(await view.findByRole('button', { name: 'Revisar campaña' }));
     await waitFor(() => expect(api.patchTask).toHaveBeenCalledWith('b', expect.objectContaining({ timer_activo: true })));
     expect(api.patchTask).toHaveBeenNthCalledWith(1, 'a', expect.objectContaining({ timer_activo: false }));
     expect(api.getTasks).toHaveBeenCalledWith({ responsable_user_id: 'user-a', estado: 'en_proceso', limit: 10 });

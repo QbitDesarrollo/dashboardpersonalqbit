@@ -11,13 +11,14 @@ La apertura automática ocurre en el clic en ▶, antes de cualquier espera de r
 
 La ventana comparte el timer activo del encabezado, sus actualizaciones y el reloj de `useTimerClock`. Copia los estilos de Tiusdei y conserva el tema. El tamaño se recuerda con límites de 300–520 px de ancho y 220–520 px de alto.
 
-- Muestra marca, proyecto, título, prioridad y entrega cuando están disponibles.
+- Encabezado compacto con marca, proyecto y el botón de icono «Ir a Tiusdei»; el cierre pertenece al sistema operativo. Título de dos líneas con texto completo al pasar el puntero.
+- Prioridad con colores del tema. La entrega es un día civil de Ecuador, sin hora ni conversión desde UTC: «Vencida · 25 sept», «Entrega hoy», «Entrega mañana» o «Entrega jue 30 oct».
 - La estimación usa `estimated_hours`; las subtareas vienen de `getSubtasks` y consideran listas las marcadas, entregadas o aprobadas.
 - Solo cuenta eventos `es_reunion`; utiliza los helpers de reuniones para estado, fecha, proximidad e ingreso. Una reunión sin videollamada enlaza a Calendar. No ofrece unirse a reuniones terminadas.
-- La línea del día muestra las reuniones. No extrapola horas trabajadas de los acumulados históricos de tareas ni de asistencia.
+- Muestra la reunión en curso («Ahora») o la siguiente («En 25 min»), con acceso a su videollamada. Sin reuniones pendientes, omite la fila. No extrapola horas trabajadas de los acumulados históricos de tareas ni muestra conteos aislados.
 - «Pausar» usa `useTaskTimer.stopTimer`, con las confirmaciones y límites existentes, y cierra la ventana.
 - «Terminar» pausa y envía `patchTask(id, { check_done: true })`, igual que el círculo de la lista de tareas.
-- «Cambiar tarea» muestra hasta diez tareas recientes en proceso del usuario, excluyendo la actual y las marcadas como listas; pausa la actual antes de iniciar la seleccionada con `useTaskTimer`.
+- «Cambiar tarea» abre un popover dentro del documento flotante con marca y título de hasta diez tareas recientes en proceso del usuario, excluyendo la actual y las marcadas como listas; pausa la actual antes de iniciar la seleccionada con `useTaskTimer`.
 - «Ir a Tiusdei» enfoca la ventana principal. Cerrar la ventana flotante no pausa el timer.
 
 ## Verificación manual pendiente

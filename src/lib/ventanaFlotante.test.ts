@@ -4,12 +4,20 @@ import { soportada, leerPreferencia, guardarPreferencia, limitarTamano, leerTama
 beforeEach(() => localStorage.clear());
 describe('ventana flotante', () => {
   it('uses Ecuador dates for delivery and existing done states for subtasks', () => {
-    expect(entregaFlotante('2026-10-27 17:00:00', Date.parse('2026-10-28T01:00:00Z'))).toBe('Entrega hoy 17:00');
+    expect(entregaFlotante('2026-10-27 00:00:00', Date.parse('2026-10-28T01:00:00Z'))).toBe('Entrega hoy');
     expect(entregaFlotante('2026-10-27', Date.parse('2026-10-27T15:00:00Z'))).toBe('Entrega hoy');
     expect(subtareaLista({ estado: 'aprobado' })).toBe(true);
     expect(subtareaLista({ estado: 'entregado' })).toBe(true);
     expect(subtareaLista({ check_done: true })).toBe(true);
     expect(subtareaLista({ estado: 'en_proceso' })).toBe(false);
+  });
+  it('labels civil due dates without times or timezone shifts', () => {
+    const now = Date.parse('2025-10-28T02:00:00Z'); // Todavía 27 de octubre en Ecuador.
+    expect(entregaFlotante('2025-09-25T00:00:00Z', now)).toBe('Vencida · 25 sept');
+    expect(entregaFlotante('2025-10-28', now)).toBe('Entrega mañana');
+    expect(entregaFlotante('2025-10-30', now)).toBe('Entrega jue 30 oct');
+    expect(entregaFlotante('2026-01-01', Date.parse('2025-12-31T17:00:00Z'))).toBe('Entrega mañana');
+    expect(entregaFlotante('2025-10-27', Date.parse('2025-10-28T05:00:00Z'))).toBe('Vencida · 27 oct');
   });
   it('requires the API and a top-level window', () => {
     expect(soportada(window)).toBe(false);
