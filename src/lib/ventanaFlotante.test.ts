@@ -12,10 +12,12 @@ describe('ventana flotante', () => {
     expect(textoPreview(null)).toBe('');
   });
   it('sizes optional rows without reserving blank space', () => {
-    expect(alturaFlotante({})).toBe(160);
-    expect(alturaFlotante({ descripcion: true })).toBe(204);
-    expect(alturaFlotante({ personas: true, estimacion: true })).toBe(200);
-    expect(alturaFlotante({ descripcion: true, personas: true, reunion: true, estimacion: true })).toBe(276);
+    expect(alturaFlotante({})).toBe(170);
+    expect(alturaFlotante({ estimacion: true })).toBe(170);
+    expect(alturaFlotante({ reunion: true })).toBe(230);
+    expect(alturaFlotante({ personas: true, estimacion: true })).toBe(260);
+    expect(alturaFlotante({ descripcion: true })).toBe(300);
+    expect(alturaFlotante({ descripcion: true, personas: true, reunion: true, estimacion: true })).toBe(320);
   });
   it('uses Ecuador dates for delivery and existing done states for subtasks', () => {
     expect(entregaFlotante('2026-10-27 00:00:00', Date.parse('2026-10-28T01:00:00Z'))).toBe('Entrega hoy');

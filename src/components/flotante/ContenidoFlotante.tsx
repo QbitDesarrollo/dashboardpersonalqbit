@@ -9,7 +9,7 @@ import { useDatosFlotantes } from './useDatosFlotantes';
 import { alturaFlotante, textoPreview } from '@/lib/ventanaFlotante';
 import { estadoReunion, fechaReunion } from '@/lib/reuniones';
 import { VistaFlotante } from './VistaFlotante';
-import { ajustarAlturaFlotante } from './useVentanaFlotante';
+import { prepararAlturaFlotante } from './useVentanaFlotante';
 
 async function sincronizarSesion(taskId: string) {
   try {
@@ -36,7 +36,7 @@ export function ContenidoFlotante({ task, onClose }: { task: api.ActiveTimer; on
     || (estadoReunion(r, now) === 'proxima' && fechaReunion(r.start) === fechaReunion(now)));
   const altura = alturaFlotante({ descripcion: !!descripcion, personas: !!personas, reunion, estimacion: estimate > 0 });
   const listo = !!detalle;
-  useEffect(() => { if (listo) ajustarAlturaFlotante(altura); }, [altura, listo]);
+  useEffect(() => { if (listo) prepararAlturaFlotante(task.id, altura); }, [altura, listo, task.id]);
   const refresh = () => { notifyTaskTimerChanged(); void client.invalidateQueries({ queryKey: ['flotante'] }); };
   const detener = async () => {
     if (!await timer.stopTimer()) return false;

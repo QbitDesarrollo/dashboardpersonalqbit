@@ -45,8 +45,9 @@ export function textoPreview(html?: string | null): string {
 
 export interface FilasFlotantes { descripcion?: boolean; personas?: boolean; reunion?: boolean; estimacion?: boolean }
 export function alturaFlotante(filas: FilasFlotantes): number {
-  return 160 + (filas.descripcion ? 44 : 0) + (filas.personas ? 22 : 0)
-    + (filas.reunion ? 32 : 0) + (filas.estimacion ? 18 : 0);
+  const contenido = 170 + (filas.descripcion ? 44 : 0) + (filas.personas ? 22 : 0)
+    + (filas.reunion ? 32 : 0);
+  return Math.min(320, Math.max(contenido, filas.descripcion ? 300 + (filas.personas ? 22 : 0) + (filas.reunion ? 32 : 0) : filas.personas ? 260 : filas.reunion ? 230 : 170));
 }
 
 export function subtareaLista(task: { check_done?: boolean; estado?: string }): boolean {

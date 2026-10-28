@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
-import { guardarTamano, leerPreferencia, leerTamano, limitarTamano, soportada } from '@/lib/ventanaFlotante';
+import { alturaFlotante, guardarTamano, leerPreferencia, soportada } from '@/lib/ventanaFlotante';
 
-interface API { requestWindow(size: { width: number; height: number }): Promise<Window> }
+interface API { requestWindow(size: { width: number; height: number; preferInitialWindowPlacement?: boolean }): Promise<Window> }
 declare global {
   interface Window { documentPictureInPicture?: API }
 }
@@ -25,15 +25,13 @@ export function cerrarVentanaFlotante() {
   emitir();
 }
 
-/** Fit rows after task details arrive, without overriding later manual resizes. */
-export function ajustarAlturaFlotante(height: number) {
-  const ventana = estado?.ventana;
-  if (!ventana) return;
-  const size = limitarTamano({ width: ventana.innerWidth, height });
-  try {
-    ventana.resizeTo(size.width + (ventana.outerWidth - ventana.innerWidth || 0),
-      size.height + (ventana.outerHeight - ventana.innerHeight || 0));
-  } catch { /* El navegador puede impedir el ajuste; el contenido permite scroll. */ }
+const alturas = new Map<string, number>();
+let tareaActual: string | undefined;
+
+/** Remember loaded rows for the next gesture; asynchronous resizeTo is not allowed. */
+export function prepararAlturaFlotante(taskId: string, height: number) {
+  tareaActual = taskId;
+  alturas.set(taskId, height);
 }
 
 /** requestWindow runs in this call stack, before any asynchronous timer work. */
@@ -45,9 +43,8 @@ export function abrirVentanaFlotante(tareaEsperada?: string): Promise<void> {
   try {
     const api = window.documentPictureInPicture;
     if (!api) return Promise.resolve();
-    let size = limitarTamano({});
-    try { size = leerTamano(localStorage); } catch { /* Almacenamiento bloqueado. */ }
-    solicitud = api.requestWindow(size).then(ventana => {
+    const height = alturas.get(tareaEsperada ?? tareaActual ?? '') ?? alturaFlotante({});
+    solicitud = api.requestWindow({ width: 320, height, preferInitialWindowPlacement: true }).then(ventana => {
       if (version !== generacion) { ventana.close(); return; }
       const doc = ventana.document;
       doc.title = 'Tiusdei · Ventana flotante';

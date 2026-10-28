@@ -72,10 +72,11 @@ describe('floating timer', () => {
     await waitFor(() => expect(api.startTimeSession).toHaveBeenCalledWith('a'));
   });
   it('renders brand, title, live timer and estimate; pause stops and closes', async () => {
+    localStorage.setItem('tiusdei:pip:size', JSON.stringify({ width: 280, height: 200 }));
     renderUI();
     const view = await open();
     expect(view.getByText('Dinatek')).toBeInTheDocument();
-    expect(requestWindow).toHaveBeenCalledWith({ width: 320, height: 210 });
+    expect(requestWindow).toHaveBeenCalledWith({ width: 320, height: 170, preferInitialWindowPlacement: true });
     expect(view.getByRole('timer')).toHaveTextContent('01:00:');
     expect(await view.findByRole('progressbar')).toBeInTheDocument();
     fireEvent.click(view.getByRole('button', { name: 'Pausar' }));
@@ -147,6 +148,9 @@ describe('floating timer', () => {
     expect(await view.findByText('· 1/2 subtareas')).toBeInTheDocument();
     expect(view.queryByText(/Siguiente:/)).toBeNull();
     expect(await view.findByText('Ahora · Revisión de avance')).toBeInTheDocument();
+    expect(view.getByTestId('reunion-flotante')).toHaveClass('[@media(max-height:229px)]:hidden');
+    const controls = view.getByTestId('controles-flotantes');
+    expect(controls.parentElement?.lastElementChild).toBe(controls);
     const join = await view.findByRole('link', { name: 'Entrar' });
     expect(join.getAttribute('href')).toBe('https://meet.google.com/abc');
     expect(view.queryByText('Hoy: 2 reuniones')).toBeNull();
@@ -178,7 +182,18 @@ describe('floating timer', () => {
     const view = await open();
     expect(await view.findByText('Revisar copy Validar formulario')).toHaveClass('line-clamp-2');
     expect(view.getByText('Even Fierro +1 · Desarrollo')).toBeInTheDocument();
-    expect(pip.resizeTo).toHaveBeenLastCalledWith(320, 256); // 226 px content + 30 px browser chrome.
+    expect(pip.resizeTo).not.toHaveBeenCalled();
+    const article = view.getByRole('article');
+    expect(article).toHaveClass('h-screen', 'overflow-hidden');
+    const controls = view.getByTestId('controles-flotantes');
+    expect(controls).toHaveClass('mt-auto', 'shrink-0');
+    expect(controls.parentElement?.lastElementChild).toBe(controls);
+    expect(view.getByTestId('descripcion-flotante')).toHaveClass('[@media(max-height:299px)]:hidden');
+    expect(view.getByTestId('personas-flotante')).toHaveClass('[@media(max-height:259px)]:hidden');
+    act(() => cerrarVentanaFlotante());
+    await open();
+    expect(requestWindow).toHaveBeenLastCalledWith({ width: 320, height: 320, preferInitialWindowPlacement: true });
+    expect(pip.resizeTo).not.toHaveBeenCalled();
     expect(view.queryByRole('button', { name: 'Cambiar tarea' })).toBeNull();
     expect(api.getTasks).not.toHaveBeenCalled();
     expect(api.patchTask).not.toHaveBeenCalled();
