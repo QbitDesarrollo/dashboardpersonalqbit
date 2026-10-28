@@ -19,7 +19,7 @@ interface Props {
   onActualizada: (minuta: Minuta) => void;
 }
 
-const MAX_IMAGEN = 8 * 1024 * 1024;
+const MAX_IMAGEN = 10 * 1024 * 1024;
 
 /** Evidencia del punto. Abierto: se arma el cierre (qué se hizo + evidencias). Cerrado: se muestra lo hecho. */
 export function VistaEvidencia({ punto, onActualizada }: Props) {
@@ -43,15 +43,16 @@ export function VistaEvidencia({ punto, onActualizada }: Props) {
     if (ok) { setEnlaceNombre(''); setEnlaceUrl(''); }
   };
 
-  // Capturas: se suben con la misma subida de imágenes del editor (el servidor verifica que sean imágenes reales).
+  // Capturas y PDF usan la subida del editor; el servidor verifica el contenido real.
   const subirImagenes = async (archivos: File[]) => {
     for (const f of archivos) {
-      if (!f.type.startsWith('image/')) { toast.error(`${f.name || 'El archivo'} no es una imagen`); continue; }
-      if (f.size > MAX_IMAGEN) { toast.error(`${f.name || 'La imagen'} pesa más de 8 MB`); continue; }
+      const pdf = f.type === 'application/pdf';
+      if (!pdf && !f.type.startsWith('image/')) { toast.error(`${f.name || 'El archivo'} no es una imagen ni un PDF`); continue; }
+      if (f.size > MAX_IMAGEN) { toast.error(`${f.name || 'El archivo'} pesa más de 10 MB`); continue; }
       await conError(async () => {
         const { url } = await uploadEditorImage(f);
-        return agregarEvidencia(punto.id, { tipo: 'imagen', nombre: f.name || 'captura.png', url });
-      }, 'No se pudo subir la imagen');
+        return agregarEvidencia(punto.id, { tipo: pdf ? 'archivo' : 'imagen', nombre: f.name || (pdf ? 'documento.pdf' : 'captura.png'), url });
+      }, 'No se pudo subir la evidencia');
     }
   };
 
@@ -130,12 +131,12 @@ export function VistaEvidencia({ punto, onActualizada }: Props) {
                 <HardDrive className="h-4 w-4" />Elegir de Drive
               </Button>
               <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
-                <ImagePlus className="h-4 w-4" />Subir imagen
+                <ImagePlus className="h-4 w-4" />Subir imagen o PDF
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   multiple
-                  aria-label="Subir imagen"
+                  aria-label="Subir imagen o PDF"
                   className="sr-only"
                   onChange={(e) => { subirImagenes(Array.from(e.target.files ?? [])); e.target.value = ''; }}
                 />

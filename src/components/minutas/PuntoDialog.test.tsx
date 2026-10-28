@@ -274,8 +274,18 @@ describe('PuntoDialog · imágenes como evidencia', () => {
 
   it('sube una imagen y la guarda como evidencia', async () => {
     abrir();
-    fireEvent.change(screen.getByLabelText('Subir imagen'), { target: { files: [captura()] } });
+    fireEvent.change(screen.getByLabelText('Subir imagen o PDF'), { target: { files: [captura()] } });
     await waitFor(() => expect(minutasApi.agregarEvidencia).toHaveBeenCalledWith('i1', { tipo: 'imagen', nombre: 'captura-home.png', url }));
+  });
+
+  it('sube un PDF como archivo y lo muestra como enlace, no como imagen', async () => {
+    const pdfUrl = url.replace('.png', '.pdf');
+    vi.mocked(apiClient.uploadEditorImage).mockResolvedValue({ url: pdfUrl });
+    abrir({ evidencias: [{ id: 'e2', tipo: 'archivo', nombre: 'Entrega.pdf', url: pdfUrl, drive_file_id: null, origen_task_id: null }] });
+    expect(screen.getByRole('link', { name: 'Entrega.pdf' })).toHaveAttribute('href', pdfUrl);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Subir imagen o PDF'), { target: { files: [new File(['%PDF-'], 'Entrega.pdf', { type: 'application/pdf' })] } });
+    await waitFor(() => expect(minutasApi.agregarEvidencia).toHaveBeenCalledWith('i1', { tipo: 'archivo', nombre: 'Entrega.pdf', url: pdfUrl }));
   });
 
   it('pegar una captura con Ctrl+V también la agrega', async () => {

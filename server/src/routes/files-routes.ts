@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { ensureRealImage } from "../utils/imageSafety.js";
+import { formatoEvidencia } from '../minutas/domain.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -204,10 +205,10 @@ const editorStorage = multer.diskStorage({
 
 const editorUpload = multer({
   storage: editorStorage,
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB — capturas pueden ser pesadas
+  limits: { fileSize: 10 * 1024 * 1024 }, // Evidencias: imágenes o PDF, hasta 10 MB.
   fileFilter: (_req, file, cb) => {
     // Se permite por mimetype (paste del clipboard suele no tener extensión en originalname)
-    if (file.mimetype && file.mimetype.startsWith("image/")) return cb(null, true);
+    if (file.mimetype === 'application/pdf' || (file.mimetype && file.mimetype.startsWith("image/"))) return cb(null, true);
     const allowed = /\.(jpg|jpeg|png|gif|webp)$/i;
     cb(null, allowed.test(path.extname(file.originalname || "")));
   },
@@ -218,7 +219,20 @@ filesRouter.post("/editor/upload-image", requireAuth, editorUpload.single("image
     if (!req.file) {
       return res.status(400).json({ error: "No se envió imagen" });
     }
-    const safeName = ensureRealImage(req.file.path);
+    // PDF usa la misma carpeta y nombre seguro; las imágenes mantienen su validación actual.
+    let safeName: string | null;
+    if (req.file.mimetype === 'application/pdf') {
+      const bytes = fs.readFileSync(req.file.path);
+      if (formatoEvidencia(bytes, req.file.mimetype) !== 'pdf') {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ error: 'El archivo no es un PDF válido' });
+      }
+      safeName = `${path.parse(req.file.filename).name}.pdf`;
+      const destino = path.join(EDITOR_UPLOADS_DIR, safeName);
+      if (destino !== req.file.path) fs.renameSync(req.file.path, destino);
+    } else {
+      safeName = ensureRealImage(req.file.path);
+    }
     if (!safeName) return res.status(400).json({ error: "El archivo no es una imagen válida" });
     // URL absoluta — los comentarios pueden mandarse por email
     const base = (process.env.FRONTEND_URL || "https://tiusdei.qbit.ec").replace(/\/$/, "");

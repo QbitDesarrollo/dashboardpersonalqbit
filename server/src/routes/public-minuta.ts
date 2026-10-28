@@ -6,7 +6,7 @@ import { query } from '../db/mysql.js';
 import { createNotification } from '../utils/notifications.js';
 import { minutaActividadClienteEmail, type EmailOptions } from '../services/email.js';
 import { aplicarAccion } from '../minutas/domain.js';
-import { esImagenPropia } from '../minutas/esquemas.js';
+import { esArchivoPropio, esImagenPropia } from '../minutas/esquemas.js';
 import { cargarDetalle, codigo, insertarNota } from '../minutas/consultas.js';
 import { evaluarIntento, minutaParaCliente, nombresDeEnvios } from '../minutas/enlace/dominio.js';
 import * as repo from '../minutas/enlace/repositorio.js';
@@ -28,7 +28,7 @@ export interface DepsMinutaPublica {
 }
 
 const NO_DISPONIBLE = 'Este enlace ya no está disponible.';
-const TIPO_IMAGEN: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+const TIPO_IMAGEN: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf' };
 const DIR_IMAGENES = () => path.join(process.cwd(), 'uploads', 'editor');
 
 const entrarSchema = z.object({
@@ -109,7 +109,7 @@ export function crearRouterMinutaPublica(deps: DepsMinutaPublica = {}) {
       return res.status(404).json({ error: NO_DISPONIBLE });
     }
     const ev = await repo.imagenVisible(m.id, evidenciaId);
-    const archivo = ev && esImagenPropia(ev.url) ? new URL(ev.url).pathname.split('/').pop()! : null;
+    const archivo = ev && (esImagenPropia(ev.url) || esArchivoPropio(ev.url)) ? new URL(ev.url).pathname.split('/').pop()! : null;
     if (!archivo) return res.status(404).json({ error: NO_DISPONIBLE });
     res.setHeader('Content-Type', TIPO_IMAGEN[archivo.split('.').pop()!]);
     res.setHeader('Cache-Control', 'private, max-age=300');

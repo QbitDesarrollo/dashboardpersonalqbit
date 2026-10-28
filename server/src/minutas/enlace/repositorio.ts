@@ -67,11 +67,11 @@ export async function puntoVisible(minutaId: string, itemId: string) {
   );
 }
 
-/** An uploaded image of a visible point of this minuta. */
+/** An uploaded image or PDF of a visible point of this minuta. */
 export async function imagenVisible(minutaId: string, evidenciaId: string) {
   return queryOne<{ url: string }>(
     `SELECT e.url FROM minuta_item_evidencias e JOIN minuta_items i ON i.id = e.item_id
-      WHERE e.id = ? AND e.tipo = 'imagen' AND i.minuta_id = ? AND i.visible_cliente = 1 AND i.estado <> 'descartado'`,
+      WHERE e.id = ? AND e.tipo IN ('imagen', 'archivo') AND i.minuta_id = ? AND i.visible_cliente = 1 AND i.estado <> 'descartado'`,
     [evidenciaId, minutaId],
   );
 }

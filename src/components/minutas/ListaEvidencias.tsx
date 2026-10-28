@@ -1,4 +1,4 @@
-import { ExternalLink, HardDrive, Link2, X } from 'lucide-react';
+import { ExternalLink, FileText, HardDrive, Link2, X } from 'lucide-react';
 import type { Evidencia } from '@/lib/minutasApi';
 
 interface Props {
@@ -17,7 +17,7 @@ export function ListaEvidencias({ evidencias, onQuitar }: Props) {
             <a href={ev.url} target="_blank" rel="noreferrer" className="shrink-0">
               <img src={ev.url} alt={ev.nombre} className="h-10 w-14 rounded object-cover" />
             </a>
-          ) : ev.tipo === 'drive' ? <HardDrive className="h-4 w-4 shrink-0 text-muted-foreground" /> : <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />}
+          ) : ev.tipo === 'archivo' ? <FileText className="h-4 w-4 shrink-0 text-muted-foreground" /> : ev.tipo === 'drive' ? <HardDrive className="h-4 w-4 shrink-0 text-muted-foreground" /> : <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />}
           <a href={ev.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-sm font-medium hover:underline">
             {ev.nombre}<ExternalLink className="ml-1 inline h-3 w-3 text-muted-foreground" />
           </a>

@@ -28,7 +28,7 @@ export interface Nota {
   autor: Persona | null;
   /** Name the client entered when the note came through the link. */
   autor_nombre?: string | null;
-  via?: 'interno' | 'enlace';
+  via?: 'interno' | 'enlace' | 'mcp';
 }
 
 export interface Punto {
@@ -170,7 +170,7 @@ export function borrarPunto(itemId: string): Promise<Minuta> {
 
 export function agregarEvidencia(
   itemId: string,
-  evidencia: { tipo: 'enlace' | 'drive' | 'imagen'; nombre: string; url: string; drive_file_id?: string | null },
+  evidencia: { tipo: 'enlace' | 'drive' | 'imagen' | 'archivo'; nombre: string; url: string; drive_file_id?: string | null },
 ): Promise<Minuta> {
   return llamar<Minuta>(`/api/data/minuta-items/${itemId}/evidencias`, 'POST', evidencia);
 }
