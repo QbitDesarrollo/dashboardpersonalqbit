@@ -4,6 +4,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { requireAdminOrEjecutivo } from '../middleware/auth.js';
 import { query, queryOne } from '../db/mysql.js';
 import { getAuthedClient, handleExpiredToken } from '../utils/googleAuth.js';
+import { aEventoCalendario } from '../calendario/eventos.js';
 
 export const googleCalendarRouter = Router();
 
@@ -34,15 +35,7 @@ googleCalendarRouter.get('/google-calendar/events', requireAuth, async (req: Aut
       maxResults: 250, singleEvents: true, orderBy: 'startTime',
     });
 
-    const events = (resp.data.items || []).map((ev) => ({
-      id: ev.id,
-      summary: ev.summary || '(Sin titulo)',
-      description: ev.description || '',
-      start: ev.start?.dateTime || ev.start?.date || '',
-      end: ev.end?.dateTime || ev.end?.date || '',
-      htmlLink: ev.htmlLink || '',
-      status: ev.status,
-    }));
+    const events = (resp.data.items || []).map(aEventoCalendario);
 
     res.json({ events });
   } catch (e) {

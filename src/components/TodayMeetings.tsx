@@ -10,6 +10,8 @@ interface Meeting {
   end: string;
   htmlLink: string;
   status?: string;
+  /** Lo calcula la API con la misma regla del monitor: excluye las tareas "[Tiusdei]" y los bloqueos personales. */
+  es_reunion?: boolean;
 }
 
 /**
@@ -27,10 +29,10 @@ export function TodayMeetings() {
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
       const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
       api.getGoogleCalendarEvents(start, end)
-        .then((r: any) => {
+        .then((r: { events?: Meeting[] }) => {
           if (!alive) return;
           const evs = (r?.events || [])
-            .filter((e: Meeting) => e.status !== 'cancelled' && e.start?.includes('T')) // solo con hora (fuera all-day)
+            .filter((e: Meeting) => e.es_reunion === true)
             .sort((a: Meeting, b: Meeting) => a.start.localeCompare(b.start));
           setMeetings(evs);
         })

@@ -1,6 +1,7 @@
 import { google, type calendar_v3 } from 'googleapis';
 import { query } from '../db/mysql.js';
 import { getAuthedClient } from '../utils/googleAuth.js';
+import { esReunionReal } from '../calendario/eventos.js';
 
 // Reuniones de cada persona, leídas de su Google Calendar (si lo tiene
 // conectado). Sirve para que el monitor y las vistas de equipo muestren
@@ -110,20 +111,12 @@ async function tiempoConTimer(userIds: string[], desdeMs: number): Promise<Map<s
 
 const TZ = 'America/Guayaquil';
 
-/** ¿Este evento del calendario cuenta como reunión de la persona? (reglas arriba) */
+/** ¿Este evento del calendario cuenta como reunión de la persona? (reglas arriba, en calendario/eventos.ts) */
 function esReunion(ev: calendar_v3.Schema$Event, maxMin: number): EventoHoy | null {
-  if (ev.status === 'cancelled' || ev.transparency === 'transparent') return null;
-  if ((ev.summary || '').startsWith('[Tiusdei]')) return null;
-  const s = ev.start?.dateTime, e = ev.end?.dateTime;
-  if (!s || !e) return null; // eventos de día completo no cuentan
+  if (!esReunionReal(ev)) return null;
+  const s = ev.start!.dateTime!, e = ev.end!.dateTime!;
   const dur = Math.round((new Date(e).getTime() - new Date(s).getTime()) / 60000);
   if (dur <= 0 || dur > maxMin) return null;
-  const invitados = ev.attendees || [];
-  const otros = invitados.filter((a) => !a.self && !a.resource).length;
-  const conLink = !!(ev.hangoutLink || ev.conferenceData);
-  if (otros === 0 && !conLink) return null; // bloqueo personal, no reunión
-  const yo = invitados.find((a) => a.self);
-  if (yo && !yo.organizer && yo.responseStatus !== 'accepted' && yo.responseStatus !== 'tentative') return null;
   return { summary: ev.summary || '(Sin título)', start: s, end: e, duration_min: dur };
 }
 

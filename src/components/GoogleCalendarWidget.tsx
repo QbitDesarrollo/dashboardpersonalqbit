@@ -23,6 +23,8 @@ interface CalEvent {
   end: string;
   htmlLink: string;
   status: string;
+  /** Tarea que Tiusdei sincronizó al calendario ("[Tiusdei] ..."): no es una reunión. */
+  es_tarea_tiusdei?: boolean;
 }
 
 export default function GoogleCalendarWidget() {
@@ -62,7 +64,7 @@ export default function GoogleCalendarWidget() {
     if (!connected) return;
     setLoading(true);
     api.getGoogleCalendarEvents(rangeStart, rangeEnd)
-      .then((d: { events: CalEvent[] }) => setEvents(d.events))
+      .then((d: { events: CalEvent[] }) => setEvents(d.events.filter((ev) => !ev.es_tarea_tiusdei)))
       .catch((e: Error) => {
         toast.error('Error cargando eventos: ' + e.message);
         setEvents([]);
