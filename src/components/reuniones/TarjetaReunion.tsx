@@ -34,23 +34,23 @@ export function TarjetaReunion({ reunion, now, ingreso, compacta, onEntrar, ampl
     <article aria-label={reunion.summary} className={cn(
       'relative shrink-0 overflow-hidden rounded-md border border-l-[3px] px-3 text-sm',
       reunion.enlace ? acentos[reunion.enlace.plataforma] : 'border-l-amber-500',
-      ampliada ? 'flex min-h-[90px] flex-wrap items-center gap-2 py-3 w-full' : compacta ? 'flex h-9 items-center gap-3' : 'flex h-[70px] items-center gap-3',
+      ampliada ? 'flex min-w-0 flex-wrap items-center justify-between gap-2 py-3 w-full' : compacta ? 'flex h-9 items-center gap-3' : 'flex h-[70px] items-center gap-3',
       enCurso && 'border-primary/30 bg-primary/10',
       terminada && 'text-muted-foreground bg-muted/30',
     )}>
-      <div className={cn(compacta ? 'flex items-center gap-3' : 'grid gap-1')}>
-        <div className="flex items-center gap-3 leading-4">
+      <div className={cn(ampliada ? 'grid min-w-0 flex-1 basis-40 gap-1' : compacta ? 'flex items-center gap-3' : 'grid gap-1')}>
+        <div className={cn('flex items-center gap-3 leading-4', ampliada && 'flex-wrap gap-y-1')}>
           <span className={cn('font-mono', compacta ? 'text-sm' : 'text-[13px]')}>{hora(reunion.start)}–{hora(reunion.end)}</span>
-          <span className="flex items-center gap-1 text-xs text-muted-foreground" title={reunion.ubicacion ?? undefined}>
+          {!(ampliada && terminada) && <span className="flex items-center gap-1 text-xs text-muted-foreground" title={reunion.ubicacion ?? undefined}>
             <Icono aria-hidden="true" className="h-3.5 w-3.5" />{plataforma}
-          </span>
+          </span>}
         </div>
-        <div className="flex items-center gap-3 leading-5">
-          <span className="max-w-[240px] truncate text-sm font-medium" title={reunion.summary}>{reunion.summary}</span>
-          <span className={cn('flex items-center gap-1 whitespace-nowrap', compacta ? 'text-sm' : 'text-xs')}>
+        <div className={cn('leading-5', ampliada ? 'grid min-w-0 gap-1' : 'flex items-center gap-3')}>
+          <span className={cn('text-sm font-medium', ampliada ? 'line-clamp-2 break-words [overflow-wrap:anywhere]' : 'max-w-[240px] truncate')} title={reunion.summary}>{reunion.summary}</span>
+          {(!ampliada || enCurso) && <span className={cn('flex items-center gap-1', ampliada ? 'flex-wrap' : 'whitespace-nowrap', compacta ? 'text-sm' : 'text-xs')}>
             {presente && <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-pulse" />}
             {etiqueta}
-          </span>
+          </span>}
         </div>
       </div>
       {!terminada && <a href={reunion.enlace?.url ?? reunion.htmlLink} target="_blank" rel="noopener noreferrer"
