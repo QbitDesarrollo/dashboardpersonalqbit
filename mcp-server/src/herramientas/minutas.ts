@@ -118,6 +118,59 @@ export function registrarMinutas(server: McpServer, llamar: LlamarTiusdei): void
     },
   );
 
+  const permisos = " Internal team only (admin, ejecutivo, equipo), same permissions as the web. Errors propagate as TIUSDEI_FORBIDDEN, TIUSDEI_VALIDATION, TIUSDEI_NOT_FOUND or TIUSDEI_INVALID_STATE.";
+  const flujo = " Recommended flow: first upload_minuta_evidence for each file, then close_minuta_point with the evidenceIds, links and Drive ids.";
+  server.registerTool(
+    "upload_minuta_evidence",
+    {
+      description: "Upload evidence for a minuta point. WRITE operation. Accepts raw base64 (no data URL), at most 10 MB decoded, PNG/JPEG/WEBP/PDF only; the server checks magic bytes against MIME. Optional pointId attaches immediately; otherwise keep evidenceId for closing later. Returns { evidenceId, url, type, name, pointId }; PDF type is archivo. Errors: TIUSDEI_FILE_TOO_LARGE, TIUSDEI_UNSUPPORTED_FILE." + flujo + permisos,
+      inputSchema: {
+        fileBase64: z.string().min(1).describe("Raw base64 file content"),
+        fileName: z.string().trim().min(1).max(500).describe("Original display name, e.g. Entrega.pdf"),
+        mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "application/pdf"]),
+        pointId: z.string().uuid().optional().describe("Attach now to this point; omit to attach on close"),
+      },
+    },
+    async (input) => ({ content: [json(await llamar("/minuta-evidence", { method: "POST", body: JSON.stringify(input) }))] }),
+  );
+  server.registerTool(
+    "close_minuta_point",
+    {
+      description: "Close a minuta point with what was delivered and its evidence. WRITE operation, atomic: invalid input leaves the point/evidence/activity unchanged. Team points require whatWasDone >=10 trimmed characters; client points may have an empty note, but must provide whatWasDone. Every point requires >=1 evidence (already attached evidence counts), otherwise TIUSDEI_EVIDENCE_REQUIRED. Only pending/in-progress points can close. Records the token owner, Ecuador-time closedAt and 'Cerrado vía MCP'. Returns the updated point in get_minuta format; evidence remains {type,name,url}. An evidenceId belonging to another point is TIUSDEI_VALIDATION." + flujo + permisos,
+      inputSchema: {
+        pointId: z.string().uuid(),
+        whatWasDone: z.string().max(10000).describe("What was done; >=10 characters for team points"),
+        evidence: z.array(z.union([
+          z.object({ evidenceId: z.string().uuid() }).strict(),
+          z.object({ url: z.string().url(), name: z.string().trim().min(1).max(500).optional() }).strict(),
+          z.object({ driveFileId: z.string().min(1).max(255), name: z.string().trim().min(1).max(500).optional(), url: z.string().url().optional() }).strict(),
+        ])).max(100).optional().describe("Uploaded evidenceIds, HTTP(S) links or Drive ids; omit if evidence is already attached"),
+      },
+    },
+    async ({ pointId, ...body }) => ({ content: [json(await llamar(`/minuta-points/${encodeURIComponent(pointId)}/close`, { method: "POST", body: JSON.stringify(body) }))] }),
+  );
+  server.registerTool(
+    "reopen_minuta_point",
+    {
+      description: "Reopen a completed minuta point when more work is needed. WRITE operation. Requires a reason >=3 trimmed characters. Completed -> in progress; clears closedBy/closedAt, preserves whatWasDone and evidence, and records 'Reabierto vía MCP: <reason>'. Any other state returns TIUSDEI_INVALID_STATE. Returns the updated point in get_minuta format." + permisos,
+      inputSchema: { pointId: z.string().uuid(), reason: z.string().trim().min(3).max(2000) },
+    },
+    async ({ pointId, reason }) => ({ content: [json(await llamar(`/minuta-points/${encodeURIComponent(pointId)}/reopen`, { method: "POST", body: JSON.stringify({ reason }) }))] }),
+  );
+  server.registerTool(
+    "update_minuta_point",
+    {
+      description: "Edit a minuta point or move it within its minuta. WRITE operation, atomic. All fields except pointId optional. client:true clears assigneeId; setting assigneeId switches client off unless client:true is also given. Assignee must be an active internal user, otherwise TIUSDEI_INVALID_ASSIGNEE. position is 1-based, positive integer; beyond the last position moves to last. Renumbers all points 1..N without gaps. Returns the updated point in get_minuta format." + permisos,
+      inputSchema: {
+        pointId: z.string().uuid(), title: z.string().trim().min(1).max(300).optional(),
+        description: z.string().max(10000).nullable().optional(), assigneeId: z.string().uuid().nullable().optional(),
+        client: z.boolean().optional(), dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+        position: z.number().int().min(1).optional(),
+      },
+    },
+    async ({ pointId, ...body }) => ({ content: [json(await llamar(`/minuta-points/${encodeURIComponent(pointId)}`, { method: "PATCH", body: JSON.stringify(body) }))] }),
+  );
+
   server.registerTool(
     "link_task_to_minuta_point",
     {

@@ -35,12 +35,12 @@ export async function sincronizarArranques(minutaId?: string): Promise<void> {
 }
 
 /** A note by someone of the team (their user) or by the client through the link (the name they entered). */
-export async function insertarNota(itemId: string, tipo: 'nota' | 'ajuste', texto: string, autor: { userId: string } | { nombre: string }) {
+export async function insertarNota(itemId: string, tipo: 'nota' | 'ajuste', texto: string, autor: { userId: string; via?: 'mcp' } | { nombre: string }, conn?: PoolConnection) {
   const cliente = 'nombre' in autor;
-  await query(
-    'INSERT INTO minuta_item_notas (id, item_id, tipo, texto, autor_user_id, autor_nombre, via) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [uuid(), itemId, tipo, texto, cliente ? null : autor.userId, cliente ? autor.nombre : null, cliente ? 'enlace' : 'interno'],
-  );
+  const sql = 'INSERT INTO minuta_item_notas (id, item_id, tipo, texto, autor_user_id, autor_nombre, via) VALUES (?, ?, ?, ?, ?, ?, ?)';
+  const valores = [uuid(), itemId, tipo, texto, cliente ? null : autor.userId, cliente ? autor.nombre : null, cliente ? 'enlace' : autor.via ?? 'interno'];
+  if (conn) await conn.execute(sql, valores);
+  else await query(sql, valores);
 }
 
 export function codigo(numero: number): string {

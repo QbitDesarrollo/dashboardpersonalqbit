@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { cuerpoDemasiadoGrande } from './minutas/limiteCuerpo.js';
 import { verifySignedPath } from './utils/signedUrl.js';
 import path from 'path';
 import http from 'http';
@@ -120,6 +121,7 @@ app.use(cors({
 }));
 
 // Body parser with size limits
+app.post('/api/minuta-evidence', express.json({ limit: '15mb' }), cuerpoDemasiadoGrande);
 app.use(express.json({ limit: '2mb' }));
 // Avisa a los otros dispositivos del usuario cuando su timer cambia
 app.use('/api/data', avisoTimerMiddleware);

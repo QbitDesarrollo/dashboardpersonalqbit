@@ -1,5 +1,27 @@
 import { describe, it, expect } from 'vitest';
-import { aplicarAccion, progreso } from '../src/minutas/domain.js';
+import { aplicarAccion, formatoEvidencia, moverPunto, progreso } from '../src/minutas/domain.js';
+
+describe('archivos y posición MCP', () => {
+  it.each([
+    ['89504e470d0a1a0a', 'image/png', 'png'],
+    ['ffd8ff', 'image/jpeg', 'jpg'],
+    ['524946460000000057454250', 'image/webp', 'webp'],
+    ['255044462d', 'application/pdf', 'pdf'],
+    ['255044462d', 'image/png', null],
+    ['89504e47', 'image/png', null],
+    ['474946383961', 'image/gif', null],
+    ['', 'application/pdf', null],
+  ])('valida firma %s y MIME %s', (hex, mime, esperado) => {
+    expect(formatoEvidencia(Buffer.from(hex!, 'hex'), mime!)).toBe(esperado);
+  });
+  it('mueve sin mutar la lista, al inicio, al final y más allá del final', () => {
+    const ids = ['a', 'b', 'c'];
+    expect(moverPunto(ids, 'c', 1)).toEqual(['c', 'a', 'b']);
+    expect(moverPunto(ids, 'a', 3)).toEqual(['b', 'c', 'a']);
+    expect(moverPunto(ids, 'a', 99)).toEqual(['b', 'c', 'a']);
+    expect(ids).toEqual(['a', 'b', 'c']);
+  });
+});
 
 describe('aplicarAccion · completar', () => {
   it('rechaza completar un punto sin evidencia', () => {

@@ -1,3 +1,19 @@
+/** Magic bytes y MIME deben coincidir; el nombre original nunca determina la extensión. */
+export function formatoEvidencia(bytes: Buffer, mime: string): 'png' | 'jpg' | 'webp' | 'pdf' | null {
+  if (mime === 'image/png' && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'png';
+  if (mime === 'image/jpeg' && bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'jpg';
+  if (mime === 'image/webp' && bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  if (mime === 'application/pdf' && bytes.toString('ascii', 0, 5) === '%PDF-') return 'pdf';
+  return null;
+}
+
+/** Posición desde uno; más allá del final equivale a la última posición. */
+export function moverPunto(actuales: string[], id: string, posicion: number): string[] {
+  const nuevo = actuales.filter((p) => p !== id);
+  nuevo.splice(Math.min(posicion, actuales.length) - 1, 0, id);
+  return nuevo;
+}
+
 export type EstadoPunto = 'pendiente' | 'en_curso' | 'completado' | 'aprobado' | 'descartado';
 export type AccionPunto = 'iniciar' | 'completar' | 'aprobar' | 'reabrir' | 'descartar' | 'restaurar' | 'pedir_ajuste';
 

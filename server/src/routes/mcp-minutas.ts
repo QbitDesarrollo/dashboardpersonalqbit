@@ -5,9 +5,10 @@ import { z } from 'zod';
 import type { AuthRequest } from '../middleware/auth.js';
 import { requireApiToken } from '../middleware/apiToken.js';
 import { query } from '../db/mysql.js';
-import { hasRole } from '../utils/roles.js';
+import { puedeGestionarMinutas } from '../minutas/permisos.js';
 import { cargarDetalle } from '../minutas/consultas.js';
-import { esImagenPropia, fechaIso } from '../minutas/esquemas.js';
+import { cerrarMcpSchema, editarMcpSchema, esImagenPropia, fechaIso, reabrirMcpSchema, subirEvidenciaMcpSchema } from '../minutas/esquemas.js';
+import { cerrarPuntoMcp, editarPuntoMcp, reabrirPuntoMcp, subirEvidencia } from '../minutas/mcpServicio.js';
 import { hoyEcuador, minutaParaAgente, resumenParaAgente } from '../minutas/formatoMcp.js';
 import { agregarPuntos, crearMinuta, ErrorMinuta, listarMinutas, vincularTarea } from '../minutas/servicio.js';
 
@@ -37,7 +38,7 @@ const seguro = (fn: (req: AuthRequest, res: Response) => Promise<unknown>) => (r
 
 async function soloEquipo(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    if (await hasRole(req.userId!, ['admin', 'ejecutivo', 'equipo'])) return next();
+    if (await puedeGestionarMinutas(req.userId!)) return next();
     fallo(res, 403, 'TIUSDEI_FORBIDDEN', 'Las minutas son solo para el equipo interno.');
   } catch (e) {
     console.error('[MCP-MINUTAS] permisos:', e);
@@ -45,7 +46,28 @@ async function soloEquipo(req: AuthRequest, res: Response, next: NextFunction) {
   }
 }
 
-mcpMinutasRouter.use(['/minutas', '/minuta-points'], requireApiToken, soloEquipo);
+mcpMinutasRouter.use(['/minutas', '/minuta-points', '/minuta-evidence'], requireApiToken, soloEquipo);
+
+mcpMinutasRouter.post('/minuta-evidence', seguro(async (req, res) => {
+  const b = subirEvidenciaMcpSchema.safeParse(req.body);
+  if (!b.success) return fallo(res, 400, 'TIUSDEI_VALIDATION', 'Archivo inválido');
+  res.status(201).json(await subirEvidencia(b.data, req.userId!));
+}));
+mcpMinutasRouter.post('/minuta-points/:id/close', seguro(async (req, res) => {
+  const b = cerrarMcpSchema.safeParse(req.body);
+  if (!b.success) return fallo(res, 400, 'TIUSDEI_VALIDATION', 'Cierre inválido');
+  res.json(await cerrarPuntoMcp(String(req.params.id), b.data, req.userId!));
+}));
+mcpMinutasRouter.post('/minuta-points/:id/reopen', seguro(async (req, res) => {
+  const b = reabrirMcpSchema.safeParse(req.body);
+  if (!b.success) return fallo(res, 400, 'TIUSDEI_VALIDATION', 'Escribe un motivo de al menos 3 caracteres.');
+  res.json(await reabrirPuntoMcp(String(req.params.id), b.data.reason, req.userId!));
+}));
+mcpMinutasRouter.patch('/minuta-points/:id', seguro(async (req, res) => {
+  const b = editarMcpSchema.safeParse(req.body);
+  if (!b.success) return fallo(res, 400, 'TIUSDEI_VALIDATION', 'Punto inválido');
+  res.json(await editarPuntoMcp(String(req.params.id), b.data));
+}));
 
 const texto = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 

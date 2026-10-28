@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import type { RowDataPacket } from 'mysql2';
+import { reordenarPuntos } from '../minutas/puntos/servicio.js';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { pool, query, queryOne } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
@@ -84,36 +84,14 @@ minutasRouter.patch('/minutas/:id', requireAuth, soloEquipoInterno, async (req: 
 minutasRouter.put('/minutas/:id/orden', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
   const parsed = z.object({ items: z.array(z.string()).max(500) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'La lista de puntos no coincide con la minuta.' });
-  if (!pool) return res.status(500).json({ error: 'Base de datos no configurada' });
   const id = String(req.params.id);
-  const nuevo = parsed.data.items;
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-    const [minuta] = await conn.query<RowDataPacket[]>('SELECT id FROM minutas WHERE id = ? FOR UPDATE', [id]);
-    if (!minuta.length) {
-      await conn.rollback();
-      return res.status(404).json({ error: 'Minuta no encontrada' });
-    }
-    const [filas] = await conn.query<RowDataPacket[]>('SELECT id FROM minuta_items WHERE minuta_id = ?', [id]);
-    const actuales = new Set(filas.map((f) => String(f.id)));
-    const mismaLista = nuevo.length === actuales.size && new Set(nuevo).size === nuevo.length && nuevo.every((i) => actuales.has(i));
-    if (!mismaLista) {
-      await conn.rollback();
-      return res.status(400).json({ error: 'La lista de puntos no coincide con la minuta.' });
-    }
-    await conn.execute('UPDATE minuta_items SET numero = numero + 100000 WHERE minuta_id = ?', [id]);
-    for (const [i, itemId] of nuevo.entries()) {
-      await conn.execute('UPDATE minuta_items SET numero = ?, sort_order = ? WHERE id = ? AND minuta_id = ?', [i + 1, i + 1, itemId, id]);
-    }
-    await conn.commit();
+    await reordenarPuntos(id, parsed.data.items);
     res.json(await cargarDetalle(id));
   } catch (e) {
-    await conn.rollback();
+    if (e instanceof ErrorMinuta) return res.status(e.status).json({ error: e.message });
     console.error('[MINUTAS] reordenar:', e);
     res.status(500).json({ error: 'Error al reordenar los puntos' });
-  } finally {
-    conn.release();
   }
 });
 

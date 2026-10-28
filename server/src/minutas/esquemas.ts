@@ -42,14 +42,38 @@ export const editarItemSchema = z.object({
   visible_cliente: z.boolean().optional(),
 });
 
-// Evidencia: enlace, archivo de Drive o imagen (captura). Archivos pesados no se suben a
-// Tiusdei (decisión de Steven, 23-sep); las imágenes usan la subida de capturas del editor.
+// Capturas y PDF se guardan en el editor; enlaces y Drive conservan su URL.
 export const evidenciaSchema = z.object({
-  tipo: z.enum(['enlace', 'drive', 'imagen']),
+  tipo: z.enum(['enlace', 'drive', 'imagen', 'archivo']),
   nombre: z.string().trim().min(1).max(500),
   url: z.string().max(1000).regex(/^https?:\/\/\S+$/i, 'La URL debe empezar con http:// o https://'),
   drive_file_id: z.string().max(255).nullish(),
 });
+
+export const subirEvidenciaMcpSchema = z.object({
+  fileBase64: z.string().min(1),
+  fileName: z.string().trim().min(1).max(500),
+  mimeType: z.string().min(1),
+  pointId: z.string().uuid().optional(),
+});
+export const evidenciaMcpSchema = z.union([
+  z.object({ evidenceId: z.string().uuid() }).strict(),
+  z.object({ driveFileId: z.string().min(1).max(255), name: z.string().trim().min(1).max(500).optional(), url: evidenciaSchema.shape.url.optional() }).strict(),
+  z.object({ url: evidenciaSchema.shape.url, name: z.string().trim().min(1).max(500).optional() }).strict(),
+]);
+export const cerrarMcpSchema = z.object({
+  whatWasDone: z.string().trim().max(10000),
+  evidence: z.array(evidenciaMcpSchema).max(100).default([]),
+});
+export const reabrirMcpSchema = z.object({ reason: z.string().trim().min(3).max(2000) });
+export const editarMcpSchema = z.object({
+  title: editarItemSchema.shape.titulo,
+  description: editarItemSchema.shape.descripcion,
+  assigneeId: editarItemSchema.shape.responsable_user_id,
+  client: editarItemSchema.shape.responsable_cliente,
+  dueDate: editarItemSchema.shape.fecha_compromiso,
+  position: z.number().int().min(1).optional(),
+}).strict();
 
 export const accionSchema = z.object({
   accion: z.string().min(1).max(40),
@@ -61,6 +85,14 @@ export const accionSchema = z.object({
  * Una imagen de evidencia tiene que haberse subido a Tiusdei (/uploads/editor/...).
  * Si no, la página pública mostraría imágenes de terceros (p. ej. píxeles de rastreo).
  */
+export function esArchivoPropio(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const propio = new URL(process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec');
+    return u.origin === propio.origin && /^\/uploads\/editor\/[A-Za-z0-9-]+\.pdf$/.test(u.pathname);
+  } catch { return false; }
+}
+
 export function esImagenPropia(url: string): boolean {
   try {
     const u = new URL(url);
