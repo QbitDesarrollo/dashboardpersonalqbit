@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query } from '../db/mysql.js';
 import { getUserRole } from '../utils/roles.js';
+import { finDelDiaEcuador } from '../utils/fechas.js';
 
 export const metricsRouter = Router();
 
@@ -303,7 +304,8 @@ metricsRouter.get('/metrics/cumplimiento', requireAuth, async (req: AuthRequest,
 
       if (deliveredAt && currentlyDone) {
         if (fechaObjetivo) {
-          const fObj = new Date(fechaObjetivo); fObj.setHours(23, 59, 59, 999);
+          // El día límite termina a la medianoche de Ecuador, no a la de UTC (19:00 en Ecuador).
+          const fObj = finDelDiaEcuador(fechaObjetivo)!;
           if (deliveredAt <= fObj) m.entregadas_a_tiempo += 1;
           else {
             m.entregadas_tarde += 1;

@@ -18,3 +18,19 @@ describe('fechas de Ecuador', () => {
     expect(fechaDeColumna(null)).toBeNull();
   });
 });
+
+describe('fin del día límite en Ecuador', () => {
+  it('una entrega a las 19:41 de Ecuador del día límite es a tiempo, aunque en UTC ya sea el día siguiente', async () => {
+    const { finDelDiaEcuador } = await import('../src/utils/fechas.js');
+    const limite = finDelDiaEcuador(new Date('2026-10-27T00:00:00Z'));
+    expect(new Date('2026-10-28T00:41:16Z') <= limite!).toBe(true);
+    expect(new Date('2026-10-28T05:00:00Z') <= limite!).toBe(false);
+    expect(limite!.toISOString()).toBe('2026-10-28T04:59:59.999Z');
+  });
+
+  it('acepta la fecha como texto y sin fecha devuelve null', async () => {
+    const { finDelDiaEcuador } = await import('../src/utils/fechas.js');
+    expect(finDelDiaEcuador('2026-10-27')!.toISOString()).toBe('2026-10-28T04:59:59.999Z');
+    expect(finDelDiaEcuador(null)).toBeNull();
+  });
+});

@@ -19,3 +19,9 @@ export function fechaDeColumna(valor: Date | string | null | undefined): string 
   if (!valor) return null;
   return valor instanceof Date ? valor.toISOString().slice(0, 10) : String(valor).slice(0, 10);
 }
+
+/** End of a due date (DATE column or YYYY-MM-DD) in Guayaquil: 23:59:59.999 at UTC-5, never at UTC midnight. */
+export function finDelDiaEcuador(valor: Date | string | null | undefined): Date | null {
+  const fecha = fechaDeColumna(valor);
+  return fecha ? new Date(`${fecha}T23:59:59.999-05:00`) : null;
+}
