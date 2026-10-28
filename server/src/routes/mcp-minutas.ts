@@ -7,8 +7,8 @@ import { requireApiToken } from '../middleware/apiToken.js';
 import { query } from '../db/mysql.js';
 import { puedeGestionarMinutas } from '../minutas/permisos.js';
 import { cargarDetalle } from '../minutas/consultas.js';
-import { cerrarMcpSchema, editarMcpSchema, esImagenPropia, fechaIso, reabrirMcpSchema, subirEvidenciaMcpSchema } from '../minutas/esquemas.js';
-import { cerrarPuntoMcp, editarPuntoMcp, reabrirPuntoMcp, subirEvidencia } from '../minutas/mcpServicio.js';
+import { cerrarMcpSchema, editarMcpSchema, esImagenPropia, fechaIso, quitarEvidenciaMcpSchema, reabrirMcpSchema, subirEvidenciaMcpSchema } from '../minutas/esquemas.js';
+import { cerrarPuntoMcp, editarPuntoMcp, quitarEvidenciaMcp, reabrirPuntoMcp, subirEvidencia } from '../minutas/mcpServicio.js';
 import { hoyEcuador, minutaParaAgente, resumenParaAgente } from '../minutas/formatoMcp.js';
 import { agregarPuntos, crearMinuta, ErrorMinuta, listarMinutas, vincularTarea } from '../minutas/servicio.js';
 
@@ -62,6 +62,11 @@ mcpMinutasRouter.post('/minuta-points/:id/reopen', seguro(async (req, res) => {
   const b = reabrirMcpSchema.safeParse(req.body);
   if (!b.success) return fallo(res, 400, 'TIUSDEI_VALIDATION', 'Escribe un motivo de al menos 3 caracteres.');
   res.json(await reabrirPuntoMcp(String(req.params.id), b.data.reason, req.userId!));
+}));
+mcpMinutasRouter.delete('/minuta-points/:id/evidence', seguro(async (req, res) => {
+  const b = quitarEvidenciaMcpSchema.safeParse(req.body ?? {});
+  if (!b.success) return fallo(res, 400, 'TIUSDEI_VALIDATION', 'Indica name o url de la evidencia.');
+  res.json(await quitarEvidenciaMcp(String(req.params.id), b.data));
 }));
 mcpMinutasRouter.patch('/minuta-points/:id', seguro(async (req, res) => {
   const b = editarMcpSchema.safeParse(req.body);

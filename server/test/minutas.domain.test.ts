@@ -194,3 +194,14 @@ describe('aplicarAccion · acción desconocida', () => {
     expect(r).toEqual({ ok: false, error: 'Acción desconocida.' });
   });
 });
+
+describe('puedeQuitarEvidencia', () => {
+  it('un punto cerrado conserva al menos una evidencia; uno abierto puede quedarse sin ninguna', async () => {
+    const { puedeQuitarEvidencia } = await import('../src/minutas/domain.js');
+    expect(puedeQuitarEvidencia('completado', 2)).toBe(true);
+    expect(puedeQuitarEvidencia('completado', 1)).toBe(false);
+    expect(puedeQuitarEvidencia('aprobado', 1)).toBe(false);
+    expect(puedeQuitarEvidencia('en_curso', 1)).toBe(true);
+    expect(puedeQuitarEvidencia('pendiente', 1)).toBe(true);
+  });
+});

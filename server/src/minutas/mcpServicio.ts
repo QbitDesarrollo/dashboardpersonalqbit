@@ -2,12 +2,12 @@ import type { z } from 'zod';
 import { moverPunto } from './domain.js';
 import { cargarDetalle, insertarNota } from './consultas.js';
 import { guardarEvidencia, leerPendiente, quitarArchivoPendiente } from './archivos.js';
-import type { cerrarMcpSchema, editarMcpSchema, subirEvidenciaMcpSchema } from './esquemas.js';
+import type { cerrarMcpSchema, editarMcpSchema, quitarEvidenciaMcpSchema, subirEvidenciaMcpSchema } from './esquemas.js';
 import { minutaParaAgente } from './formatoMcp.js';
 import { ErrorMinuta } from './servicio.js';
 import { enTransaccion } from './transaccion.js';
-import { accionarPunto, adjuntarEvidencia, editarPunto, exigirPunto, reordenarEnTransaccion } from './puntos/servicio.js';
-import { cargarOrden, evidenciaPorId } from './puntos/consultas.js';
+import { accionarPunto, adjuntarEvidencia, editarPunto, exigirPunto, quitarEvidenciaEnTransaccion, reordenarEnTransaccion } from './puntos/servicio.js';
+import { cargarOrden, evidenciaPorId, evidenciasDePunto } from './puntos/consultas.js';
 
 const frontend = () => process.env.FRONTEND_URL || 'https://tiusdei.qbit.ec';
 async function puntoParaAgente(minutaId: string, pointId: string) {
@@ -84,6 +84,18 @@ export async function editarPuntoMcp(id: string, b: z.infer<typeof editarMcpSche
       await reordenarEnTransaccion(conn, minuta, moverPunto(actuales, id, b.position));
     }
     return minuta;
+  });
+  return puntoParaAgente(minutaId, id);
+}
+
+/** Quita una evidencia del punto identificándola por nombre o URL; misma regla que la interfaz. */
+export async function quitarEvidenciaMcp(id: string, b: z.infer<typeof quitarEvidenciaMcpSchema>) {
+  const minutaId = await enTransaccion(async (conn) => {
+    await exigirPunto(conn, id);
+    const coinciden = (await evidenciasDePunto(conn, id)).filter((e) => (!b.name || e.nombre === b.name) && (!b.url || e.url === b.url));
+    if (coinciden.length === 0) throw new ErrorMinuta(404, 'El punto no tiene una evidencia con ese nombre o URL.', 'TIUSDEI_NOT_FOUND');
+    if (coinciden.length > 1) throw new ErrorMinuta(400, 'Hay varias evidencias con ese nombre; indica también la url.', 'TIUSDEI_VALIDATION');
+    return quitarEvidenciaEnTransaccion(conn, coinciden[0].id);
   });
   return puntoParaAgente(minutaId, id);
 }

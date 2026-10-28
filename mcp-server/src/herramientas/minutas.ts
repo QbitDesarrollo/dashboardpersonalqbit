@@ -158,6 +158,18 @@ export function registrarMinutas(server: McpServer, llamar: LlamarTiusdei): void
     async ({ pointId, reason }) => ({ content: [json(await llamar(`/minuta-points/${encodeURIComponent(pointId)}/reopen`, { method: "POST", body: JSON.stringify({ reason }) }))] }),
   );
   server.registerTool(
+    "delete_minuta_evidence",
+    {
+      description: "Remove one evidence from a minuta point, e.g. an old version replaced by a newer file. WRITE operation, atomic. Identify it by its exact name or url as returned by get_minuta (evidence[].name / evidence[].url); if several share the name, pass the url. Same rule as the web: a closed point (Completado/Aprobado) must keep at least one evidence, otherwise TIUSDEI_EVIDENCE_REQUIRED, so upload and attach the new evidence first. Does not reopen the point or change whatWasDone. Unknown name/url returns TIUSDEI_NOT_FOUND; ambiguous name returns TIUSDEI_VALIDATION. Returns the updated point in get_minuta format." + permisos,
+      inputSchema: {
+        pointId: z.string().uuid(),
+        name: z.string().trim().min(1).max(500).optional().describe("Exact evidence name from get_minuta"),
+        url: z.string().trim().min(1).max(1000).optional().describe("Exact evidence url from get_minuta"),
+      },
+    },
+    async ({ pointId, ...body }) => ({ content: [json(await llamar(`/minuta-points/${encodeURIComponent(pointId)}/evidence`, { method: "DELETE", body: JSON.stringify(body) }))] }),
+  );
+  server.registerTool(
     "update_minuta_point",
     {
       description: "Edit a minuta point or move it within its minuta. WRITE operation, atomic. All fields except pointId optional. client:true clears assigneeId; setting assigneeId switches client off unless client:true is also given. Assignee must be an active internal user, otherwise TIUSDEI_INVALID_ASSIGNEE. position is 1-based, positive integer; beyond the last position moves to last. Renumbers all points 1..N without gaps. Returns the updated point in get_minuta format." + permisos,

@@ -1,6 +1,6 @@
 import type { PoolConnection } from 'mysql2/promise';
 import type { z } from 'zod';
-import { aplicarAccion, type AccionPunto, type DatosAccion } from '../domain.js';
+import { aplicarAccion, MENSAJE_ULTIMA_EVIDENCIA, puedeQuitarEvidencia, type AccionPunto, type DatosAccion } from '../domain.js';
 import { insertarNota } from '../consultas.js';
 import { editarItemSchema, esArchivoPropio, esImagenPropia, evidenciaSchema } from '../esquemas.js';
 import { ErrorMinuta } from '../servicio.js';
@@ -66,3 +66,17 @@ export async function reordenarEnTransaccion(conn: PoolConnection, id: string, n
 }
 
 export const reordenarPuntos = (id: string, nuevo: string[]) => enTransaccion((conn) => reordenarEnTransaccion(conn, id, nuevo));
+
+/** Quitar evidencia: misma regla para la interfaz y el MCP, dentro de la transacción del llamador. */
+export async function quitarEvidenciaEnTransaccion(conn: PoolConnection, evidenciaId: string) {
+  const ev = await repo.evidenciaPorId(conn, evidenciaId);
+  if (!ev) throw new ErrorMinuta(404, 'Evidencia no encontrada', 'TIUSDEI_NOT_FOUND');
+  const item = await exigirPunto(conn, ev.item_id);
+  if (!puedeQuitarEvidencia(item.estado, Number(item.evidencias))) {
+    throw new ErrorMinuta(422, MENSAJE_ULTIMA_EVIDENCIA, 'TIUSDEI_EVIDENCE_REQUIRED');
+  }
+  await repo.borrarEvidencia(conn, evidenciaId);
+  return item.minuta_id;
+}
+
+export const quitarEvidencia = (evidenciaId: string) => enTransaccion((conn) => quitarEvidenciaEnTransaccion(conn, evidenciaId));

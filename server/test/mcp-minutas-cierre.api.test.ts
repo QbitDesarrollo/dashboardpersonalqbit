@@ -293,3 +293,53 @@ describe('paridad web PDF', () => {
     expect((await fetch(`${url}${pdf.url.replace(/sig=[a-f0-9]/, 'sig=z')}`)).status).toBe(404);
   });
 });
+
+describe('delete_minuta_evidence', () => {
+  const quitar = (body: unknown, id = puntos[0], quien = token) => llamar(`${url}/api/minuta-points/${id}/evidence`, quien, 'DELETE', body);
+  const cerradoConDos = async () => {
+    await llamar(`${url}/api/minuta-points/${puntos[0]}/close`, token, 'POST', { whatWasDone: 'Se entregó el nuevo home.', evidence: [
+      { url: 'https://example.com/vieja', name: 'evidencia-5.1.webp' }, { url: 'https://example.com/nueva', name: 'evidencia-5.1-v2.png' },
+    ] });
+  };
+
+  it('quita por nombre una evidencia vieja de un punto cerrado sin reabrirlo ni tocar el texto', async () => {
+    await cerradoConDos();
+    const r = await quitar({ name: 'evidencia-5.1.webp' });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ status: 'Completado', whatWasDone: 'Se entregó el nuevo home.', closedBy: 'Even' });
+    expect(r.body.evidence).toEqual([{ type: 'enlace', name: 'evidencia-5.1-v2.png', url: 'https://example.com/nueva' }]);
+    expect((await leer()).body.points[0]).toEqual(r.body);
+  });
+
+  it('también quita por URL', async () => {
+    await cerradoConDos();
+    const r = await quitar({ url: 'https://example.com/nueva' });
+    expect(r.status).toBe(200);
+    expect(r.body.evidence.map((e: { name: string }) => e.name)).toEqual(['evidencia-5.1.webp']);
+  });
+
+  it('no deja un punto cerrado sin evidencia, igual que la web', async () => {
+    await cerradoConDos();
+    await quitar({ name: 'evidencia-5.1.webp' });
+    const antes = await leer();
+    expect(await quitar({ name: 'evidencia-5.1-v2.png' })).toMatchObject({ status: 422, body: { error: 'TIUSDEI_EVIDENCE_REQUIRED' } });
+    expect(await leer()).toEqual(antes);
+  });
+
+  it('avisa si no existe, si el nombre es ambiguo o si no indica cuál', async () => {
+    await llamar(`${url}/api/minuta-points/${puntos[0]}/close`, token, 'POST', { whatWasDone: 'Se entregó el nuevo home.', evidence: [
+      { url: 'https://example.com/a', name: 'Captura' }, { url: 'https://example.com/b', name: 'Captura' },
+    ] });
+    const antes = await leer();
+    expect(await quitar({ name: 'No existe' })).toMatchObject({ status: 404, body: { error: 'TIUSDEI_NOT_FOUND' } });
+    expect(await quitar({ name: 'Captura' })).toMatchObject({ status: 400, body: { error: 'TIUSDEI_VALIDATION' } });
+    expect(await quitar({})).toMatchObject({ status: 400, body: { error: 'TIUSDEI_VALIDATION' } });
+    expect(await leer()).toEqual(antes);
+  });
+
+  it('un cliente no puede quitar evidencias', async () => {
+    await cerradoConDos();
+    const cliente = await crearTokenApi(await crearUsuario('Cliente', 'cliente'));
+    expect(await quitar({ name: 'evidencia-5.1.webp' }, puntos[0], cliente)).toMatchObject({ status: 403, body: { error: 'TIUSDEI_FORBIDDEN' } });
+  });
+});

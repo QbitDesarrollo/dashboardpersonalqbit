@@ -90,3 +90,10 @@ export function aplicarAccion(punto: PuntoParaAccion, accion: AccionPunto, datos
   }
   return { ok: true, estado: t.hacia };
 }
+
+export const MENSAJE_ULTIMA_EVIDENCIA = 'Un punto cerrado necesita al menos una evidencia. Reábrelo para cambiarla.';
+
+/** Un punto cerrado (completado o aprobado) nunca se queda sin evidencia. */
+export function puedeQuitarEvidencia(estado: EstadoPunto, total: number): boolean {
+  return !(estado === 'completado' || estado === 'aprobado') || total > 1;
+}

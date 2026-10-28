@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne } from '../db/mysql.js';
 import { accionSchema, editarItemSchema, evidenciaSchema } from '../minutas/esquemas.js';
-import { accionarPunto, adjuntarEvidencia, editarPunto } from '../minutas/puntos/servicio.js';
+import { accionarPunto, adjuntarEvidencia, editarPunto, quitarEvidencia } from '../minutas/puntos/servicio.js';
 import { enTransaccion } from '../minutas/transaccion.js';
 import { soloEquipoInterno } from '../minutas/permisos.js';
 import { cargarDetalle, insertarNota } from '../minutas/consultas.js';
@@ -89,22 +89,10 @@ minutaItemsRouter.delete('/minuta-items/:id/tareas/:taskId', requireAuth, soloEq
 
 minutaItemsRouter.delete('/minuta-evidencias/:id', requireAuth, soloEquipoInterno, async (req: AuthRequest, res) => {
   try {
-    const evidenciaId = String(req.params.id);
-    const ev = await queryOne<any>(
-      `SELECT e.item_id, i.minuta_id, i.estado,
-              (SELECT COUNT(*) FROM minuta_item_evidencias x WHERE x.item_id = e.item_id) AS total
-         FROM minuta_item_evidencias e JOIN minuta_items i ON i.id = e.item_id
-        WHERE e.id = ?`,
-      [evidenciaId],
-    );
-    if (!ev) return res.status(404).json({ error: 'Evidencia no encontrada' });
-    const cerrado = ev.estado === 'completado' || ev.estado === 'aprobado';
-    if (cerrado && Number(ev.total) <= 1) {
-      return res.status(422).json({ error: 'Un punto cerrado necesita al menos una evidencia. Reábrelo para cambiarla.' });
-    }
-    await query('DELETE FROM minuta_item_evidencias WHERE id = ?', [evidenciaId]);
-    res.json(await cargarDetalle(ev.minuta_id));
+    const minutaId = await quitarEvidencia(String(req.params.id));
+    res.json(await cargarDetalle(minutaId));
   } catch (e) {
+    if (e instanceof ErrorMinuta) return res.status(e.status).json({ error: e.status === 404 ? 'Evidencia no encontrada' : e.message });
     console.error('[MINUTAS] quitar evidencia:', e);
     res.status(500).json({ error: 'Error al quitar la evidencia' });
   }

@@ -65,6 +65,10 @@ export const cerrarMcpSchema = z.object({
   whatWasDone: z.string().trim().max(10000),
   evidence: z.array(evidenciaMcpSchema).max(100).default([]),
 });
+export const quitarEvidenciaMcpSchema = z.object({
+  name: z.string().trim().min(1).max(500).optional(),
+  url: z.string().trim().min(1).max(1000).optional(),
+}).strict().refine((b) => !!b.name || !!b.url, { message: 'Indica name o url de la evidencia.' });
 export const reabrirMcpSchema = z.object({ reason: z.string().trim().min(3).max(2000) });
 export const editarMcpSchema = z.object({
   title: editarItemSchema.shape.titulo,

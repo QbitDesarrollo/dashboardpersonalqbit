@@ -74,3 +74,14 @@ export async function evidenciaPorId(conn: PoolConnection, id: string) {
   const [rows] = await conn.query<(RowDataPacket & { item_id: string })[]>('SELECT item_id FROM minuta_item_evidencias WHERE id = ? FOR UPDATE', [id]);
   return rows[0] ?? null;
 }
+
+export async function evidenciasDePunto(conn: PoolConnection, itemId: string) {
+  const [rows] = await conn.query<(RowDataPacket & { id: string; nombre: string; url: string })[]>(
+    'SELECT id, nombre, url FROM minuta_item_evidencias WHERE item_id = ? ORDER BY created_at, id FOR UPDATE', [itemId],
+  );
+  return rows;
+}
+
+export async function borrarEvidencia(conn: PoolConnection, id: string) {
+  await conn.execute('DELETE FROM minuta_item_evidencias WHERE id = ?', [id]);
+}
