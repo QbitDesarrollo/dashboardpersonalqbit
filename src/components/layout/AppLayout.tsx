@@ -126,6 +126,7 @@ const adminNavigation: NavItem[] = [
   { title: 'Clientes', href: '/admin/clientes', icon: <Building2 className="h-5 w-5" /> },
   { title: 'Marcas', href: '/admin/marcas', icon: <Tags className="h-5 w-5" /> },
   { title: 'Mesas', href: '/admin/mesas', icon: <LayoutDashboard className="h-5 w-5" /> },
+  { title: 'Departamentos', href: '/admin/departamentos', icon: <Workflow className="h-5 w-5" />, roles: ['admin', 'ejecutivo'] },
   { title: 'Integraciones', href: '/admin/integraciones', icon: <MessageCircle className="h-5 w-5" /> },
   { title: 'Automatizaciones', href: '/admin/automatizaciones', icon: <Zap className="h-5 w-5" /> },
   { title: 'Consola de errores', href: '/admin/errores', icon: <Bug className="h-5 w-5" />, roles: ['admin'] },
@@ -176,7 +177,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     if (from < 0 || to < 0) return;
     ids.splice(to, 0, ids.splice(from, 1)[0]);
     setDeskOrder(ids);
-    try { localStorage.setItem('sidebar_mesas_order', JSON.stringify(ids)); } catch {}
+    try { localStorage.setItem('sidebar_mesas_order', JSON.stringify(ids)); } catch { /* Storage may be unavailable. */ }
   };
   const [brands, setBrands] = useState<Brand[]>([]);
   const [siteSettings, setSiteSettings] = useState<{ logo_url?: string | null; site_name?: string | null }>({});
@@ -232,7 +233,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     // Escuchar notificaciones en tiempo real (menciones, asignaciones, etc.)
     const token = localStorage.getItem('tiusdei_token');
     if (token) {
-      const API_URL = (import.meta as any).env?.VITE_API_URL || window.location.origin;
+      const API_URL = import.meta.env?.VITE_API_URL || window.location.origin;
       import('socket.io-client').then(({ io }) => {
         if (signal.aborted) return;
         const socket = io(API_URL.replace(/\/$/, ''), {
@@ -296,7 +297,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const toggleSidebarCollapse = useCallback(() => {
     setSidebarCollapsed(prev => {
       const next = !prev;
-      try { localStorage.setItem('sidebar-collapsed', String(next)); } catch {}
+      try { localStorage.setItem('sidebar-collapsed', String(next)); } catch { /* Storage may be unavailable. */ }
       return next;
     });
   }, []);
@@ -368,7 +369,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         if (localStorage.getItem('tiusdei_theme_manual')) return;
         const h = getGyeHour();
         setTheme(h >= 18 || h < 6 ? 'dark' : 'light');
-      } catch {}
+      } catch { /* Keep the current theme when storage is unavailable. */ }
     };
     const timeout = setTimeout(apply, 500);
     const interval = setInterval(apply, 60000);
@@ -723,7 +724,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 size="icon"
                 onClick={() => {
                   const next = isDark ? 'light' : 'dark';
-                  try { localStorage.setItem('tiusdei_theme_manual', next); } catch {}
+                  try { localStorage.setItem('tiusdei_theme_manual', next); } catch { /* Storage may be unavailable. */ }
                   setTheme(next);
                 }}
                 title={isDark ? 'Modo claro (normal)' : 'Modo oscuro'}

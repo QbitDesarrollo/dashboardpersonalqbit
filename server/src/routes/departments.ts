@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
+import { consultarResumen } from '../departamentos/consultas.js';
 
 /**
  * Departamentos = etapas del flujo de producción (Contenido → Diseño → Producción → ...).
@@ -13,11 +14,33 @@ import { hasRole } from '../utils/roles.js';
  * Lectura: cualquier usuario autenticado.
  * Mutaciones: solo admin (las usa el panel de configuración).
  */
+interface DepartmentRow {
+  id: string;
+  nombre: string;
+  orden: number;
+  color: string | null;
+  next_department_id: string | null;
+  next_department_nombre?: string | null;
+  activo: number;
+}
+
 export const departmentsRouter = Router();
+
+departmentsRouter.get('/departments/resumen', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!await hasRole(req.userId!, ['admin', 'ejecutivo'])) {
+      return res.status(403).json({ error: 'Solo admin o ejecutivo puede consultar el resumen de departamentos' });
+    }
+    res.json(await consultarResumen());
+  } catch (e) {
+    console.error('[DEPARTMENTS] resumen:', e);
+    res.status(500).json({ error: 'Error al cargar el resumen de departamentos' });
+  }
+});
 
 departmentsRouter.get('/departments', requireAuth, async (_req: AuthRequest, res) => {
   try {
-    const rows = await query<any[]>(
+    const rows = await query<DepartmentRow[]>(
       `SELECT d.id, d.nombre, d.orden, d.color, d.next_department_id, d.activo,
               dn.nombre AS next_department_nombre
        FROM departments d
@@ -52,8 +75,8 @@ departmentsRouter.post('/departments', requireAuth, async (req: AuthRequest, res
       'INSERT INTO departments (id, nombre, orden, color, next_department_id, activo) VALUES (?, ?, ?, ?, ?, 1)',
       [id, nombre, orden, color, next_department_id]
     );
-    const row = await queryOne<any>('SELECT * FROM departments WHERE id = ?', [id]);
-    res.status(201).json({ ...row, activo: !!row.activo });
+    const row = await queryOne<DepartmentRow>('SELECT * FROM departments WHERE id = ?', [id]);
+    res.status(201).json({ ...row, activo: !!row!.activo });
   } catch (e) {
     console.error('[DEPARTMENTS] create:', e);
     res.status(500).json({ error: 'Error al crear departamento' });
@@ -66,7 +89,7 @@ departmentsRouter.patch('/departments/:id', requireAuth, async (req: AuthRequest
     if (!allowed) return res.status(403).json({ error: 'Solo admin puede editar departamentos' });
 
     const id = String(req.params.id);
-    const existing = await queryOne<any>('SELECT * FROM departments WHERE id = ?', [id]);
+    const existing = await queryOne<DepartmentRow>('SELECT * FROM departments WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'Departamento no encontrado' });
 
     const updates: string[] = [];
@@ -93,8 +116,8 @@ departmentsRouter.patch('/departments/:id', requireAuth, async (req: AuthRequest
 
     values.push(id);
     await query(`UPDATE departments SET ${updates.join(', ')} WHERE id = ?`, values);
-    const row = await queryOne<any>('SELECT * FROM departments WHERE id = ?', [id]);
-    res.json({ ...row, activo: !!row.activo });
+    const row = await queryOne<DepartmentRow>('SELECT * FROM departments WHERE id = ?', [id]);
+    res.json({ ...row, activo: !!row!.activo });
   } catch (e) {
     console.error('[DEPARTMENTS] update:', e);
     res.status(500).json({ error: 'Error al actualizar departamento' });

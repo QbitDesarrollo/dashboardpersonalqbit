@@ -60,6 +60,7 @@ const AdminUsers = lazy(() => import("./pages/admin/Users"));
 const AdminClients = lazy(() => import("./pages/admin/Clients"));
 const AdminBrands = lazy(() => import("./pages/admin/Brands"));
 const AdminDesks = lazy(() => import("./pages/admin/Desks"));
+const AdminDepartamentos = lazy(() => import("./pages/admin/Departamentos"));
 const AdminConfig = lazy(() => import("./pages/admin/Config"));
 const AdminErrorLogs = lazy(() => import("./pages/admin/ErrorLogs"));
 const Templates = lazy(() => import("./pages/Templates"));
@@ -342,6 +343,12 @@ const App = () => (
             <Route path="/admin/mesas" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AppLayout><AdminDesks /></AppLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/admin/departamentos" element={
+              <ProtectedRoute allowedRoles={['admin', 'ejecutivo']}>
+                <AppLayout><AdminDepartamentos /></AppLayout>
               </ProtectedRoute>
             } />
 
