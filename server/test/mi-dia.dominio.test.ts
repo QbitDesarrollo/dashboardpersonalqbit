@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calcularDia, cumplimientoSemana } from '../src/miDia/dominio.js';
+import { calcularDia, cumplimientoSemana, contarEntregas } from '../src/miDia/dominio.js';
 
 const instante = (hora: string) => Date.parse(`2026-10-02T${hora}:00-05:00`);
 const intervalo = (inicio: string, fin: string) => ({ start: instante(inicio), end: instante(fin) });
@@ -34,5 +34,17 @@ describe('Mi día · dominio sin base de datos', () => {
   it('redondea como el reporte (un decimal) y no inventa % sin entregas', () => {
     expect(cumplimientoSemana(2, 1, 60)).toEqual({ porcentaje: 66.7, estado: 'Atención', delta: 6.7 });
     expect(cumplimientoSemana(0, 0, null)).toEqual({ porcentaje: null, estado: 'Sin entregas', delta: null });
+  });
+});
+
+describe('cumplimiento · día límite en hora de Ecuador', () => {
+  it('una entrega a las 19:41 de Ecuador del día límite es a tiempo (en UTC ya es el día siguiente)', () => {
+    expect(contarEntregas([{ estado: 'revision_interna', objetivo: '2026-10-27', entregada: new Date('2026-10-28T00:41:16Z') }]))
+      .toEqual({ aTiempo: 1, tarde: 0 });
+  });
+
+  it('pasada la medianoche de Ecuador ya es tarde', () => {
+    expect(contarEntregas([{ estado: 'entregado', objetivo: '2026-10-27', entregada: new Date('2026-10-28T05:00:00Z') }]))
+      .toEqual({ aTiempo: 0, tarde: 1 });
   });
 });

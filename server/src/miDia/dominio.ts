@@ -57,8 +57,8 @@ export function contarEntregas(tareas: { estado: string; objetivo: string | null
   let aTiempo = 0, tarde = 0;
   for (const t of tareas) {
     if (!t.entregada || !['entregado', 'aprobado', 'revision_cliente', 'revision_interna', 'en_revision'].includes(t.estado)) continue;
-    // El reporte compara el cierre del DATE en UTC; no se cambia la regla al mostrarla en Ecuador.
-    if (!t.objetivo || t.entregada.getTime() <= Date.parse(`${t.objetivo}T23:59:59.999Z`)) aTiempo++;
+    // El día límite termina a la medianoche de Ecuador (las fechas son DATE sin hora, ver CLAUDE.md).
+    if (!t.objetivo || t.entregada.getTime() <= Date.parse(`${t.objetivo}T23:59:59.999-05:00`)) aTiempo++;
     else tarde++;
   }
   return { aTiempo, tarde };
