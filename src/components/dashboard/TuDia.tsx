@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { duracionDia, horaDia } from '@/lib/miDia';
 import { useMiDia } from './useMiDia';
+import { indicacionPersona, type PersonaDia } from './persona';
 
 const segmentos = {
   tareas: { color: 'bg-emerald-500', texto: 'Trabajado en tareas' },
@@ -8,11 +9,12 @@ const segmentos = {
   libre: { color: 'bg-amber-200', texto: 'Libre' },
   pendiente: { color: 'bg-muted', texto: 'Pendiente' },
 };
-export function TuDia({ userId }: { userId: string | undefined }) {
-  const { dia, error } = useMiDia(userId);
-  return <section aria-label="Tu día" className="h-full"><Card className="glass-card h-full">
-    <CardHeader className="pb-3"><CardTitle className="text-base">Tu día</CardTitle>
-      <p className="text-xs text-muted-foreground">Tu jornada de hoy · no depende de los filtros</p>
+export function TuDia({ persona, puedeFiltrar = false }: { persona: PersonaDia; puedeFiltrar?: boolean }) {
+  const { dia, error } = useMiDia(persona.id, persona.esPropia);
+  const titulo = persona.esPropia ? 'Tu día' : `Día de ${persona.nombre}`;
+  return <section aria-label={titulo} className="h-full"><Card className="glass-card h-full">
+    <CardHeader className="pb-3"><CardTitle className="text-base">{titulo}</CardTitle>
+      <p className="text-xs text-muted-foreground">{persona.esPropia ? `Tu jornada de hoy${puedeFiltrar ? indicacionPersona : ''}` : `Jornada de hoy de ${persona.nombre}`}</p>
     </CardHeader>
     <CardContent className="space-y-4">
       {!dia ? <p className="text-sm text-muted-foreground">{error ? 'No se pudo cargar tu día' : 'Cargando tu día…'}</p> : <>

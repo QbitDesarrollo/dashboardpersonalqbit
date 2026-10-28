@@ -940,14 +940,14 @@ export async function deleteIntegration(id: string) {
 }
 
 // ========== Google Calendar ==========
-export async function getGoogleCalendarStatus() {
-  const res = await request('/api/data/google-calendar/status');
+export async function getGoogleCalendarStatus(userId?: string) {
+  const res = await request(`/api/data/google-calendar/status${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
-export async function getGoogleCalendarEvents(start: string, end: string) {
-  const res = await request(`/api/data/google-calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+export async function getGoogleCalendarEvents(start: string, end: string, userId?: string) {
+  const res = await request(`/api/data/google-calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

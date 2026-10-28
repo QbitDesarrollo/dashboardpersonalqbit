@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { apiRequest } from '@/lib/apiClient';
 import type { MiDia } from '@/lib/miDia';
 
-export function useMiDia(userId: string | undefined) {
+export function useMiDia(userId: string | undefined, esPropia = true) {
   const [dia, setDia] = useState<MiDia | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {
@@ -14,7 +14,7 @@ export function useMiDia(userId: string | undefined) {
       if (cargando) return;
       cargando = true;
       try {
-        const respuesta = await apiRequest('/api/data/mi-dia', { signal: controller.signal });
+        const respuesta = await apiRequest(`/api/data/mi-dia${esPropia ? '' : `?userId=${encodeURIComponent(userId)}`}`, { signal: controller.signal });
         if (!respuesta.ok) throw new Error('Mi día');
         const datos: MiDia = await respuesta.json();
         if (!controller.signal.aborted) { setDia(datos); setError(false); }
@@ -24,6 +24,6 @@ export function useMiDia(userId: string | undefined) {
     void cargar();
     const intervalo = setInterval(() => void cargar(), 60000);
     return () => { controller.abort(); clearInterval(intervalo); };
-  }, [userId]);
+  }, [userId, esPropia]);
   return { dia, error };
 }

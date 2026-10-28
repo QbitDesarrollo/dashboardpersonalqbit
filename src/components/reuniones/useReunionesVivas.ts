@@ -14,11 +14,11 @@ export function useReunionesVivas(inicio: string, fin: string, userId?: string) 
       if (pendiente || Date.now() - ultimo < 60000) return;
       pendiente = true; ultimo = Date.now();
       try {
-        const status: { connected: boolean; calendar?: boolean } = await getGoogleCalendarStatus();
+        const status: { connected: boolean; calendar?: boolean } = await (userId ? getGoogleCalendarStatus(userId) : getGoogleCalendarStatus());
         if (!vivo) return;
         if (!status.connected) { setEstado('sin_token'); setEventos([]); return; }
         if (status.calendar === false) { setEstado('sin_permiso'); setEventos([]); return; }
-        const datos: { events: Reunion[] } = await getGoogleCalendarEvents(inicio, fin);
+        const datos: { events: Reunion[] } = await (userId ? getGoogleCalendarEvents(inicio, fin, userId) : getGoogleCalendarEvents(inicio, fin));
         if (vivo) {
           setEventos(datos.events.filter(e => e.es_reunion === true && !e.es_tarea_tiusdei).sort((a, b) => Date.parse(a.start) - Date.parse(b.start)));
           setEstado('conectado');

@@ -144,7 +144,7 @@ describe('Dashboard · filtros conectados', () => {
     expect(within(urgentes).getByRole('tab', { name: filtro === 'periodo' ? 'Hoy 1' : 'Hoy 0' })).toBeInTheDocument();
     if (filtro !== 'periodo') expect(screen.getByTestId('marcas-barras')).not.toHaveTextContent('Pronaca');
     expect(within(screen.getByTestId('marcas-barras')).getByRole('button', { name: 'Ver tareas de Dinatek' })).toHaveTextContent(filtro === 'periodo' ? '4' : '6');
-    expect(await screen.findByText('Tu jornada de hoy · no depende de los filtros')).toBeInTheDocument();
+    expect(await screen.findByText('Tu jornada de hoy · elige una persona en el filtro para ver la suya')).toBeInTheDocument();
     expect(await within(screen.getByRole('region', { name: 'Tu día' })).findByText('2 de 4 completadas')).toBeInTheDocument();
     expect(await within(screen.getByRole('region', { name: 'Agenda de hoy' })).findByText('Actual')).toBeInTheDocument();
     expect(dashboardApi.getDashboardTasks).toHaveBeenCalledTimes(1);
@@ -234,6 +234,47 @@ const dia = {
 };
 const evento = (id: string, start: string, end: string) => ({ id, summary: id, start: `2026-10-02T${start}:00-05:00`, end: `2026-10-02T${end}:00-05:00`, htmlLink: `https://calendar.google.com/${id}`, es_reunion: true, enlace: { url: `https://meet.google.com/${id}`, plataforma: 'meet' } });
 const reuniones = [evento('Terminada', '08:00', '09:00'), evento('Próxima', '11:00', '12:00'), evento('Actual', '09:00', '11:00'), { ...evento('[Tiusdei] tarea', '09:00', '11:00'), es_reunion: false }];
+
+async function elegirPersona(nombre: string) {
+  fireEvent.keyDown(screen.getAllByRole('combobox')[2], { key: 'ArrowDown' });
+  fireEvent.click(await screen.findByRole('option', { name: nombre }));
+}
+
+describe('Dashboard · día por persona', () => {
+  it('elige la persona para ambas tarjetas y el calendario; Todos restaura la cuenta propia', async () => {
+    abrir(); await screen.findByText('Actual');
+    await elegirPersona('Diego');
+    expect(await screen.findByRole('region', { name: 'Día de Diego' })).toHaveTextContent('Jornada de hoy de Diego');
+    const agenda = screen.getByRole('region', { name: 'Agenda de Diego' });
+    await within(agenda).findByText('Actual');
+    expect(agenda).toHaveTextContent('Reuniones de hoy de Diego');
+    expect(api.apiRequest).toHaveBeenLastCalledWith('/api/data/mi-dia?userId=u2', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(api.getGoogleCalendarStatus).toHaveBeenLastCalledWith('u2');
+    expect(api.getGoogleCalendarEvents).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), 'u2');
+    const guardado = { ...localStorage };
+    fireEvent.click(within(within(agenda).getByRole('article', { name: 'Actual' })).getByRole('link', { name: 'Entrar a Meet' }));
+    expect(agenda).not.toHaveTextContent('Estás aquí');
+    expect({ ...localStorage }).toEqual(guardado);
+    fireEvent.click(within(agenda).getByRole('button', { name: 'Ver calendario' }));
+    await within(screen.getByRole('dialog')).findByRole('region', { name: 'Agenda semanal' });
+    expect(api.getGoogleCalendarEvents).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), 'u2');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await elegirPersona('Todos');
+    await within(screen.getByRole('region', { name: 'Agenda de hoy' })).findByText('Actual');
+    expect(screen.getByRole('region', { name: 'Tu día' })).toBeInTheDocument();
+    expect(api.apiRequest).toHaveBeenLastCalledWith('/api/data/mi-dia', expect.any(Object));
+    expect(api.getGoogleCalendarEvents).toHaveBeenLastCalledWith(expect.any(String), expect.any(String));
+  });
+  it.each([false, true])('otra persona sin Calendar disponible no ofrece acciones personales (conectado=%s)', async connected => {
+    abrir(); await screen.findByText('Actual');
+    vi.mocked(api.getGoogleCalendarStatus).mockResolvedValue({ connected, calendar: false });
+    await elegirPersona('Diego');
+    const agenda = screen.getByRole('region', { name: 'Agenda de Diego' });
+    expect(await within(agenda).findByText(connected ? 'Diego no dio permiso de Google Calendar' : 'Diego no tiene Google Calendar conectado')).toBeInTheDocument();
+    for (const nombre of ['Conectar', 'Dar permiso']) expect(within(agenda).queryByRole('link', { name: nombre })).not.toBeInTheDocument();
+    expect(within(agenda).queryByRole('button', { name: 'Ahora no' })).not.toBeInTheDocument();
+  });
+});
 
 describe('Dashboard · Tu día, Reuniones y estado del equipo', () => {
   it.each([false, true])('muestra las mismas métricas personales con equipo=%s', async equipo => {

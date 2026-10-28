@@ -9,6 +9,7 @@ import { DashboardEquipoGraficos } from '@/components/dashboard/DashboardEquipoG
 import { DashboardResumen } from '@/components/dashboard/DashboardResumen';
 import { useState, useMemo } from 'react';
 import { TuDia } from '@/components/dashboard/TuDia';
+import { personaDashboard } from '@/components/dashboard/persona';
 import { Reuniones } from '@/components/dashboard/Reuniones';
 import { ResponsablesEstado } from '@/components/dashboard/ResponsablesEstado';
 import { useNavigate } from 'react-router-dom';
@@ -39,6 +40,7 @@ export default function Dashboard() {
   const { tasks, profiles, brands, recentActivity, loading, error, reintentar } = useDashboardDatos(profile?.id, isAdmin || isEjecutivo);
   const [filterBrand, setFilterBrand] = useState<string>('all');
   const [filterResponsable, setFilterResponsable] = useState<string>('all');
+  const persona = personaDashboard(filterResponsable, profile, profiles, canViewAll);
   // Período por fecha de entrega ("hay como dejarlo x dia o mes?" — Steven)
   const [filterPeriodo, setFilterPeriodo] = useState<string>(() => {
     try { return localStorage.getItem('dashboard_periodo') || 'all'; } catch { return 'all'; }
@@ -262,8 +264,8 @@ export default function Dashboard() {
 
       <DashboardResumen tareas={tareasActivas} personas={profiles} isEquipo={isEquipo} onMostrar={setSeleccion}
         onAbrir={(id) => navigate(`/tareas?task=${encodeURIComponent(id)}`)}
-        tuDia={<TuDia key={profile?.id} userId={profile?.id} />}
-        reuniones={<Reuniones key={profile?.id} userId={profile?.id} />} />
+        tuDia={<TuDia key={persona.id} persona={persona} puedeFiltrar={canViewAll} />}
+        reuniones={<Reuniones key={persona.id} persona={persona} puedeFiltrar={canViewAll} />} />
 
       {isEquipo && <DashboardEquipoGraficos myTasks={myTasks} myStats={myStats} onMostrar={setSeleccion} />}
 

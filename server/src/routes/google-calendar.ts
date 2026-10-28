@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { google } from 'googleapis';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
-import { requireAdminOrEjecutivo } from '../middleware/auth.js';
+import { puedeVerDiaDeOtros, resolverPersonaDia } from '../calendario/permisos.js';
 import { query, queryOne } from '../db/mysql.js';
 import { getAuthedClient, getUserTokenScopes, handleExpiredToken } from '../utils/googleAuth.js';
 import { esFaltaDePermiso, permisosGoogle } from '../utils/googlePermisos.js';
@@ -19,7 +19,9 @@ const FALTA_PERMISO_CALENDAR = {
 
 googleCalendarRouter.get('/google-calendar/status', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const row = await queryOne<{ scope: string | null }>('SELECT scope FROM google_tokens WHERE user_id=?', [req.userId!]);
+    const userId = await resolverPersonaDia(req, res);
+    if (!userId) return;
+    const row = await queryOne<{ scope: string | null }>('SELECT scope FROM google_tokens WHERE user_id=?', [userId]);
     const permisos = permisosGoogle(!!row, row?.scope);
     // connected se mantiene por compatibilidad: hay token. calendar dice si se puede leer el calendario.
     res.json({ connected: permisos.conectado, calendar: permisos.calendar, permisos });
@@ -30,10 +32,14 @@ googleCalendarRouter.get('/google-calendar/status', requireAuth, async (req: Aut
 });
 
 googleCalendarRouter.get('/google-calendar/events', requireAuth, async (req: AuthRequest, res) => {
+  let userId = req.userId!;
   try {
-    const client = await getAuthedClient(req.userId!);
+    const target = await resolverPersonaDia(req, res);
+    if (!target) return;
+    userId = target;
+    const client = await getAuthedClient(userId);
     if (!client) { res.status(401).json({ error: 'Google no conectado' }); return; }
-    if (!permisosGoogle(true, await getUserTokenScopes(req.userId!)).calendar) {
+    if (!permisosGoogle(true, await getUserTokenScopes(userId)).calendar) {
       res.status(403).json(FALTA_PERMISO_CALENDAR);
       return;
     }
@@ -53,7 +59,7 @@ googleCalendarRouter.get('/google-calendar/events', requireAuth, async (req: Aut
   } catch (e) {
     console.error('[GCAL] events error:', (e as Error).message);
     if (esFaltaDePermiso(e)) { res.status(403).json(FALTA_PERMISO_CALENDAR); return; }
-    if (await handleExpired(e, req.userId!, res)) return;
+    if (await handleExpired(e, userId, res)) return;
     res.status(500).json({ error: 'Error al obtener eventos' });
   }
 });
@@ -142,13 +148,7 @@ googleCalendarRouter.delete('/google-calendar/disconnect', requireAuth, async (r
 // GET /api/data/google-calendar/desk-meetings — reuniones por mesa para la daily
 googleCalendarRouter.get('/google-calendar/desk-meetings', requireAuth, async (req: AuthRequest, res) => {
   try {
-    // Dynamic role check based on daily_meetings_roles setting
-    const currentRole = req.userRole || '';
-    const rolesRow = await queryOne<{ value: string | null }>(
-      "SELECT value FROM site_settings WHERE `key` = 'daily_meetings_roles'"
-    );
-    const allowedRoles = (rolesRow?.value || 'admin,ejecutivo').split(',').map(r => r.trim()).filter(Boolean);
-    if (!allowedRoles.includes(currentRole)) {
+    if (!await puedeVerDiaDeOtros(req.userRole)) {
       return res.status(403).json({ error: 'Sin permisos para ver reuniones' });
     }
 

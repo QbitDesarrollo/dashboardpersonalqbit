@@ -10,13 +10,14 @@ import { CalendarioReuniones } from './CalendarioReuniones';
 
 interface Props {
   userId?: string;
+  nombrePersona?: string;
   now: number;
   tarjeta: (reunion: Reunion) => ReactNode;
   onCerrar: () => void;
 }
 
 /** Solo se monta al abrir: la navegación del calendario no altera la agenda personal. */
-export function CalendarioDialog({ userId, now, tarjeta, onCerrar }: Props) {
+export function CalendarioDialog({ userId, nombrePersona, now, tarjeta, onCerrar }: Props) {
   const [vista, setVista] = useState<'Semana' | 'Mes'>('Semana');
   const [desplazamiento, setDesplazamiento] = useState(0);
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
@@ -34,7 +35,7 @@ export function CalendarioDialog({ userId, now, tarjeta, onCerrar }: Props) {
     <DialogContent className="max-w-6xl h-[85vh] flex min-h-0 flex-col overflow-hidden">
       <DialogHeader className="pr-7">
         <DialogTitle>Calendario</DialogTitle>
-        <DialogDescription>Tus reuniones · hora de Ecuador · no dependen de los filtros del dashboard</DialogDescription>
+        <DialogDescription>{nombrePersona ? `Reuniones de ${nombrePersona}` : 'Tus reuniones'} · hora de Ecuador</DialogDescription>
       </DialogHeader>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Segmentado etiqueta="Vista del calendario" valor={vista} opciones={[{ valor: 'Semana', etiqueta: 'Semana' }, { valor: 'Mes', etiqueta: 'Mes' }]}
@@ -49,8 +50,8 @@ export function CalendarioDialog({ userId, now, tarjeta, onCerrar }: Props) {
       <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
         {estado === 'cargando' && <p className="py-4 text-sm text-muted-foreground">Cargando reuniones…</p>}
         {estado === 'error' && <p className="py-4 text-sm text-muted-foreground">No se pudieron cargar las reuniones. Volveremos a intentar al actualizar.</p>}
-        {estado === 'sin_token' && <p className="py-4 text-sm text-muted-foreground">Google Calendar no conectado. Puedes conectarlo desde Mi Perfil.</p>}
-        {estado === 'sin_permiso' && <p className="py-4 text-sm text-muted-foreground">Falta el permiso de Google Calendar. Puedes dar permiso desde Mi Perfil.</p>}
+        {estado === 'sin_token' && <p className="py-4 text-sm text-muted-foreground">{nombrePersona ? `${nombrePersona} no tiene Google Calendar conectado` : 'Google Calendar no conectado. Puedes conectarlo desde Mi Perfil.'}</p>}
+        {estado === 'sin_permiso' && <p className="py-4 text-sm text-muted-foreground">{nombrePersona ? `${nombrePersona} no dio permiso de Google Calendar` : 'Falta el permiso de Google Calendar. Puedes dar permiso desde Mi Perfil.'}</p>}
         {estado === 'conectado' && (vista === 'Semana'
           ? <AgendaReuniones eventos={visibles} now={now} tarjeta={tarjeta} dias={rango.dias.filter((dia): dia is string => dia !== null)} />
           : <>
