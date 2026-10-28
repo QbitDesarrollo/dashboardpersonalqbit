@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode, Ref } from 'react';
 import { CalendarDays, CircleCheck, Link2, Pencil, SquareCheck, User } from 'lucide-react';
 import type { Minuta, Punto } from '@/lib/minutasApi';
-import { estadoPunto, listoParaCerrar, tareaLista, vencimiento } from '@/lib/minutas';
+import { estadoPunto, listoParaCerrar, separarNotas, tareaLista, vencimiento } from '@/lib/minutas';
 import { cn } from '@/lib/utils';
 import { IconoEstado } from './IconoEstado';
 import type { VistaPunto } from './PuntoDialog';
@@ -18,6 +18,7 @@ export function FilaPunto({ minuta, p, hoy, onAbrir, arrastre }: {
   const estado = estadoPunto(p);
   const aviso = vencimiento(p.fecha_compromiso, p.estado, hoy);
   const cerrado = p.estado === 'completado' || p.estado === 'aprobado';
+  const notas = separarNotas(p.notas);
   const listas = p.tareas.filter(tareaLista).length;
   const chip = 'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium text-foreground/80 hover:bg-muted';
   return (
@@ -45,14 +46,17 @@ export function FilaPunto({ minuta, p, hoy, onAbrir, arrastre }: {
       <div className="min-w-0 space-y-1">
         <p className="font-medium leading-snug">{p.titulo}</p>
         {p.descripcion && <p className="whitespace-pre-line text-sm text-muted-foreground">{p.descripcion}</p>}
-        {p.notas.length > 0 && (
+        {notas.cliente.length > 0 && (
           <ul className="space-y-1 border-l-2 border-amber-300 pl-3 text-sm">
-            {p.notas.map((n) => (
+            {notas.cliente.map((n) => (
               <li key={n.id}>
                 <span className="font-medium">{n.tipo === 'ajuste' ? 'Ajuste pedido' : 'Nota del cliente'}:</span> {n.texto}
               </li>
             ))}
           </ul>
+        )}
+        {notas.ultimaActividad && (
+          <p className="text-xs text-muted-foreground" title={notas.historial}>{notas.ultimaActividad}</p>
         )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 text-xs text-muted-foreground">
           <span className={cn('rounded-full px-2 py-0.5 font-medium', TONO[estado.tono])}>{estado.texto}</span>

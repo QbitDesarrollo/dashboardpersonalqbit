@@ -136,3 +136,23 @@ export function etiquetaTarea(estado: string): string {
 export function fechaLocal(iso: string): string {
   return new Date(iso).toLocaleDateString('es-EC', { timeZone: 'America/Guayaquil', day: 'numeric', month: 'short', year: 'numeric' });
 }
+
+const horaActividad = new Intl.DateTimeFormat('es-EC', { timeZone: 'America/Guayaquil', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+
+/** "28 oct 00:44" en hora de Ecuador. */
+export function fechaHoraActividad(iso: string): string {
+  const partes = Object.fromEntries(horaActividad.formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+  return `${partes.day} ${String(partes.month).replace('.', '')} ${partes.hour}:${partes.minute}`;
+}
+
+/**
+ * Separa lo que dijo el cliente de la actividad interna registrada por el MCP (via 'mcp'),
+ * que no es una nota del cliente: de esa actividad solo interesa la más reciente.
+ */
+export function separarNotas<T extends { texto: string; created_at: string; via?: string; autor?: { nombre: string } | null }>(notas: T[]) {
+  const cliente = notas.filter((n) => n.via !== 'mcp');
+  const actividad = notas.filter((n) => n.via === 'mcp').sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const linea = (n: T) => [n.texto, n.autor?.nombre, fechaHoraActividad(n.created_at)].filter(Boolean).join(' · ');
+  const ultima = actividad.at(-1);
+  return { cliente, ultimaActividad: ultima ? linea(ultima) : null, historial: actividad.map(linea).join('\n') };
+}

@@ -125,3 +125,19 @@ describe('listoParaCerrar', () => {
     expect(listoParaCerrar(punto({ responsable_cliente: true }))).toBe(false);
   });
 });
+
+describe('separarNotas', () => {
+  it('deja las notas del cliente y resume la actividad del MCP en su última línea', async () => {
+    const { separarNotas } = await import('./minutas');
+    const autor = { nombre: 'Even Fierro' };
+    const r = separarNotas([
+      { texto: 'Se ve bien', created_at: '2026-10-27T15:00:00Z', via: 'enlace', autor: null },
+      { texto: 'Cerrado vía MCP', created_at: '2026-10-28T05:44:00Z', via: 'mcp', autor },
+      { texto: 'Reabierto vía MCP: motivo', created_at: '2026-10-28T05:20:00Z', via: 'mcp', autor },
+    ]);
+    expect(r.cliente.map((n) => n.texto)).toEqual(['Se ve bien']);
+    expect(r.ultimaActividad).toBe('Cerrado vía MCP · Even Fierro · 28 oct 00:44');
+    expect(r.historial).toBe('Reabierto vía MCP: motivo · Even Fierro · 28 oct 00:20\nCerrado vía MCP · Even Fierro · 28 oct 00:44');
+    expect(separarNotas([]).ultimaActividad).toBeNull();
+  });
+});
