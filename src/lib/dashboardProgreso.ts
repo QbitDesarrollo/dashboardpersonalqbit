@@ -2,6 +2,7 @@ export const ESTADOS_PROGRESO = [
   { estado: 'backlog', label: 'Pendiente', token: 'status-backlog' },
   { estado: 'en_proceso', label: 'En Proceso', token: 'status-in-progress' },
   { estado: 'en_revision', label: 'En Revisión', token: 'status-in-review' },
+  { estado: 'revision_interna', label: 'Revisión interna', token: 'status-in-review' },
   { estado: 'aprobado', label: 'Aprobado', token: 'status-approved' },
   { estado: 'entregado', label: 'Entregado', token: 'status-delivered' },
   { estado: 'bloqueado', label: 'Bloqueado', token: 'status-blocked' },

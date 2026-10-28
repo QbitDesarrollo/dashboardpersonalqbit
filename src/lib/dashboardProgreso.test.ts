@@ -21,4 +21,8 @@ describe('progreso del dashboard', () => {
     expect(p.segmentos.length).toBeGreaterThanOrEqual(6);
     expect(p.segmentos.every((s) => s.cantidad === 0 && s.porcentaje === 0 && s.proporcion === 0)).toBe(true);
   });
+  it('nombra en español la revisión interna, como el resto de Tiusdei', () => {
+    const p = calcularProgreso([{ estado: 'revision_interna' }]);
+    expect(p.segmentos.find((s) => s.estado === 'revision_interna')).toMatchObject({ label: 'Revisión interna', cantidad: 1 });
+  });
 });
