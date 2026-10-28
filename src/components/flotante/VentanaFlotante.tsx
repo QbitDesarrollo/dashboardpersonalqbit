@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { ActiveTimer } from '@/lib/apiClient';
 import { ContenidoFlotante } from './ContenidoFlotante';
-import { cerrarVentanaFlotante, useVentanaFlotante } from './useVentanaFlotante';
+import { estabaAbierta } from '@/lib/ventanaFlotante';
+import { abrirVentanaFlotante, cerrarVentanaFlotante, useVentanaFlotante } from './useVentanaFlotante';
 
 export function VentanaFlotante({ task }: { task?: ActiveTimer }) {
   const estado = useVentanaFlotante();
@@ -20,6 +21,14 @@ export function VentanaFlotante({ task }: { task?: ActiveTimer }) {
     if (!task && vioTimer.current) cerrarVentanaFlotante();
   }, [estado, task]);
   useEffect(() => () => cerrarVentanaFlotante(), []);
+  // Tras recargar con la ventana abierta: el primer clic en la página la vuelve a abrir.
+  const tareaActiva = task?.id;
+  useEffect(() => {
+    if (!tareaActiva || estado || !estabaAbierta(localStorage)) return;
+    const reabrir = () => { document.removeEventListener('pointerdown', reabrir, true); void abrirVentanaFlotante(tareaActiva); };
+    document.addEventListener('pointerdown', reabrir, true);
+    return () => document.removeEventListener('pointerdown', reabrir, true);
+  }, [tareaActiva, estado]);
   if (!estado) return null;
   const cambiando = !!estado.cambiando && estado.tareaEsperada !== task?.id;
   const espera = cambiando ? 'Cambiando de tarea…' : 'Iniciando tarea…';

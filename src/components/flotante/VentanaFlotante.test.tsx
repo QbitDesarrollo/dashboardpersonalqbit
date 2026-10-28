@@ -290,3 +290,43 @@ describe('floating timer · switching tasks with the window open', () => {
     confirmar.mockRestore();
   });
 });
+
+describe('floating timer · after reloading the page', () => {
+  it('reopens on the first click when it was open and the timer is still running', async () => {
+    const { recordarAbierta } = await import('@/lib/ventanaFlotante');
+    recordarAbierta(localStorage);
+    renderUI();
+    expect(requestWindow).not.toHaveBeenCalled();
+    fireEvent.pointerDown(document.body);
+    expect(requestWindow).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(within(pip.document.body).getByText(task.titulo)).toBeInTheDocument());
+    fireEvent.pointerDown(document.body);
+    expect(requestWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reopen if it was not open, or if there is no running timer', async () => {
+    renderUI();
+    fireEvent.pointerDown(document.body);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(requestWindow).not.toHaveBeenCalled();
+    cleanup();
+    const { recordarAbierta } = await import('@/lib/ventanaFlotante');
+    recordarAbierta(localStorage);
+    state.timers = [];
+    renderUI();
+    fireEvent.pointerDown(document.body);
+    expect(requestWindow).not.toHaveBeenCalled();
+  });
+
+  it('closing it with × forgets it; reloading the page keeps it remembered', async () => {
+    const { estabaAbierta } = await import('@/lib/ventanaFlotante');
+    renderUI();
+    await open();
+    expect(estabaAbierta(localStorage)).toBe(true);
+    act(() => { window.dispatchEvent(new Event('pagehide')); pip.dispatchEvent(new Event('pagehide')); });
+    expect(estabaAbierta(localStorage)).toBe(true);
+    await open();
+    act(() => pip.dispatchEvent(new Event('pagehide')));
+    expect(estabaAbierta(localStorage)).toBe(false);
+  });
+});

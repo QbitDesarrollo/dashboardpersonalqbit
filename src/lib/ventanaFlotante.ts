@@ -35,6 +35,23 @@ export function guardarTamano(storage: Registro, size: Tamano) {
   try { storage.setItem(TAMANO, JSON.stringify(limitarTamano(size))); } catch { /* Almacenamiento bloqueado. */ }
 }
 
+// Recargar la página cierra la ventana (es del documento). Se recuerda que estaba abierta para
+// reabrirla con el primer clic, que es lo único que el navegador permite.
+const ABIERTA = 'tiusdei:pip:abierta';
+const VIGENCIA_MS = 12 * 3600_000;
+export function recordarAbierta(storage: Registro, ahora = Date.now()) {
+  try { storage.setItem(ABIERTA, String(ahora)); } catch { /* Almacenamiento bloqueado. */ }
+}
+export function estabaAbierta(storage: Registro, ahora = Date.now()): boolean {
+  try {
+    const desde = Number(storage.getItem(ABIERTA));
+    return desde > 0 && ahora - desde < VIGENCIA_MS;
+  } catch { return false; }
+}
+export function olvidarAbierta(storage: Pick<Storage, 'removeItem'>) {
+  try { storage.removeItem(ABIERTA); } catch { /* Almacenamiento bloqueado. */ }
+}
+
 /** Extract editor content without rendering its markup in the UI. */
 export function textoPreview(html?: string | null): string {
   if (!html) return '';

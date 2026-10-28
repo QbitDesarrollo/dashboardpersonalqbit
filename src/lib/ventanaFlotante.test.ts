@@ -69,3 +69,16 @@ describe('ventana flotante', () => {
     expect(() => guardarPreferencia(blocked, false)).not.toThrow();
   });
 });
+
+describe('ventana flotante abierta entre recargas', () => {
+  it('recuerda que estaba abierta, la olvida al cerrarla y vence a las 12 horas', async () => {
+    const { recordarAbierta, estabaAbierta, olvidarAbierta } = await import('./ventanaFlotante');
+    const ahora = Date.parse('2026-10-28T10:00:00Z');
+    expect(estabaAbierta(localStorage, ahora)).toBe(false);
+    recordarAbierta(localStorage, ahora);
+    expect(estabaAbierta(localStorage, ahora + 11 * 3600_000)).toBe(true);
+    expect(estabaAbierta(localStorage, ahora + 13 * 3600_000)).toBe(false);
+    olvidarAbierta(localStorage);
+    expect(estabaAbierta(localStorage, ahora)).toBe(false);
+  });
+});

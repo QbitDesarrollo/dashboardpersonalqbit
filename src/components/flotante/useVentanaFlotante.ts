@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { alturaFlotante, guardarTamano, leerPreferencia, soportada } from '@/lib/ventanaFlotante';
+import { alturaFlotante, guardarTamano, leerPreferencia, olvidarAbierta, recordarAbierta, soportada } from '@/lib/ventanaFlotante';
 
 interface API { requestWindow(size: { width: number; height: number; preferInitialWindowPlacement?: boolean }): Promise<Window> }
 declare global {
@@ -9,6 +9,9 @@ interface Estado { ventana: Window; tareaEsperada?: string; tareaAnterior?: stri
 let estado: Estado | null = null;
 let solicitud: Promise<void> | null = null;
 let generacion = 0;
+// true mientras la página se descarga (recarga o cierre): la ventana se cierra con ella, pero se recuerda.
+let saliendo = false;
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => { saliendo = true; });
 const listeners = new Set<() => void>();
 const emitir = () => listeners.forEach(listener => listener());
 const snapshot = () => estado;
@@ -20,6 +23,7 @@ export function cerrarVentanaFlotante() {
   generacion++;
   const anterior = estado;
   estado = null;
+  if (anterior) olvidarAbierta(localStorage);
   anterior?.limpiar();
   anterior?.ventana.close();
   emitir();
@@ -86,12 +90,15 @@ export function abrirVentanaFlotante(tareaEsperada?: string): Promise<boolean> {
         ventana.removeEventListener('pagehide', ocultar);
       };
       const ocultar = () => {
+        if (!saliendo) olvidarAbierta(localStorage);
         limpiar();
         if (estado?.ventana === ventana) { estado = null; emitir(); }
       };
       ventana.addEventListener('resize', guardar);
       ventana.addEventListener('pagehide', ocultar, { once: true });
       estado = { ventana, tareaEsperada, limpiar };
+      saliendo = false;
+      recordarAbierta(localStorage);
       emitir();
     }).catch(() => { /* La apertura nunca debe impedir iniciar la tarea. */ }).finally(() => { solicitud = null; });
     solicitud = apertura;
