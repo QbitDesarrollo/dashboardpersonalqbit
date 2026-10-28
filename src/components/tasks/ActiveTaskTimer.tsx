@@ -3,6 +3,9 @@ import { useActiveTaskTimers } from '@/hooks/useActiveTaskTimers';
 import { useTimerClock } from '@/hooks/useTimerClock';
 import { formatTaskTimer, taskElapsedSeconds } from '@/lib/taskTimer';
 import { TimerReadout } from './TimerReadout';
+import { soportada } from '@/lib/ventanaFlotante';
+import { BotonVentanaFlotante } from '@/components/flotante/BotonVentanaFlotante';
+import { VentanaFlotante } from '@/components/flotante/VentanaFlotante';
 
 const TaskDetailDialog = lazy(() => import('./TaskDetailDialog').then(module => ({ default: module.TaskDetailDialog })));
 
@@ -12,12 +15,13 @@ export function ActiveTaskTimer() {
   const now = useTimerClock(!!task);
   const [openedTaskId, setOpenedTaskId] = useState<string | null>(null);
 
-  if (!task && !openedTaskId) return null;
+  const compatible = soportada(window);
 
   return (
     <>
+      {compatible && <VentanaFlotante task={task} />}
       {task && (
-        <div className="order-last min-w-0 basis-full pb-2 sm:order-none sm:flex-1 sm:basis-auto sm:pb-0 sm:px-2 lg:px-4">
+        <div className={compatible ? 'order-last flex min-w-0 basis-full items-center pb-2 sm:order-none sm:flex-1 sm:basis-auto sm:pb-0 sm:px-2 lg:px-4' : 'order-last min-w-0 basis-full pb-2 sm:order-none sm:flex-1 sm:basis-auto sm:pb-0 sm:px-2 lg:px-4'}>
           <button
             type="button"
             aria-label={`Abrir tarea activa: ${task.titulo}`}
@@ -31,6 +35,7 @@ export function ActiveTaskTimer() {
             <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-emerald-500/40" />
             <TimerReadout time={formatTaskTimer(taskElapsedSeconds(task.tiempo_trabajado, task.timer_inicio, now))} running />
           </button>
+          {compatible && <BotonVentanaFlotante />}
         </div>
       )}
       {openedTaskId && (

@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import * as api from '@/lib/apiClient';
 import { notifyTaskTimerChanged } from '@/lib/taskTimer';
 import { TimerReadout } from './TimerReadout';
+import { abrirAlIniciar, cerrarVentanaFlotante } from '@/components/flotante/useVentanaFlotante';
 
 interface TaskTimerProps {
   taskId: string;
@@ -60,7 +61,11 @@ export function TaskTimer({
     taskTitle,
   });
   const handleStart = async () => {
-    if (!(await startTimer())) return;
+    const apertura = abrirAlIniciar(taskId);
+    if (!(await startTimer())) {
+      void apertura.then(cerrarVentanaFlotante);
+      return;
+    }
     // Also start Time Doctor session for screenshots & activity tracking
     try {
       const { session: active } = await api.getActiveTimeSession();
@@ -99,7 +104,7 @@ export function TaskTimer({
       if (active && active.task_id === taskId) {
         await api.stopTimeSession(active.id);
       }
-    } catch {}
+    } catch { /* El registro de actividad no debe bloquear el reinicio. */ }
     notifyTaskTimerChanged();
     onUpdate?.();
   };
