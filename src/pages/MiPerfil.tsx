@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { IntegracionesCard } from '@/components/integraciones/IntegracionesCard';
 import { useAuth } from '@/contexts/AuthContext';
 import * as api from '@/lib/apiClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -177,6 +178,8 @@ export default function MiPerfil() {
           </div>
         </CardContent>
       </Card>
+
+      <IntegracionesCard />
 
       {/* Edit name */}
       <Card className="glass-card">

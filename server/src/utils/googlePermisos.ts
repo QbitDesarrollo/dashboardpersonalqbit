@@ -20,6 +20,29 @@ export function permisosGoogle(tieneToken: boolean, scope: string | null | undef
   };
 }
 
+interface TokenRevocable {
+  access_token: string;
+  refresh_token: string | null;
+}
+
+/** Revoca toda la concesión Google; un fallo remoto no impide desconectar localmente. */
+export async function revocarGoogle(
+  token: TokenRevocable | null,
+  revocar: (token: string) => Promise<unknown>,
+  eliminar: () => Promise<unknown>,
+  registrarError: (error: unknown) => void,
+): Promise<{ ok: true; permisos: PermisosGoogle }> {
+  if (token) {
+    try {
+      await revocar(token.refresh_token || token.access_token);
+    } catch (error) {
+      registrarError(error);
+    }
+  }
+  await eliminar();
+  return { ok: true, permisos: permisosGoogle(false, null) };
+}
+
 /** Google rechazó la llamada porque el token no incluye el permiso del servicio. */
 export function esFaltaDePermiso(e: unknown): boolean {
   const err = (e ?? {}) as { code?: number; message?: string; errors?: { reason?: string }[] };
