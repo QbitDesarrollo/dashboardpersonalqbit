@@ -75,6 +75,7 @@ describe('floating timer', () => {
     renderUI();
     const view = await open();
     expect(view.getByText('Dinatek')).toBeInTheDocument();
+    expect(requestWindow).toHaveBeenCalledWith({ width: 320, height: 190 });
     expect(view.getByRole('timer')).toHaveTextContent('01:00:');
     expect(await view.findByRole('progressbar')).toBeInTheDocument();
     fireEvent.click(view.getByRole('button', { name: 'Pausar' }));
@@ -88,6 +89,14 @@ describe('floating timer', () => {
     const view = await open();
     expect(await view.findByText('Vencida · 25 sept')).toHaveClass('text-destructive');
     expect(view.getByRole('heading')).toHaveAttribute('title', task.titulo);
+    expect(view.getByRole('heading')).toHaveClass('truncate', 'text-[13px]');
+    for (const name of ['Pausar', 'Terminar', 'Cambiar tarea']) {
+      const button = view.getByRole('button', { name });
+      expect(button).toHaveAttribute('aria-label', name);
+      expect(button).toHaveClass('h-8', 'w-8', 'rounded-full');
+      expect(button).toHaveTextContent('');
+    }
+    expect(view.queryByText(/Ahora ·/)).toBeNull();
     expect(view.queryByRole('button', { name: 'Cerrar ventana flotante' })).toBeNull();
     expect(pip.document.querySelector('details')).toBeNull();
     expect(view.queryByRole('progressbar')).toBeNull();
@@ -135,7 +144,8 @@ describe('floating timer', () => {
     ] });
     renderUI();
     const view = await open();
-    expect((await view.findByText('Subtareas 1/2 · Siguiente: Revisar copy')).textContent).toContain('Revisar copy');
+    expect(await view.findByText('· 1/2 subtareas')).toBeInTheDocument();
+    expect(view.queryByText(/Siguiente:/)).toBeNull();
     expect(await view.findByText('Ahora · Revisión de avance')).toBeInTheDocument();
     const join = await view.findByRole('link', { name: 'Entrar' });
     expect(join.getAttribute('href')).toBe('https://meet.google.com/abc');
@@ -143,11 +153,28 @@ describe('floating timer', () => {
     fireEvent.click(join);
     expect(Object.keys(localStorage).some(key => key.includes('reunion:ingreso:meeting'))).toBe(true);
   });
+  it('shows only the next meeting today with its Ecuador time and join link', async () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const event = { id: 'next', summary: 'Kickoff Pycca', start: `${today}T23:58:00-05:00`, end: `${today}T23:59:59-05:00`, htmlLink: 'https://calendar.google.com', es_reunion: true, enlace: { url: 'https://meet.google.com/next', plataforma: 'meet' } };
+    vi.mocked(api.getGoogleCalendarEvents).mockResolvedValue({ events: [event] });
+    renderUI();
+    const view = await open();
+    expect(await view.findByText('23:58 · Kickoff Pycca')).toBeInTheDocument();
+    expect(view.getByRole('link', { name: 'Unirse a Kickoff Pycca' })).toHaveTextContent('Unirse');
+  });
+  it('omits the meeting row for future days', async () => {
+    const tomorrow = new Date(Date.now() + 86400000).toISOString();
+    vi.mocked(api.getGoogleCalendarEvents).mockResolvedValue({ events: [{ id: 'later', summary: 'Mañana', start: tomorrow, end: new Date(Date.now() + 90000000).toISOString(), htmlLink: 'https://calendar.google.com', es_reunion: true }] });
+    renderUI();
+    const view = await open();
+    await waitFor(() => expect(api.getGoogleCalendarEvents).toHaveBeenCalled());
+    expect(view.queryByText(/Mañana/)).toBeNull();
+  });
   it('switches tasks through the existing stop/start timer APIs', async () => {
     vi.mocked(api.getTasks).mockResolvedValue({ tasks: [{ id: 'b', titulo_tarea: 'Revisar campaña', estado: 'en_proceso' }], total: 1 });
     renderUI();
     const view = await open();
-    fireEvent.click(view.getByText('Cambiar tarea'));
+    fireEvent.click(view.getByRole('button', { name: 'Cambiar tarea' }));
     fireEvent.click(await view.findByRole('button', { name: 'Revisar campaña' }));
     await waitFor(() => expect(api.patchTask).toHaveBeenCalledWith('b', expect.objectContaining({ timer_activo: true })));
     expect(api.patchTask).toHaveBeenNthCalledWith(1, 'a', expect.objectContaining({ timer_activo: false }));

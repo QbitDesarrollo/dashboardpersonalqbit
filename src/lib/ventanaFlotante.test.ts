@@ -32,15 +32,24 @@ describe('ventana flotante', () => {
     guardarPreferencia(localStorage, true);
     expect(leerPreferencia(localStorage)).toBe(true);
   });
+  it('discards oversized remembered dimensions and defaults to a compact window', () => {
+    expect(leerTamano(localStorage)).toEqual({ width: 320, height: 190 });
+    for (const size of [{ width: 481, height: 190 }, { width: 320, height: 361 }, { width: 520, height: 520 }]) {
+      localStorage.setItem('tiusdei:pip:size', JSON.stringify(size));
+      expect(leerTamano(localStorage)).toEqual({ width: 320, height: 190 });
+    }
+    guardarTamano(localStorage, { width: 480, height: 360 });
+    expect(leerTamano(localStorage)).toEqual({ width: 480, height: 360 });
+  });
   it('clamps and remembers window dimensions, tolerating invalid storage', () => {
-    expect(limitarTamano({ width: 1, height: 999 })).toEqual({ width: 300, height: 520 });
-    expect(limitarTamano({ width: 999, height: 1 })).toEqual({ width: 520, height: 220 });
-    expect(limitarTamano({ width: NaN, height: Infinity })).toEqual({ width: 360, height: 380 });
+    expect(limitarTamano({ width: 1, height: 999 })).toEqual({ width: 280, height: 360 });
+    expect(limitarTamano({ width: 999, height: 1 })).toEqual({ width: 480, height: 160 });
+    expect(limitarTamano({ width: NaN, height: Infinity })).toEqual({ width: 320, height: 190 });
     guardarTamano(localStorage, { width: 410, height: 300 });
     expect(leerTamano(localStorage)).toEqual({ width: 410, height: 300 });
     const blocked = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
     expect(leerPreferencia(blocked)).toBe(true);
-    expect(leerTamano(blocked)).toEqual({ width: 360, height: 380 });
+    expect(leerTamano(blocked)).toEqual({ width: 320, height: 190 });
     expect(() => guardarPreferencia(blocked, false)).not.toThrow();
   });
 });

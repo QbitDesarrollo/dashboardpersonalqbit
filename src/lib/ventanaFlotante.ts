@@ -20,12 +20,15 @@ export function guardarPreferencia(storage: Registro, activa: boolean) {
   try { storage.setItem(PREFERENCIA, String(activa)); } catch { /* Almacenamiento bloqueado. */ }
 }
 export function limitarTamano(size: Partial<Tamano>): Tamano {
-  const limitar = (n: number | undefined, min: number, fallback: number) =>
-    typeof n === 'number' && Number.isFinite(n) ? Math.round(Math.max(min, Math.min(520, n))) : fallback;
-  return { width: limitar(size.width, 300, 360), height: limitar(size.height, 220, 380) };
+  const limitar = (n: number | undefined, min: number, max: number, fallback: number) =>
+    typeof n === 'number' && Number.isFinite(n) ? Math.round(Math.max(min, Math.min(max, n))) : fallback;
+  return { width: limitar(size.width, 280, 480, 320), height: limitar(size.height, 160, 360, 190) };
 }
 export function leerTamano(storage: Registro): Tamano {
-  try { return limitarTamano(JSON.parse(storage.getItem(TAMANO) ?? '{}') ?? {}); }
+  try {
+    const size: Partial<Tamano> = JSON.parse(storage.getItem(TAMANO) ?? '{}') ?? {};
+    return limitarTamano((size.width ?? 0) > 480 || (size.height ?? 0) > 360 ? {} : size);
+  }
   catch { return limitarTamano({}); }
 }
 export function guardarTamano(storage: Registro, size: Tamano) {

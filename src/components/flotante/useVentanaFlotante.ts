@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { guardarTamano, leerPreferencia, leerTamano, soportada } from '@/lib/ventanaFlotante';
+import { guardarTamano, leerPreferencia, leerTamano, limitarTamano, soportada } from '@/lib/ventanaFlotante';
 
 interface API { requestWindow(size: { width: number; height: number }): Promise<Window> }
 declare global {
@@ -38,7 +38,7 @@ export function abrirVentanaFlotante(tareaEsperada?: string): Promise<void> {
   try {
     const api = window.documentPictureInPicture;
     if (!api) return Promise.resolve();
-    let size = { width: 360, height: 380 };
+    let size = limitarTamano({});
     try { size = leerTamano(localStorage); } catch { /* Almacenamiento bloqueado. */ }
     solicitud = api.requestWindow(size).then(ventana => {
       if (version !== generacion) { ventana.close(); return; }
