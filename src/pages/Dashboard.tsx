@@ -1,7 +1,7 @@
 import { DashboardTareasDialog } from '@/components/dashboard/DashboardTareasDialog';
 import { useDashboardDatos } from '@/components/dashboard/useDashboardDatos';
 import { metricasResponsables, metricasMarcas, seleccionarTareas, type SeleccionDashboard } from '@/lib/dashboardSeleccion';
-import { CHART_COLORS, formatTime, calcStats, type Task, type UrgentTask } from '@/lib/dashboardDatos';
+import { CHART_COLORS, formatTime, calcStats, tareasUrgentes, type Task, type UrgentTask } from '@/lib/dashboardDatos';
 import { DashboardKpis } from '@/components/dashboard/DashboardKpis';
 import { GraficoResponsables } from '@/components/dashboard/GraficoResponsables';
 import { GraficoMarcas } from '@/components/dashboard/GraficoMarcas';
@@ -34,30 +34,6 @@ import {
   Filter,
   Activity,
 } from 'lucide-react';
-
-const buildUrgentTasks = (taskList: Task[]): UrgentTask[] => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return taskList
-    .filter(task => {
-      if (!task.fecha_entrega) return false;
-      const [yy, mm, dd] = (task.fecha_entrega || '').split('T')[0].split('-').map(Number);
-      const fechaEntrega = new Date(yy, mm - 1, dd);
-      const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      return diasRestantes <= 2 && task.estado !== 'entregado';
-    })
-    .map(task => {
-      const [yy, mm, dd] = (task.fecha_entrega || '').split('T')[0].split('-').map(Number);
-      const fechaEntrega = new Date(yy, mm - 1, dd);
-      const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      return {
-        id: task.id, titulo_tarea: task.titulo_tarea, fecha_entrega: task.fecha_entrega,
-        dias_restantes: diasRestantes, prioridad: task.prioridad, estado: task.estado,
-        brand_name: task.brands?.nombre || 'Sin marca',
-      };
-    })
-    .sort((a, b) => a.dias_restantes - b.dias_restantes);
-};
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -116,10 +92,10 @@ export default function Dashboard() {
   const myStats = useMemo(() => calcStats(myTasks), [myTasks]);
 
   // Urgent tasks for admin/ops
-  const filteredUrgentTasks = useMemo(() => buildUrgentTasks(filteredTasks), [filteredTasks]);
+  const filteredUrgentTasks = useMemo(() => tareasUrgentes(filteredTasks), [filteredTasks]);
 
   // Urgent tasks for equipo
-  const myUrgentTasks = useMemo(() => buildUrgentTasks(myTasks), [myTasks]);
+  const myUrgentTasks = useMemo(() => tareasUrgentes(myTasks), [myTasks]);
 
   const responsableMetrics = useMemo(() => metricasResponsables(filteredTasks, profiles), [filteredTasks, profiles]);
   const brandMetrics = useMemo(() => metricasMarcas(filteredTasks), [filteredTasks]);

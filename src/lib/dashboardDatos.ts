@@ -74,9 +74,41 @@ export const formatTime = (seconds: number) => {
   return `${minutes}m`;
 };
 
+/** Estados que Tiusdei da por listos o en manos del cliente: no cuentan como atrasados ni urgentes. */
+const ESTADOS_SIN_ATRASO = ['entregado', 'aprobado', 'revision_cliente'];
+
+const diasHastaEntrega = (fechaEntrega: string, hoy: Date): number => {
+  const [yy, mm, dd] = fechaEntrega.split('T')[0].split('-').map(Number);
+  const fecha = new Date(yy, mm - 1, dd);
+  return Math.ceil((fecha.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+const inicioDelDia = (ahora: Date): Date => {
+  const hoy = new Date(ahora);
+  hoy.setHours(0, 0, 0, 0);
+  return hoy;
+};
+
+/** Tareas que vencen en 2 días o menos (o ya vencieron) y siguen pendientes, de la más atrasada a la más lejana. */
+export const tareasUrgentes = (taskList: Task[], ahora = new Date()): UrgentTask[] => {
+  const hoy = inicioDelDia(ahora);
+  return taskList
+    .filter((task) => !!task.fecha_entrega && !ESTADOS_SIN_ATRASO.includes(task.estado))
+    .map((task) => ({
+      id: task.id,
+      titulo_tarea: task.titulo_tarea,
+      fecha_entrega: task.fecha_entrega,
+      dias_restantes: diasHastaEntrega(task.fecha_entrega, hoy),
+      prioridad: task.prioridad,
+      estado: task.estado,
+      brand_name: task.brands?.nombre || 'Sin marca',
+    }))
+    .filter((task) => task.dias_restantes <= 2)
+    .sort((a, b) => a.dias_restantes - b.dias_restantes);
+};
+
 export const calcStats = (taskList: Task[], ahora = new Date()): TaskStats => {
-  const today = new Date(ahora);
-  today.setHours(0, 0, 0, 0);
+  const today = inicioDelDia(ahora);
   const s: TaskStats = {
     total: taskList.length,
     backlog: 0, en_proceso: 0, en_revision: 0,
@@ -86,13 +118,8 @@ export const calcStats = (taskList: Task[], ahora = new Date()): TaskStats => {
     if (task.estado in s) {
       s[task.estado as keyof TaskStats]++;
     }
-    if (task.fecha_entrega) {
-      const [yy, mm, dd] = (task.fecha_entrega || '').split('T')[0].split('-').map(Number);
-      const fechaEntrega = new Date(yy, mm - 1, dd);
-      const diasRestantes = Math.ceil((fechaEntrega.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      if (diasRestantes < 0 && !['entregado', 'aprobado', 'revision_cliente'].includes(task.estado)) {
-        s.atrasadas++;
-      }
+    if (task.fecha_entrega && diasHastaEntrega(task.fecha_entrega, today) < 0 && !ESTADOS_SIN_ATRASO.includes(task.estado)) {
+      s.atrasadas++;
     }
   });
   return s;
