@@ -36,6 +36,15 @@ Reuniones con el cliente → puntos → tareas → evidencia. Cuelgan de la marc
 - **MCP**: `list_minutas`, `get_minuta` (con capturas de evidencia como imágenes; horas en hora de Ecuador), `create_minuta`, `add_minuta_points` (agrega puntos al final de una minuta existente), `link_task_to_minuta_point`. Herramientas en `mcp-server/src/herramientas/minutas.ts`, API en `server/src/routes/mcp-minutas.ts`, lógica compartida con la web en `server/src/minutas/servicio.ts`.
 - **Zona horaria**: servidor, Node y MySQL en UTC (no cambiar). Se muestra y se calcula "hoy" en `America/Guayaquil`; las fechas de reunión y compromiso son DATE sin hora.
 
+## Reuniones, Calendar y "Mi día"
+- **Qué es reunión**: una sola regla en `server/src/calendario/eventos.ts` (`esReunionReal`), la misma del monitor (`services/meetingsNow.ts`). Los eventos "[Tiusdei] ..." son tareas sincronizadas, nunca reuniones. `GET /google-calendar/events` entrega por evento `es_reunion`, `es_tarea_tiusdei`, `enlace {url, plataforma}` (Meet, Zoom, Teams) y `ubicacion`.
+- **Permisos de Google**: el login normal solo da identidad; Calendar, Drive y Chat se conceden con `auth/google?mode=connect`. `GET /google-calendar/status` devuelve `permisos` según el scope real (`utils/googlePermisos.ts`); sin permiso, events responde 403 `falta_permiso_calendar`. Cada persona los gestiona en Mi Perfil > Integraciones (`POST /google/revocar`).
+- **Dashboard**: un componente por tarjeta para todos los roles (solo cambian el alcance y el "Mis"): Tu día (`GET /mi-dia`, `server/src/miDia/`), Tareas urgentes (misma regla de estados que Atrasadas), Reuniones (Hoy/Semana/Mes; "Estás aquí" solo si entraste con el botón de Tiusdei), Progreso y Tareas por Marca.
+- **Ventana flotante**: `src/components/flotante/` (Document Picture-in-Picture; Chrome/Edge/Firefox 151+). Se abre con el clic en ▶ (activado por defecto) o desde el chip; donde no hay soporte el chip queda igual.
+
+## Departamentos
+Etapas del pipeline, en Administración > Departamentos (admin edita; ejecutivo solo ve). Borrar es en dos pasos: **Archivar** (soft delete, `POST /departments/:id/archivar`) mueve en una transacción las tareas abiertas (con su historial), las personas y las mesas a otro departamento o las deja sin departamento, y conserva las terminadas y los reportes; se puede **restaurar**. **Eliminar definitivamente** solo para archivados sin ninguna referencia y escribiendo el nombre exacto: las FKs a `departments` son ON DELETE SET NULL, así que un DELETE con referencias borraría historial en silencio. Código en `server/src/departamentos/`.
+
 ## Reportes semanales de proyecto
 Reporte interno por proyecto: Tiusdei junta los hechos, Codex redacta por capas, el líder lo revisa, aprueba y envía en PDF a usuarios de Tiusdei. **Lee [REPORTES-PLAN.md](./REPORTES-PLAN.md) antes de tocar código**: decisiones tomadas con Even, estructura del PDF, datos medidos, modelo de datos, fases y dónde está cada pieza.
 - Todo proyecto tiene **líder** (obligatorio al crear y editar). Solo el líder o un admin ven y manejan los reportes.
