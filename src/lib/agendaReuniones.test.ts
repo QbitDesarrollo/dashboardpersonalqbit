@@ -21,17 +21,17 @@ describe('agenda de reuniones · días civiles de Ecuador', () => {
     expect(etiquetaDia('2026-10-28', Date.parse('2026-10-28T05:00:00Z'))).toBe('Hoy · mié 28 oct');
     expect(sumarDias('2026-12-31', 1)).toBe('2027-01-01');
   });
-  it('conserva la semana domingo–sábado en ambos lados del lunes', () => {
-    for (const dia of ['2026-10-25', '2026-10-26']) {
+  it('cambia de semana al pasar de domingo a lunes y conserva etiquetas españolas', () => {
+    for (const [dia, inicio, etiqueta] of [['2026-10-25', '2026-10-19', '19 – 25 oct'], ['2026-10-26', '2026-10-26', '26 oct – 1 nov']]) {
       const rango = calendarioReuniones(Date.parse(`${dia}T12:00:00-05:00`), 'Semana');
-      expect(rango.inicio.slice(0, 10)).toBe('2026-10-25');
-      expect(etiquetaPeriodo(rango.inicio, rango.fin, 'Semana')).toBe('25 – 31 oct');
+      expect(rango.inicio.slice(0, 10)).toBe(inicio);
+      expect(etiquetaPeriodo(rango.inicio, rango.fin, 'Semana')).toBe(etiqueta);
     }
     expect(etiquetaPeriodo('2026-10-28', '2026-11-03', 'Semana')).toBe('28 oct – 3 nov');
     expect(etiquetaPeriodo('2026-12-28', '2027-01-03', 'Semana')).toBe('28 dic 2026 – 3 ene 2027');
     expect(etiquetaPeriodo('2026-10-01', '2026-10-31', 'Mes')).toBe('octubre 2026');
   });
-  it('crea celdas pequeñas de lunes a domingo con blancos a ambos lados', () => {
+  it('crea celdas de lunes a domingo con blancos a ambos lados', () => {
     const noviembre = celdasMes('2026-11-01');
     expect(noviembre).toHaveLength(42);
     expect(noviembre.slice(0, 7)).toEqual([null, null, null, null, null, null, '2026-11-01']);

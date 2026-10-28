@@ -22,7 +22,7 @@ export function calendarioReuniones(now: number, vista: VistaReuniones, desplaza
     for (let i = 0; i < inicio.getUTCDay(); i++) dias.push(null);
   } else {
     inicio = new Date(dia);
-    if (vista === 'Semana') inicio.setUTCDate(inicio.getUTCDate() - inicio.getUTCDay() + desplazamiento * 7);
+    if (vista === 'Semana') inicio.setUTCDate(inicio.getUTCDate() - (inicio.getUTCDay() + 6) % 7 + desplazamiento * 7);
     fin = new Date(inicio);
     if (vista === 'Semana') fin.setUTCDate(fin.getUTCDate() + 6);
   }

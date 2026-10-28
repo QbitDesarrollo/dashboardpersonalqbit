@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Segmentado } from '@/components/comunes/Segmentado';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowUpRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +16,7 @@ interface Props {
 }
 const prioridad: Record<string, string> = { alta: 'priority-high', media: 'priority-medium', baja: 'priority-low' };
 export function DashboardUrgentes({ tareas, personas, isEquipo, onAbrir }: Props) {
-  const [filtro, setFiltro] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState('Atrasadas');
   const grupos = agruparUrgentes(tareas);
   const titulo = isEquipo ? 'Mis Tareas Urgentes' : 'Tareas Urgentes';
   const porId = new Map(tareas.map((t) => [t.id, t]));
@@ -28,13 +29,10 @@ export function DashboardUrgentes({ tareas, personas, isEquipo, onAbrir }: Props
         <span className="rounded-full bg-muted px-2 text-xs">{total}</span>
       </div></CardHeader>
       <CardContent>
-        <div aria-label="Filtrar por urgencia" className="mb-3 flex gap-1 rounded-lg bg-muted p-1">
-          {grupos.map((g) => <button key={g.nombre} type="button" aria-pressed={filtro === null || filtro === g.nombre}
-            className={cn('flex-1 rounded px-1 py-1.5 text-xs focus-visible:ring-2 focus-visible:ring-primary', (filtro === null || filtro === g.nombre) && 'bg-card shadow-sm')}
-            onClick={() => setFiltro(filtro === g.nombre ? null : g.nombre)}>{g.nombre} {g.tareas.length}</button>)}
-        </div>
+        <Segmentado etiqueta="Filtrar por urgencia" valor={filtro} onCambiar={setFiltro} className="mb-3"
+          opciones={grupos.map(g => ({ valor: g.nombre, etiqueta: `${g.nombre} ${g.tareas.length}` }))} />
         <div className="max-h-[384px] overflow-y-auto">
-          {grupos.filter((g) => filtro === null || filtro === g.nombre).map((g) => <section key={g.nombre} aria-label={g.nombre}>
+          {grupos.filter((g) => filtro === g.nombre).map((g) => <section key={g.nombre} aria-label={g.nombre}>
             <h4 className="py-2 text-[10px] uppercase tracking-wider text-muted-foreground">{g.nombre}</h4>
             {!g.tareas.length ? <p className="py-3 text-xs text-muted-foreground">No hay tareas en este grupo</p> : g.tareas.map((t) => {
               const original = porId.get(t.id);

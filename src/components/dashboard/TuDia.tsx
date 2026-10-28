@@ -10,8 +10,10 @@ const segmentos = {
 };
 export function TuDia({ userId }: { userId: string | undefined }) {
   const { dia, error } = useMiDia(userId);
-  return <section aria-label="Tu día"><Card className="glass-card">
-    <CardHeader className="pb-3"><CardTitle className="text-base">Tu día</CardTitle></CardHeader>
+  return <section aria-label="Tu día" className="h-full"><Card className="glass-card h-full">
+    <CardHeader className="pb-3"><CardTitle className="text-base">Tu día</CardTitle>
+      <p className="text-xs text-muted-foreground">Tu jornada de hoy · no depende de los filtros</p>
+    </CardHeader>
     <CardContent className="space-y-4">
       {!dia ? <p className="text-sm text-muted-foreground">{error ? 'No se pudo cargar tu día' : 'Cargando tu día…'}</p> : <>
         <div>
@@ -23,7 +25,7 @@ export function TuDia({ userId }: { userId: string | undefined }) {
           </div>
           <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">{Object.entries(segmentos).map(([tipo, s]) => <span key={tipo} className="flex items-center gap-1"><i className={`h-2 w-2 rounded-full ${s.color}`} />{s.texto}</span>)}</div>
         </div>
-        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6 text-sm">
+        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 text-sm">
           <Metrica titulo="Ingreso" valor={horaDia(dia.ingreso)} />
           <Metrica titulo="Trabajado" valor={`${duracionDia(dia.trabajadoSeg)} de ${duracionDia(dia.jornadaSeg)}`} />
           {dia.calendarioDisponible !== false && <>

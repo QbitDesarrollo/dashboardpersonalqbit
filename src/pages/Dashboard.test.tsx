@@ -6,6 +6,7 @@ import * as api from '@/lib/apiClient';
 import * as dashboardApi from '@/lib/dashboardApi';
 import Dashboard from './Dashboard';
 
+const scrollIntoViewOriginal = Element.prototype.scrollIntoView;
 const contexto = vi.hoisted(() => ({ equipo: false, usuario: 'u1', marca: null as string | null, mesa: null as string | null }));
 const navigate = vi.hoisted(() => vi.fn());
 vi.mock('react-router-dom', async (original) => ({ ...await original<typeof import('react-router-dom')>(), useNavigate: () => navigate }));
@@ -115,6 +116,41 @@ describe('Dashboard · consultar las tareas de los indicadores', () => {
   });
 });
 
+describe('Dashboard · filtros conectados', () => {
+  it.each(['marca', 'mesa', 'periodo'] as const)('cambiar %s actualiza urgentes, progreso y marcas sin filtrar la jornada personal', async filtro => {
+    if (filtro === 'periodo') {
+      localStorage.setItem('dashboard_periodo', 'custom');
+      localStorage.setItem('dashboard_periodo_desde', '2026-09-01');
+      localStorage.setItem('dashboard_periodo_hasta', '2026-10-31');
+    }
+    vi.mocked(dashboardApi.getDashboardTasks).mockResolvedValue(tareas.map(t => t.id === 'otra' ? { ...t, fecha_entrega: '2026-10-02' } : t));
+    const vista = abrir();
+    const urgentes = await screen.findByRole('region', { name: 'Tareas Urgentes' });
+    expect(within(urgentes).getByRole('tab', { name: 'Atrasadas 1' })).toBeInTheDocument();
+    expect(within(urgentes).getByRole('tab', { name: 'Hoy 1' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /^7 tareas:/ })).toBeInTheDocument();
+    expect(screen.getByTestId('marcas-barras')).toHaveTextContent('Pronaca');
+    if (filtro === 'periodo') {
+      fireEvent.change(screen.getByTitle('Desde'), { target: { value: '2026-10-01' } });
+    } else if (filtro === 'marca') {
+      fireEvent.keyDown(screen.getAllByRole('combobox')[0], { key: 'ArrowDown' });
+      fireEvent.click(await screen.findByRole('option', { name: 'Dinatek' }));
+    } else {
+      contexto.mesa = 'd1';
+      vista.rerender(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Dashboard /></MemoryRouter>);
+    }
+    expect(screen.getByRole('img', { name: filtro === 'periodo' ? /^5 tareas:/ : /^6 tareas:/ })).toBeInTheDocument();
+    expect(within(urgentes).getByRole('tab', { name: filtro === 'periodo' ? 'Atrasadas 0' : 'Atrasadas 1' })).toBeInTheDocument();
+    expect(within(urgentes).getByRole('tab', { name: filtro === 'periodo' ? 'Hoy 1' : 'Hoy 0' })).toBeInTheDocument();
+    if (filtro !== 'periodo') expect(screen.getByTestId('marcas-barras')).not.toHaveTextContent('Pronaca');
+    expect(within(screen.getByTestId('marcas-barras')).getByRole('button', { name: 'Ver tareas de Dinatek' })).toHaveTextContent(filtro === 'periodo' ? '4' : '6');
+    expect(await screen.findByText('Tu jornada de hoy · no depende de los filtros')).toBeInTheDocument();
+    expect(await within(screen.getByRole('region', { name: 'Tu día' })).findByText('2 de 4 completadas')).toBeInTheDocument();
+    expect(await within(screen.getByRole('region', { name: 'Agenda de hoy' })).findByText('Actual')).toBeInTheDocument();
+    expect(dashboardApi.getDashboardTasks).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('Dashboard · rediseño compartido', () => {
   it.each([false, true])('comparte barras por marca y progreso con equipo=%s', async (equipo) => {
     contexto.equipo = equipo; abrir();
@@ -139,9 +175,9 @@ describe('Dashboard · rediseño compartido', () => {
     expect(urgentes).toHaveTextContent('Tarea ayer'); expect(urgentes).not.toHaveTextContent('Tarea aprobada');
     expect(urgentes).not.toHaveTextContent('Tarea fuera');
     if (!equipo) expect(urgentes).toHaveTextContent('Even');
-    fireEvent.click(within(urgentes).getByRole('button', { name: 'Hoy 1' }));
+    fireEvent.click(within(urgentes).getByRole('tab', { name: 'Hoy 1' }));
     expect(urgentes).toHaveTextContent('Tarea hoy'); expect(urgentes).not.toHaveTextContent('Tarea ayer');
-    fireEvent.click(within(urgentes).getByRole('button', { name: 'Esta semana 1' }));
+    fireEvent.click(within(urgentes).getByRole('tab', { name: 'Esta semana 1' }));
     expect(urgentes).toHaveTextContent('Tarea semana'); expect(urgentes).not.toHaveTextContent('Tarea hoy');
     expect(within(urgentes).getByRole('link', { name: 'Ver todas mis tareas' })).toHaveAttribute('href', '/tareas');
   });
@@ -169,6 +205,8 @@ const tareas = [
 ];
 
 beforeEach(() => {
+  // Radix Select scrolls its focused option; jsdom does not implement layout scrolling.
+  Element.prototype.scrollIntoView = vi.fn();
   localStorage.clear(); contexto.equipo = false; contexto.usuario = 'u1'; contexto.marca = null; contexto.mesa = null; navigate.mockReset();
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-02T15:00:00Z'));
   vi.mocked(dashboardApi.getDashboardTasks).mockReset().mockResolvedValue(tareas);
@@ -180,7 +218,7 @@ beforeEach(() => {
   vi.mocked(api.getGoogleCalendarEvents).mockReset().mockResolvedValue({ events: reuniones });
   vi.mocked(api.getTeamLiveStatus).mockReset().mockResolvedValue({ users: [] });
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); Element.prototype.scrollIntoView = scrollIntoViewOriginal; });
 
 function abrir() {
   return render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Dashboard /></MemoryRouter>);
@@ -206,7 +244,7 @@ describe('Dashboard · Tu día, Reuniones y estado del equipo', () => {
     if (equipo) expect(api.getTeamLiveStatus).not.toHaveBeenCalled();
   });
   it('pone Ahora primero, registra el ingreso real y colapsa terminadas sin enlaces', async () => {
-    abrir(); const tarjeta = await screen.findByRole('region', { name: 'Reuniones' });
+    abrir(); const tarjeta = await screen.findByRole('region', { name: 'Agenda de hoy' });
     await within(tarjeta).findByText('Actual');
     expect(within(tarjeta).getAllByRole('article').map(e => e.getAttribute('aria-label'))).toEqual(['Actual', 'Próxima']);
     expect(tarjeta).not.toHaveTextContent('[Tiusdei]');
@@ -217,10 +255,11 @@ describe('Dashboard · Tu día, Reuniones y estado del equipo', () => {
     expect(within(actual).getByRole('link', { name: 'Volver a Meet' })).toHaveAttribute('href', 'https://meet.google.com/Actual');
     fireEvent.click(within(tarjeta).getByText('1 terminadas'));
     expect(within(within(tarjeta).getByRole('article', { name: 'Terminada' })).queryByRole('link')).not.toBeInTheDocument();
-    fireEvent.click(within(tarjeta).getByRole('tab', { name: 'Semana' }));
-    expect(await within(tarjeta).findByRole('region', { name: 'Agenda semanal' })).toBeInTheDocument();
-    await act(async () => { fireEvent.click(within(tarjeta).getByRole('tab', { name: 'Mes' })); });
-    expect(within(tarjeta).getByRole('tab', { name: 'Mes' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(within(tarjeta).getByRole('button', { name: 'Ver calendario' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Calendario' });
+    expect(await within(dialogo).findByRole('region', { name: 'Agenda semanal' })).toBeInTheDocument();
+    await act(async () => { fireEvent.click(within(dialogo).getByRole('tab', { name: 'Mes' })); });
+    expect(within(dialogo).getByRole('tab', { name: 'Mes' })).toHaveAttribute('aria-selected', 'true');
   });
   it('ofrece un aviso no invasivo y Ahora no lo oculta exactamente siete días', async () => {
     vi.mocked(api.getGoogleCalendarStatus).mockResolvedValue({ connected: false });
@@ -280,64 +319,62 @@ describe('Dashboard · agenda legible y acotada', () => {
   it('Hoy con todo terminado muestra calma, siguiente reunión y terminadas colapsadas', async () => {
     const manana = { ...evento('Daily - Equipo Desarrollo', '08:30', '09:00'), start: '2026-10-03T08:30:00-05:00', end: '2026-10-03T09:00:00-05:00' };
     vi.mocked(api.getGoogleCalendarEvents).mockResolvedValue({ events: [reuniones[0], manana] });
-    abrir(); const card = await screen.findByRole('region', { name: 'Reuniones' });
+    abrir(); const card = await screen.findByRole('region', { name: 'Agenda de hoy' });
     expect(await within(card).findByText('Ya no te quedan reuniones hoy')).toBeInTheDocument();
-    expect(card).toHaveTextContent('Mañana · 08:30 Daily - Equipo Desarrollo');
-    expect(within(card).queryByRole('article')).not.toBeInTheDocument();
+    const siguienteDia = within(card).getByRole('region', { name: 'Mañana · sáb 3 oct' });
+    expect(within(siguienteDia).getAllByRole('article')).toHaveLength(1);
+    expect(siguienteDia).toHaveTextContent('Daily - Equipo Desarrollo');
     fireEvent.click(within(card).getByRole('button', { name: '1 terminadas' }));
     expect(within(within(card).getByRole('article', { name: 'Terminada' })).queryByRole('link')).not.toBeInTheDocument();
     expect(api.getGoogleCalendarEvents).toHaveBeenCalledWith('2026-10-02T00:00:00-05:00', '2026-11-02T23:59:59.999-05:00');
   });
   it('Hoy sin reuniones mantiene el mensaje y ofrece la siguiente', async () => {
     vi.mocked(api.getGoogleCalendarEvents).mockResolvedValue({ events: [{ ...evento('Siguiente', '08:30', '09:00'), start: '2026-10-03T08:30:00-05:00', end: '2026-10-03T09:00:00-05:00' }] });
-    abrir(); expect(await screen.findByText('No tienes reuniones hoy')).toBeInTheDocument();
-    expect(screen.getByText('Mañana · 08:30 Siguiente')).toBeInTheDocument();
+    abrir(); expect(await screen.findByText('Ya no te quedan reuniones hoy')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Mañana · sáb 3 oct' })).getByText('Siguiente')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Acerca de Estás aquí' })).not.toBeInTheDocument();
   });
-  it('Semana agrupa solo días con reuniones, conserva títulos y limita el scroll', async () => {
-    abrir(); const card = await screen.findByRole('region', { name: 'Reuniones' });
+  it('Semana abre un calendario grande de siete columnas con navegación y títulos legibles', async () => {
+    abrir(); const card = await screen.findByRole('region', { name: 'Agenda de hoy' });
     await within(card).findByText('Actual');
-    const scroll = within(card).getByRole('region', { name: 'Contenido de reuniones' });
-    expect(scroll).toHaveClass('overflow-y-auto', 'scrollbar-thin', 'min-h-0', 'flex-1');
-    expect(scroll.parentElement).toHaveClass('h-full', 'flex-col', 'overflow-hidden');
-    expect(card).toHaveClass('h-[480px]', 'lg:h-[520px]');
-    fireEvent.click(within(card).getByRole('tab', { name: 'Semana' }));
-    const agenda = await within(card).findByRole('region', { name: 'Agenda semanal' });
-    expect(within(agenda).getAllByRole('heading')).toHaveLength(1);
+    expect(card).not.toHaveClass('h-[480px]');
+    expect(within(card).getByRole('button', { name: 'Acerca de Estás aquí' })).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: 'Ver calendario' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Calendario' });
+    expect(dialogo).toHaveClass('max-w-6xl', 'h-[85vh]');
+    const agenda = await within(dialogo).findByRole('region', { name: 'Agenda semanal' });
+    expect(within(agenda).getAllByRole('heading')).toHaveLength(7);
     expect(agenda).toHaveTextContent('Hoy · vie 2 oct');
-    expect(within(card).queryByRole('grid')).not.toBeInTheDocument();
-    expect(card).toHaveTextContent('27 sep – 3 oct');
-    expect(within(agenda).getByText('Próxima')).toHaveAttribute('title', 'Próxima');
+    expect(dialogo).toHaveTextContent('28 sep – 4 oct');
     expect(within(agenda).getByText('Próxima')).toHaveClass('line-clamp-2');
     expect(within(within(agenda).getByRole('article', { name: 'Terminada' })).queryByRole('link')).not.toBeInTheDocument();
-    fireEvent.click(within(card).getByRole('button', { name: 'Período siguiente' }));
-    expect(await within(card).findByText('4 – 10 oct')).toBeInTheDocument();
-    fireEvent.click(within(card).getByRole('button', { name: 'Hoy' }));
-    expect(await within(card).findByText('27 sep – 3 oct')).toBeInTheDocument();
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Período siguiente' }));
+    expect(await within(dialogo).findByText('5 – 11 oct')).toBeInTheDocument();
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Hoy' }));
+    expect(await within(dialogo).findByText('28 sep – 4 oct')).toBeInTheDocument();
   });
-  it('Mes muestra mini calendario lunes primero y la agenda del día elegido', async () => {
-    const otra = { ...evento('Revisión del lunes', '08:30', '09:00'), start: '2026-10-05T08:30:00-05:00', end: '2026-10-05T09:00:00-05:00' };
-    vi.mocked(api.getGoogleCalendarEvents).mockResolvedValue({ events: [...reuniones, otra] });
-    abrir(); const card = await screen.findByRole('region', { name: 'Reuniones' });
-    await within(card).findByText('Actual');
-    fireEvent.click(within(card).getByRole('tab', { name: 'Mes' }));
-    const calendar = await within(card).findByRole('group', { name: 'Calendario de reuniones' });
-    expect(card).toHaveTextContent('octubre 2026');
-    expect(within(calendar).getAllByRole('columnheader').map(e => e.textContent)).toEqual(['L', 'M', 'M', 'J', 'V', 'S', 'D']);
-    expect(within(calendar).queryByText('Revisión del lunes')).not.toBeInTheDocument();
-    expect(within(calendar).getByRole('button', { name: '2 oct · 3 reuniones' })).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(within(calendar).getByRole('button', { name: '5 oct · 1 reuniones' }));
-    const agenda = within(card).getByRole('region', { name: 'Agenda del día' });
-    expect(agenda).toHaveTextContent('Revisión del lunes');
-    expect(agenda).not.toHaveTextContent('Actual');
-    expect(within(calendar).getByRole('button', { name: '5 oct · 1 reuniones' })).toHaveAttribute('aria-pressed', 'true');
+  it('Mes presenta títulos en celdas legibles y +N más abre la agenda del día', async () => {
+    vi.mocked(api.getGoogleCalendarEvents).mockResolvedValue({ events: [...reuniones, evento('Extra', '12:00', '13:00')] });
+    abrir(); await screen.findByText('Actual');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver calendario' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Calendario' });
+    fireEvent.click(within(dialogo).getByRole('tab', { name: 'Mes' }));
+    const calendar = await within(dialogo).findByRole('group', { name: 'Calendario de reuniones' });
+    expect(dialogo).toHaveTextContent('octubre 2026');
+    expect(within(calendar).getAllByRole('columnheader').map(e => e.textContent)).toEqual(['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']);
+    expect(calendar).toHaveTextContent('Actual'); expect(calendar).not.toHaveTextContent('[Tiusdei]');
+    fireEvent.click(within(calendar).getByRole('button', { name: '+1 más' }));
+    const agenda = within(dialogo).getByRole('region', { name: 'Agenda del día' });
+    expect(agenda).toHaveTextContent('Extra');
+    expect(within(agenda).getAllByRole('article')).toHaveLength(4);
   });
   it('muestra el vacío semanal sin cajas vacías', async () => {
     vi.mocked(api.getGoogleCalendarEvents).mockResolvedValue({ events: [] });
-    abrir(); const card = await screen.findByRole('region', { name: 'Reuniones' });
-    await within(card).findByText('No tienes reuniones hoy');
-    fireEvent.click(within(card).getByRole('tab', { name: 'Semana' }));
-    expect(await within(card).findByText('Sin reuniones esta semana')).toBeInTheDocument();
-    expect(within(card).queryByRole('gridcell')).not.toBeInTheDocument();
+    abrir(); await screen.findByText('Ya no te quedan reuniones hoy');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver calendario' }));
+    const dialogo = screen.getByRole('dialog');
+    expect(await within(dialogo).findByText('Sin reuniones esta semana')).toBeInTheDocument();
+    expect(within(dialogo).getAllByRole('heading', { level: 4 })).toHaveLength(7);
   });
 });
 

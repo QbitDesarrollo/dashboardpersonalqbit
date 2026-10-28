@@ -13,18 +13,14 @@ interface Props {
   tuDia?: ReactNode;
   reuniones?: ReactNode;
 }
-/** Shared layout; T10 can supply the day and meetings slots without duplicating role views. */
+/** Jornada personal y agenda comparten fila; los indicadores de tareas reciben el alcance filtrado. */
 export function DashboardResumen({ tareas, personas, isEquipo, onMostrar, onAbrir, tuDia, reuniones }: Props) {
   return <>
-    {tuDia}
     <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12 sm:gap-6">
-      {/* Bound the urgent card's existing header / content, then filters / list / footer. */}
-      <div className="min-w-0 lg:col-span-7 lg:h-[520px]
-        lg:[&>.glass-card]:h-full lg:[&>.glass-card]:grid lg:[&>.glass-card]:grid-rows-[auto_minmax(0,1fr)]
-        lg:[&>.glass-card>div:last-child]:grid lg:[&>.glass-card>div:last-child]:grid-rows-[auto_minmax(0,1fr)_auto]
-        lg:[&_.overflow-y-auto]:max-h-none"><DashboardUrgentes tareas={tareas} personas={personas} isEquipo={isEquipo} onAbrir={onAbrir} /></div>
-      <div className="min-w-0 lg:col-span-5">{reuniones}</div>
+      <div className="min-w-0 lg:col-span-8">{tuDia}</div>
+      <div className="min-w-0 lg:col-span-4">{reuniones}</div>
     </div>
+    <DashboardUrgentes tareas={tareas} personas={personas} isEquipo={isEquipo} onAbrir={onAbrir} />
     <DashboardProgreso tareas={tareas} isEquipo={isEquipo} onMostrar={onMostrar} />
   </>;
 }

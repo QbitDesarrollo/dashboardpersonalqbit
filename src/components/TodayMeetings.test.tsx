@@ -81,14 +81,14 @@ describe('TodayMeetings · solo reuniones de verdad', () => {
     vi.mocked(api.getGoogleCalendarEvents).mockResolvedValue({ events: [evento('r1', 'Daily', true)] } as never);
     const { unmount } = render(<TodayMeetings />);
     await cargar();
-    fireEvent.click(screen.getByRole('button', { name: 'Compacta' }));
-    expect(screen.getByRole('button', { name: 'Compacta' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('tab', { name: 'Compacta' }));
+    expect(screen.getByRole('tab', { name: 'Compacta' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: 'Reuniones anteriores' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Reuniones siguientes' })).toBeTruthy();
     unmount();
     render(<TodayMeetings />);
     await cargar();
-    expect(screen.getByRole('button', { name: 'Compacta' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Compacta' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByText('Daily')).toBeTruthy();
   });
 
@@ -114,6 +114,16 @@ describe('TodayMeetings · solo reuniones de verdad', () => {
     fireEvent(document, new Event('visibilitychange'));
     await act(async () => { vi.advanceTimersByTime(5 * 60000); });
     expect(api.getGoogleCalendarEvents).toHaveBeenCalledTimes(3);
+  });
+
+  it('solo explica Estás aquí durante una reunión en curso', async () => {
+    vi.mocked(api.getGoogleCalendarEvents).mockResolvedValue({ events: [evento('r1', 'Siguiente', true, '11:01')] } as never);
+    render(<TodayMeetings />); await cargar();
+    expect(screen.queryByRole('button', { name: 'Acerca de Estás aquí' })).not.toBeInTheDocument();
+    await act(async () => { vi.advanceTimersByTime(60000); });
+    expect(screen.getByRole('button', { name: 'Acerca de Estás aquí' })).toBeInTheDocument();
+    await act(async () => { vi.advanceTimersByTime(60 * 60000); });
+    expect(screen.queryByRole('button', { name: 'Acerca de Estás aquí' })).not.toBeInTheDocument();
   });
 
   it('sin reuniones reales no ocupa espacio', async () => {

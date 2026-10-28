@@ -1,10 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { estadoReunion, etiquetaRelativa, minutosTranscurridos, progresoReunion, duracionTotal, leerIngreso, registrarIngreso, fechaReunion } from './reuniones';
+import { calendarioReuniones, estadoReunion, etiquetaRelativa, minutosTranscurridos, progresoReunion, duracionTotal, leerIngreso, registrarIngreso, fechaReunion } from './reuniones';
 
 const inicio = Date.parse('2026-10-27T15:00:00Z');
 const reunion = { id: 'r1', start: new Date(inicio).toISOString(), end: new Date(inicio + 3600000).toISOString() };
 
 describe('reuniones · reglas puras', () => {
+  it('calendario semanal empieza el lunes incluso cuando hoy es domingo y cruza de año', () => {
+    const rango = calendarioReuniones(Date.parse('2027-01-03T15:00:00Z'), 'Semana');
+    expect(rango.inicio).toBe('2026-12-28T00:00:00-05:00');
+    expect(rango.fin).toBe('2027-01-03T23:59:59.999-05:00');
+    expect(rango.dias).toHaveLength(7);
+    expect(calendarioReuniones(Date.parse('2027-01-03T15:00:00Z'), 'Semana', 1).inicio).toBe('2027-01-04T00:00:00-05:00');
+  });
   it('incluye el inicio y excluye el final del estado en curso', () => {
     expect(estadoReunion(reunion, inicio - 1)).toBe('proxima');
     expect(estadoReunion(reunion, inicio)).toBe('en_curso');
