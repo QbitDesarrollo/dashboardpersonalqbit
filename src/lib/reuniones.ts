@@ -4,8 +4,30 @@ export interface Reunion extends IntervaloReunion {
   summary: string;
   htmlLink: string;
   es_reunion?: boolean;
+  es_tarea_tiusdei?: boolean;
   enlace?: { url: string; plataforma: 'meet' | 'zoom' | 'teams' | 'otro' } | null;
   ubicacion?: string | null;
+}
+
+export type VistaReuniones = 'Hoy' | 'Semana' | 'Mes';
+
+/** Rangos y cuadrícula del calendario existente, usando días civiles de Ecuador. */
+export function calendarioReuniones(now: number, vista: VistaReuniones, desplazamiento = 0) {
+  const dia = new Date(`${fechaReunion(now)}T00:00:00Z`);
+  let inicio: Date, fin: Date;
+  const dias: (string | null)[] = [];
+  if (vista === 'Mes') {
+    inicio = new Date(Date.UTC(dia.getUTCFullYear(), dia.getUTCMonth() + desplazamiento, 1));
+    fin = new Date(Date.UTC(inicio.getUTCFullYear(), inicio.getUTCMonth() + 1, 0));
+    for (let i = 0; i < inicio.getUTCDay(); i++) dias.push(null);
+  } else {
+    inicio = new Date(dia);
+    if (vista === 'Semana') inicio.setUTCDate(inicio.getUTCDate() - inicio.getUTCDay() + desplazamiento * 7);
+    fin = new Date(inicio);
+    if (vista === 'Semana') fin.setUTCDate(fin.getUTCDate() + 6);
+  }
+  for (let d = inicio.getTime(); d <= fin.getTime(); d += 86400000) dias.push(new Date(d).toISOString().slice(0, 10));
+  return { inicio: `${inicio.toISOString().slice(0, 10)}T00:00:00-05:00`, fin: `${fin.toISOString().slice(0, 10)}T23:59:59.999-05:00`, dias };
 }
 
 type Registro = Pick<Storage, 'getItem' | 'setItem'>;

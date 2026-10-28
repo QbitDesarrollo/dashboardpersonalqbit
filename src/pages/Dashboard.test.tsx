@@ -18,6 +18,7 @@ vi.mock('@/components/GoogleCalendarWidget', () => ({ default: () => null }));
 vi.mock('@/lib/dashboardApi', () => ({ getDashboardTasks: vi.fn() }));
 vi.mock('@/lib/apiClient', () => ({
   getProfiles: vi.fn(), getBrands: vi.fn(), getDesks: vi.fn(), getRecentActivity: vi.fn(),
+  apiRequest: vi.fn(), getGoogleCalendarStatus: vi.fn(), getGoogleCalendarEvents: vi.fn(), getTeamLiveStatus: vi.fn(),
 }));
 // jsdom cannot size charts. Keep the data and series visible to characterize what is counted.
 vi.mock('recharts', async () => {
@@ -174,6 +175,10 @@ beforeEach(() => {
   vi.mocked(api.getProfiles).mockResolvedValue([{ id: 'u1', nombre: 'Even', activo: true }, { id: 'u2', nombre: 'Diego', activo: true }]);
   vi.mocked(api.getBrands).mockResolvedValue([{ id: 'b1', nombre: 'Dinatek', activo: true }, { id: 'b2', nombre: 'Pronaca', activo: true }]);
   vi.mocked(api.getDesks).mockResolvedValue([]); vi.mocked(api.getRecentActivity).mockResolvedValue([]);
+  vi.mocked(api.apiRequest).mockResolvedValue({ ok: true, json: async () => dia } as Response);
+  vi.mocked(api.getGoogleCalendarStatus).mockReset().mockResolvedValue({ connected: true, calendar: true });
+  vi.mocked(api.getGoogleCalendarEvents).mockReset().mockResolvedValue({ events: reuniones });
+  vi.mocked(api.getTeamLiveStatus).mockReset().mockResolvedValue({ users: [] });
 });
 afterEach(() => vi.useRealTimers());
 
@@ -181,6 +186,95 @@ function abrir() {
   return render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Dashboard /></MemoryRouter>);
 }
 function tarjeta(titulo: string) { return screen.getByText(titulo, { selector: 'p' }).closest('.glass-card') as HTMLElement; }
+
+const dia = {
+  ingreso: '2026-10-02T13:03:00Z', trabajadoSeg: 7500, jornadaSeg: 36000, focoSeg: 18000,
+  inicio: '2026-10-02T13:00:00Z', fin: '2026-10-02T23:00:00Z', ahora: 20,
+  segmentos: [{ tipo: 'tareas', desde: 0, hasta: 20 }, { tipo: 'pendiente', desde: 20, hasta: 100 }],
+  reuniones: { total: 3, segundos: 10800, hechas: 1, enCurso: 1, porVenir: 1 },
+  tareas: { completadas: 2, total: 4 }, cumplimiento: { porcentaje: 80, estado: 'Vas bien', delta: 10 },
+};
+const evento = (id: string, start: string, end: string) => ({ id, summary: id, start: `2026-10-02T${start}:00-05:00`, end: `2026-10-02T${end}:00-05:00`, htmlLink: `https://calendar.google.com/${id}`, es_reunion: true, enlace: { url: `https://meet.google.com/${id}`, plataforma: 'meet' } });
+const reuniones = [evento('Terminada', '08:00', '09:00'), evento('Próxima', '11:00', '12:00'), evento('Actual', '09:00', '11:00'), { ...evento('[Tiusdei] tarea', '09:00', '11:00'), es_reunion: false }];
+
+describe('Dashboard · Tu día, Reuniones y estado del equipo', () => {
+  it.each([false, true])('muestra las mismas métricas personales con equipo=%s', async equipo => {
+    contexto.equipo = equipo; abrir();
+    const tarjeta = await screen.findByRole('region', { name: 'Tu día' });
+    for (const texto of ['08:03', '2h 5m de 10h 0m', '3 hoy · 3h 0m', '1 hechas · 1 en curso · 1 por venir', '5h 0m', '2 de 4 completadas', '80%', 'Vas bien', '+10 pp']) expect(tarjeta).toHaveTextContent(texto);
+    expect(api.apiRequest).toHaveBeenCalledWith('/api/data/mi-dia', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    if (equipo) expect(api.getTeamLiveStatus).not.toHaveBeenCalled();
+  });
+  it('pone Ahora primero, registra el ingreso real y colapsa terminadas sin enlaces', async () => {
+    abrir(); const tarjeta = await screen.findByRole('region', { name: 'Reuniones' });
+    await within(tarjeta).findByText('Actual');
+    expect(within(tarjeta).getAllByRole('article').map(e => e.getAttribute('aria-label'))).toEqual(['Actual', 'Próxima']);
+    expect(tarjeta).not.toHaveTextContent('[Tiusdei]');
+    expect(within(tarjeta).getByText('Ahora')).toBeInTheDocument();
+    const actual = within(tarjeta).getByRole('article', { name: 'Actual' });
+    fireEvent.click(within(actual).getByRole('link', { name: 'Entrar a Meet' }));
+    expect(actual).toHaveTextContent('Estás aquí · llevas 0 min');
+    expect(within(actual).getByRole('link', { name: 'Volver a Meet' })).toHaveAttribute('href', 'https://meet.google.com/Actual');
+    fireEvent.click(within(tarjeta).getByText('1 terminadas'));
+    expect(within(within(tarjeta).getByRole('article', { name: 'Terminada' })).queryByRole('link')).not.toBeInTheDocument();
+    fireEvent.click(within(tarjeta).getByRole('tab', { name: 'Semana' }));
+    expect(await within(tarjeta).findByRole('grid', { name: 'Calendario de reuniones' })).toBeInTheDocument();
+    await act(async () => { fireEvent.click(within(tarjeta).getByRole('tab', { name: 'Mes' })); });
+    expect(within(tarjeta).getByRole('tab', { name: 'Mes' })).toHaveAttribute('aria-selected', 'true');
+  });
+  it('ofrece un aviso no invasivo y Ahora no lo oculta exactamente siete días', async () => {
+    vi.mocked(api.getGoogleCalendarStatus).mockResolvedValue({ connected: false });
+    const vista = abrir();
+    expect(await screen.findByText('Conecta tu Google Calendar para ver tus reuniones aquí')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Conectar' })).toHaveAttribute('href', expect.stringContaining('/api/auth/google?mode=connect'));
+    fireEvent.click(screen.getByRole('button', { name: 'Ahora no' }));
+    expect(localStorage.getItem('tiusdei:calendar:aviso-oculto-hasta')).toBe(String(Date.now() + 7 * 86400000));
+    expect(screen.queryByText('Conecta tu Google Calendar para ver tus reuniones aquí')).not.toBeInTheDocument();
+    vista.unmount(); vi.setSystemTime(new Date('2026-10-09T15:00:00Z')); abrir();
+    expect(await screen.findByText('Conecta tu Google Calendar para ver tus reuniones aquí')).toBeInTheDocument();
+    expect(api.getGoogleCalendarEvents).not.toHaveBeenCalled();
+  });
+  it('distingue falta de permiso de falta de conexión', async () => {
+    vi.mocked(api.getGoogleCalendarStatus).mockResolvedValue({ connected: true, calendar: false }); abrir();
+    expect(await screen.findByText('Falta el permiso de Google Calendar')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dar permiso' })).toBeInTheDocument();
+    expect(api.getGoogleCalendarEvents).not.toHaveBeenCalled();
+  });
+  it('limita el refetch por foco, actualiza el monitor cada minuto y limpia los intervalos', async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ now: new Date('2026-10-02T15:00:00Z') });
+    let vista!: ReturnType<typeof abrir>;
+    await act(async () => { vista = abrir(); });
+    expect(api.getGoogleCalendarEvents).toHaveBeenCalledTimes(1);
+    await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(59999); window.dispatchEvent(new Event('focus')); });
+    expect(api.getGoogleCalendarEvents).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); window.dispatchEvent(new Event('focus')); });
+    expect(api.getGoogleCalendarEvents).toHaveBeenCalledTimes(2);
+    expect(api.getTeamLiveStatus).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(240000); });
+    expect(api.getGoogleCalendarEvents).toHaveBeenCalledTimes(3);
+    vista.unmount(); const consultas = vi.mocked(api.getTeamLiveStatus).mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(300000); window.dispatchEvent(new Event('focus')); });
+    expect(api.getTeamLiveStatus).toHaveBeenCalledTimes(consultas);
+    expect(api.getGoogleCalendarEvents).toHaveBeenCalledTimes(3);
+  });
+  it('omite los estados si falla el monitor sin impedir el dashboard', async () => {
+    vi.mocked(api.getTeamLiveStatus).mockRejectedValue(new Error('Sin acceso')); abrir();
+    expect(await screen.findByText('Métricas por Responsable')).toBeInTheDocument();
+    expect(screen.queryByText('Sin ingreso hoy')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Trabajando ·/)).not.toBeInTheDocument();
+  });
+  it('agrega los tres estados debajo de las completadas', async () => {
+    vi.mocked(dashboardApi.getDashboardTasks).mockResolvedValue([...tareas, tarea('tercera', 'backlog', { responsable_user_id: 'u3' })]);
+    vi.mocked(api.getProfiles).mockResolvedValue([{ id: 'u1', nombre: 'Even' }, { id: 'u2', nombre: 'Diego' }, { id: 'u3', nombre: 'Ana' }]);
+    vi.mocked(api.getTeamLiveStatus).mockResolvedValue({ users: [
+      { user_id: 'u1', session_status: 'active', titulo_tarea: 'Diseño' },
+      { user_id: 'u2', meeting_now: { summary: 'Planificación' } }, { user_id: 'u3', first_check_in: null },
+    ] }); abrir();
+    for (const texto of ['Trabajando · Diseño', 'En reunión · Planificación', 'Sin ingreso hoy']) expect(await screen.findByText(texto)).toBeInTheDocument();
+    expect(api.getTeamLiveStatus).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('Dashboard · comportamiento anterior a la extracción', () => {
   it('mantiene los conteos de tarjetas y los grupos de las barras', async () => {

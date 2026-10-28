@@ -43,6 +43,7 @@ import { publicFormsPublicRouter, publicFormsAdminRouter } from './routes/public
 import { automationsRouter } from './routes/automations.js';
 import { integrationsRouter } from './routes/integrations.js';
 import { googleCalendarRouter } from './routes/google-calendar.js';
+import { miDiaRouter } from './routes/mi-dia.js';
 import { googleIntegracionesRouter } from './routes/google-integraciones.js';
 import { googleDriveRouter } from './routes/google-drive.js';
 import { googleChatRouter } from './routes/google-chat.js';
@@ -222,6 +223,7 @@ app.use('/api/data', publicFormsAdminRouter);
 app.use('/api/data', automationsRouter);
 app.use('/api/data', integrationsRouter);
 app.use('/api/data', googleCalendarRouter);
+app.use('/api/data', miDiaRouter);
 app.use('/api/data', googleIntegracionesRouter);
 app.use('/api/data', googleDriveRouter);
 app.use('/api/data', googleChatRouter);

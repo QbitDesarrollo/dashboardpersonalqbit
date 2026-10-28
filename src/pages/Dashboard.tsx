@@ -7,14 +7,15 @@ import { GraficoResponsables } from '@/components/dashboard/GraficoResponsables'
 import { GraficoMarcas } from '@/components/dashboard/GraficoMarcas';
 import { DashboardEquipoGraficos } from '@/components/dashboard/DashboardEquipoGraficos';
 import { DashboardResumen } from '@/components/dashboard/DashboardResumen';
-import { useState, useMemo, lazy, Suspense } from 'react';
+import { useState, useMemo } from 'react';
+import { TuDia } from '@/components/dashboard/TuDia';
+import { Reuniones } from '@/components/dashboard/Reuniones';
+import { ResponsablesEstado } from '@/components/dashboard/ResponsablesEstado';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
-const GoogleCalendarWidget = lazy(() => import('@/components/GoogleCalendarWidget'));
 import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Select,
   SelectContent,
@@ -23,7 +24,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { getInitials } from '@/lib/utils';
 import {
   Calendar,
   Building2,
@@ -262,7 +262,8 @@ export default function Dashboard() {
 
       <DashboardResumen tareas={tareasActivas} personas={profiles} isEquipo={isEquipo} onMostrar={setSeleccion}
         onAbrir={(id) => navigate(`/tareas?task=${encodeURIComponent(id)}`)}
-        reuniones={profile?.google_connected ? <Suspense fallback={null}><GoogleCalendarWidget /></Suspense> : null} />
+        tuDia={<TuDia key={profile?.id} userId={profile?.id} />}
+        reuniones={<Reuniones key={profile?.id} userId={profile?.id} />} />
 
       {isEquipo && <DashboardEquipoGraficos myTasks={myTasks} myStats={myStats} onMostrar={setSeleccion} />}
 
@@ -277,51 +278,7 @@ export default function Dashboard() {
 
           {/* Detailed Metrics Tables */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {/* Responsable Metrics Table */}
-            <Card className="glass-card">
-              <CardHeader className="pb-2 sm:pb-4">
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                  <CardTitle className="text-base sm:text-lg">Métricas por Responsable</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 sm:space-y-3">
-                  {responsableMetrics.length === 0 ? (
-                    <p className="text-center text-muted-foreground py-4 text-sm">No hay datos</p>
-                  ) : (
-                    responsableMetrics.slice(0, 5).map((metric, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50">
-                        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                          <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0">
-                            {metric.avatar_url ? <AvatarImage src={metric.avatar_url} alt={metric.nombre} className="object-cover" /> : null}
-                            <AvatarFallback className="bg-primary/20 text-primary text-xs font-semibold">
-                              {getInitials(metric.nombre)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground text-sm sm:text-base truncate">{metric.nombre}</p>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground">
-                              {metric.completadas}/{metric.total} completadas
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm shrink-0">
-                          <div className="text-center">
-                            <p className="font-semibold text-foreground">{metric.entregables}</p>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Entregables</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-foreground">{formatTime(metric.tiempoTotal)}</p>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground hidden sm:block">Tiempo</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <ResponsablesEstado metricas={responsableMetrics} autorizado={isAdmin || isEjecutivo} userId={profile?.id} />
 
             {/* Brand Metrics Table */}
             <Card className="glass-card">

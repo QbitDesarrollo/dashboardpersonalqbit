@@ -15,9 +15,10 @@ interface Props {
   ingreso: number | null;
   compacta: boolean;
   onEntrar: () => void;
+  ampliada?: boolean;
 }
 
-export function TarjetaReunion({ reunion, now, ingreso, compacta, onEntrar }: Props) {
+export function TarjetaReunion({ reunion, now, ingreso, compacta, onEntrar, ampliada = false }: Props) {
   const estado = estadoReunion(reunion, now);
   const enCurso = estado === 'en_curso';
   const terminada = estado === 'terminada';
@@ -33,7 +34,7 @@ export function TarjetaReunion({ reunion, now, ingreso, compacta, onEntrar }: Pr
     <article aria-label={reunion.summary} className={cn(
       'relative shrink-0 overflow-hidden rounded-md border border-l-[3px] px-3 text-sm',
       reunion.enlace ? acentos[reunion.enlace.plataforma] : 'border-l-amber-500',
-      compacta ? 'flex h-9 items-center gap-3' : 'flex h-[70px] items-center gap-3',
+      ampliada ? 'flex min-h-[90px] flex-wrap items-center gap-2 py-3 w-full' : compacta ? 'flex h-9 items-center gap-3' : 'flex h-[70px] items-center gap-3',
       enCurso && 'border-primary/30 bg-primary/10',
       terminada && 'text-muted-foreground bg-muted/30',
     )}>
@@ -55,7 +56,7 @@ export function TarjetaReunion({ reunion, now, ingreso, compacta, onEntrar }: Pr
       {!terminada && <a href={reunion.enlace?.url ?? reunion.htmlLink} target="_blank" rel="noopener noreferrer"
         onClick={reunion.enlace ? onEntrar : undefined}
         className={cn(buttonVariants({ variant: enCurso ? 'default' : 'outline', size: 'sm' }), 'h-7 shrink-0 px-2 text-xs')}>
-        {reunion.enlace ? 'Entrar' : 'Ver en Calendar'}
+        {reunion.enlace ? ampliada ? `${presente ? 'Volver' : 'Entrar'} a ${plataforma}` : 'Entrar' : 'Ver en Calendar'}
       </a>}
       {enCurso && <div role="progressbar" aria-label="Tiempo de reunión transcurrido" aria-valuemin={0} aria-valuemax={100}
         aria-valuenow={Math.round(progreso * 100)} className="absolute inset-x-0 bottom-0 h-0.5 bg-primary/10">
