@@ -25,8 +25,15 @@ export function cerrarVentanaFlotante() {
   emitir();
 }
 
-export function esperarTimerFlotante(taskId: string) {
-  if (estado) { estado = { ...estado, tareaEsperada: taskId }; emitir(); }
+/** Fit rows after task details arrive, without overriding later manual resizes. */
+export function ajustarAlturaFlotante(height: number) {
+  const ventana = estado?.ventana;
+  if (!ventana) return;
+  const size = limitarTamano({ width: ventana.innerWidth, height });
+  try {
+    ventana.resizeTo(size.width + (ventana.outerWidth - ventana.innerWidth || 0),
+      size.height + (ventana.outerHeight - ventana.innerHeight || 0));
+  } catch { /* El navegador puede impedir el ajuste; el contenido permite scroll. */ }
 }
 
 /** requestWindow runs in this call stack, before any asynchronous timer work. */
@@ -59,7 +66,13 @@ export function abrirVentanaFlotante(tareaEsperada?: string): Promise<void> {
         doc.documentElement.style.cssText = document.documentElement.style.cssText;
       });
       tema.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+      const confirmarSalida = (event: BeforeUnloadEvent) => {
+        event.preventDefault();
+        event.returnValue = '';
+      };
+      window.addEventListener('beforeunload', confirmarSalida);
       const limpiar = () => {
+        window.removeEventListener('beforeunload', confirmarSalida);
         guardar();
         tema.disconnect();
         ventana.removeEventListener('resize', guardar);

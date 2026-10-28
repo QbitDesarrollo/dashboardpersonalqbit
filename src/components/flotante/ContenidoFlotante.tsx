@@ -1,20 +1,20 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
 import { useTaskTimer } from '@/hooks/useTaskTimer';
 import { useTimerClock } from '@/hooks/useTimerClock';
 import { notifyTaskTimerChanged } from '@/lib/taskTimer';
-import { useDatosFlotantes, type DetalleFlotante } from './useDatosFlotantes';
+import { useDatosFlotantes } from './useDatosFlotantes';
+import { alturaFlotante, textoPreview } from '@/lib/ventanaFlotante';
+import { estadoReunion, fechaReunion } from '@/lib/reuniones';
 import { VistaFlotante } from './VistaFlotante';
-import { esperarTimerFlotante } from './useVentanaFlotante';
+import { ajustarAlturaFlotante } from './useVentanaFlotante';
 
-async function sincronizarSesion(taskId: string, iniciar = false) {
+async function sincronizarSesion(taskId: string) {
   try {
     const { session } = await api.getActiveTimeSession();
-    if (session && (iniciar ? session.task_id !== taskId : session.task_id === taskId)) await api.stopTimeSession(session.id);
-    if (iniciar && session?.task_id !== taskId) await api.startTimeSession(taskId);
+    if (session?.task_id === taskId) await api.stopTimeSession(session.id);
   } catch { /* El registro de actividad es opcional, como en TaskTimer. */ }
 }
 
@@ -28,6 +28,15 @@ export function ContenidoFlotante({ task, onClose }: { task: api.ActiveTimer; on
   const client = useQueryClient();
   const detalle = datos.detalle;
   const estimate = Number(detalle?.estimated_hours || 0);
+  const descripcion = textoPreview(detalle?.detalle);
+  const responsables = detalle?.responsables?.map(persona => persona.nombre).filter(Boolean) ?? [];
+  const responsable = responsables.length ? `${responsables[0]}${responsables.length > 1 ? ` +${responsables.length - 1}` : ''}` : detalle?.profiles?.nombre;
+  const personas = [responsable, detalle?.desks?.nombre].filter(Boolean).join(' · ');
+  const reunion = datos.reuniones?.some(r => estadoReunion(r, now) === 'en_curso'
+    || (estadoReunion(r, now) === 'proxima' && fechaReunion(r.start) === fechaReunion(now)));
+  const altura = alturaFlotante({ descripcion: !!descripcion, personas: !!personas, reunion, estimacion: estimate > 0 });
+  const listo = !!detalle;
+  useEffect(() => { if (listo) ajustarAlturaFlotante(altura); }, [altura, listo]);
   const refresh = () => { notifyTaskTimerChanged(); void client.invalidateQueries({ queryKey: ['flotante'] }); };
   const detener = async () => {
     if (!await timer.stopTimer()) return false;
@@ -52,6 +61,7 @@ export function ContenidoFlotante({ task, onClose }: { task: api.ActiveTimer; on
       titulo={detalle?.titulo_tarea || task.titulo} prioridad={detalle?.prioridad} entrega={detalle?.fecha_entrega ?? undefined}
       now={now} tiempo={timer.formattedTime} segundos={timer.elapsedTime} estimacion={estimate}
       subtareas={datos.subtareas} reuniones={datos.reuniones} pending={pending} error={error}
+      descripcion={descripcion} personas={personas}
       onPause={() => { void accion(async () => { if (await detener()) onClose(); }); }}
       onFinish={() => { void accion(async () => {
         if (!await detener()) return;
@@ -60,21 +70,6 @@ export function ContenidoFlotante({ task, onClose }: { task: api.ActiveTimer; on
         refresh();
         onClose();
       }); }}
-      recientes={<>
-        {datos.recientes?.filter(t => t.id !== task.id && !t.check_done).map(t => <TareaReciente key={t.id} task={t} disabled={pending} onStart={start => accion(async () => {
-          esperarTimerFlotante(t.id);
-          if (!await detener()) { esperarTimerFlotante(task.id); return; }
-          if (!await start()) { onClose(); return; }
-          await sincronizarSesion(t.id, true);
-          refresh();
-        })} />)}
-        {datos.recientes?.filter(t => t.id !== task.id && !t.check_done).length === 0 && <p className="py-2 text-muted-foreground">No tienes otras tareas en proceso.</p>}
-      </>}
     />
   );
-}
-
-function TareaReciente({ task, disabled, onStart }: { task: DetalleFlotante; disabled: boolean; onStart: (start: () => Promise<boolean>) => Promise<void> }) {
-  const { startTimer } = useTaskTimer({ taskId: task.id, initialTime: task.tiempo_trabajado || 0, isActive: !!task.timer_activo, startTime: task.timer_inicio || null });
-  return <Button variant="ghost" className="h-auto w-full justify-start whitespace-normal text-left text-xs" disabled={disabled} onClick={() => { void onStart(startTimer); }}>{[task.brands?.nombre, task.titulo_tarea].filter(Boolean).join(' · ')}</Button>;
 }

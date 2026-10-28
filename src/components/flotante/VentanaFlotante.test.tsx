@@ -28,7 +28,7 @@ beforeEach(() => {
   state.timers = [task];
   const doc = document.implementation.createHTMLDocument('PiP');
   Object.defineProperty(doc, 'defaultView', { value: window });
-  pip = Object.assign(new EventTarget(), { document: doc, close: vi.fn(), focus: vi.fn(), innerWidth: 360, innerHeight: 380 }) as unknown as Window;
+  pip = Object.assign(new EventTarget(), { document: doc, close: vi.fn(), focus: vi.fn(), innerWidth: 320, innerHeight: 210, outerWidth: 320, outerHeight: 240, resizeTo: vi.fn() }) as unknown as Window;
   requestWindow = vi.fn().mockResolvedValue(pip);
   vi.stubGlobal('documentPictureInPicture', { requestWindow });
   vi.mocked(api.getTask).mockResolvedValue({ titulo_tarea: task.titulo, brands: { nombre: 'Dinatek' }, prioridad: 'alta', estimated_hours: 2 });
@@ -75,7 +75,7 @@ describe('floating timer', () => {
     renderUI();
     const view = await open();
     expect(view.getByText('Dinatek')).toBeInTheDocument();
-    expect(requestWindow).toHaveBeenCalledWith({ width: 320, height: 190 });
+    expect(requestWindow).toHaveBeenCalledWith({ width: 320, height: 210 });
     expect(view.getByRole('timer')).toHaveTextContent('01:00:');
     expect(await view.findByRole('progressbar')).toBeInTheDocument();
     fireEvent.click(view.getByRole('button', { name: 'Pausar' }));
@@ -90,7 +90,7 @@ describe('floating timer', () => {
     expect(await view.findByText('Vencida · 25 sept')).toHaveClass('text-destructive');
     expect(view.getByRole('heading')).toHaveAttribute('title', task.titulo);
     expect(view.getByRole('heading')).toHaveClass('truncate', 'text-[13px]');
-    for (const name of ['Pausar', 'Terminar', 'Cambiar tarea']) {
+    for (const name of ['Pausar', 'Terminar']) {
       const button = view.getByRole('button', { name });
       expect(button).toHaveAttribute('aria-label', name);
       expect(button).toHaveClass('h-8', 'w-8', 'rounded-full');
@@ -170,21 +170,62 @@ describe('floating timer', () => {
     await waitFor(() => expect(api.getGoogleCalendarEvents).toHaveBeenCalled());
     expect(view.queryByText(/Mañana/)).toBeNull();
   });
-  it('switches tasks through the existing stop/start timer APIs', async () => {
-    vi.mocked(api.getTasks).mockResolvedValue({ tasks: [{ id: 'b', titulo_tarea: 'Revisar campaña', estado: 'en_proceso' }], total: 1 });
+  it('shows plain description and people context without switching or fetching recent tasks', async () => {
+    vi.mocked(api.getTask).mockResolvedValue({ titulo_tarea: task.titulo,
+      detalle: '<p>Revisar <strong>copy</strong></p><ul><li>Validar formulario</li></ul>',
+      responsables: [{ user_id: '1', nombre: 'Even Fierro' }, { user_id: '2', nombre: 'Ana' }], desks: { nombre: 'Desarrollo' } });
     renderUI();
     const view = await open();
-    fireEvent.click(view.getByRole('button', { name: 'Cambiar tarea' }));
-    fireEvent.click(await view.findByRole('button', { name: 'Revisar campaña' }));
-    await waitFor(() => expect(api.patchTask).toHaveBeenCalledWith('b', expect.objectContaining({ timer_activo: true })));
-    expect(api.patchTask).toHaveBeenNthCalledWith(1, 'a', expect.objectContaining({ timer_activo: false }));
-    expect(api.getTasks).toHaveBeenCalledWith({ responsable_user_id: 'user-a', estado: 'en_proceso', limit: 10 });
-    expect(pip.close).not.toHaveBeenCalled();
+    expect(await view.findByText('Revisar copy Validar formulario')).toHaveClass('line-clamp-2');
+    expect(view.getByText('Even Fierro +1 · Desarrollo')).toBeInTheDocument();
+    expect(pip.resizeTo).toHaveBeenLastCalledWith(320, 256); // 226 px content + 30 px browser chrome.
+    expect(view.queryByRole('button', { name: 'Cambiar tarea' })).toBeNull();
+    expect(api.getTasks).not.toHaveBeenCalled();
+    expect(api.patchTask).not.toHaveBeenCalled();
+  });
+  it.each([
+    [{ profiles: { nombre: 'Even Fierro' } }, 'Even Fierro'],
+    [{ desks: { nombre: 'Desarrollo' } }, 'Desarrollo'],
+    [{}, null],
+  ])('omits missing people pieces and empty descriptions: %j', async (fields, expected) => {
+    vi.mocked(api.getTask).mockResolvedValue({ titulo_tarea: task.titulo, detalle: '<p><br></p>', ...fields });
+    renderUI();
+    const view = await open();
+    await waitFor(() => expect(api.getTask).toHaveBeenCalled());
+    expect(view.queryByTestId('descripcion-flotante')).toBeNull();
+    if (expected) expect(await view.findByText(expected)).toBeInTheDocument();
+    else expect(view.queryByTestId('personas-flotante')).toBeNull();
+  });
+  it.each(['pagehide', 'pause'])('warns only while PiP is open and removes the opener handler on %s', async reason => {
+    const add = vi.spyOn(window, 'addEventListener');
+    const remove = vi.spyOn(window, 'removeEventListener');
+    renderUI();
+    const view = await open();
+    const registration = add.mock.calls.find(([type]) => type === 'beforeunload');
+    expect(registration).toBeDefined();
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    if (reason === 'pagehide') act(() => pip.dispatchEvent(new Event('pagehide')));
+    else {
+      fireEvent.click(view.getByRole('button', { name: 'Pausar' }));
+      await waitFor(() => expect(pip.close).toHaveBeenCalled());
+    }
+    expect(remove).toHaveBeenCalledWith('beforeunload', registration![1]);
+    if (reason === 'pagehide') expect(api.patchTask).not.toHaveBeenCalled();
+    const after = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(false);
+    add.mockRestore();
+    remove.mockRestore();
   });
   it('opening failure never blocks starting the task', async () => {
     requestWindow.mockRejectedValue(new Error('Denied'));
+    const add = vi.spyOn(window, 'addEventListener');
     renderUI(<TaskTimer taskId="a" initialTime={0} isActive={false} startTime={null} canEdit />);
     fireEvent.click(screen.getByRole('button', { name: 'Iniciar' }));
     await waitFor(() => expect(api.startTimeSession).toHaveBeenCalledWith('a'));
+    expect(add.mock.calls.some(([type]) => type === 'beforeunload')).toBe(false);
+    add.mockRestore();
   });
 });

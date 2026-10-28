@@ -22,7 +22,7 @@ export function guardarPreferencia(storage: Registro, activa: boolean) {
 export function limitarTamano(size: Partial<Tamano>): Tamano {
   const limitar = (n: number | undefined, min: number, max: number, fallback: number) =>
     typeof n === 'number' && Number.isFinite(n) ? Math.round(Math.max(min, Math.min(max, n))) : fallback;
-  return { width: limitar(size.width, 280, 480, 320), height: limitar(size.height, 160, 360, 190) };
+  return { width: limitar(size.width, 280, 480, 320), height: limitar(size.height, 160, 360, 210) };
 }
 export function leerTamano(storage: Registro): Tamano {
   try {
@@ -33,6 +33,20 @@ export function leerTamano(storage: Registro): Tamano {
 }
 export function guardarTamano(storage: Registro, size: Tamano) {
   try { storage.setItem(TAMANO, JSON.stringify(limitarTamano(size))); } catch { /* Almacenamiento bloqueado. */ }
+}
+
+/** Extract editor content without rendering its markup in the UI. */
+export function textoPreview(html?: string | null): string {
+  if (!html) return '';
+  const doc = new DOMParser().parseFromString(html.replace(/<\/?(?:p|div|li|ul|ol|br|h[1-6]|blockquote)\b[^>]*>/gi, ' '), 'text/html');
+  doc.querySelectorAll('script, style, template').forEach(node => node.remove());
+  return (doc.body.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+export interface FilasFlotantes { descripcion?: boolean; personas?: boolean; reunion?: boolean; estimacion?: boolean }
+export function alturaFlotante(filas: FilasFlotantes): number {
+  return 160 + (filas.descripcion ? 44 : 0) + (filas.personas ? 22 : 0)
+    + (filas.reunion ? 32 : 0) + (filas.estimacion ? 18 : 0);
 }
 
 export function subtareaLista(task: { check_done?: boolean; estado?: string }): boolean {

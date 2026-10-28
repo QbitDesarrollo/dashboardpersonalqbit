@@ -1,9 +1,7 @@
-import { useCallback, useState, type ReactNode } from 'react';
-import * as PopoverPrimitive from '@radix-ui/react-popover';
-import { ArrowLeftRight, ArrowUpRight, Check, Pause } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { ArrowUpRight, Check, Pause, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Popover, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TimerReadout } from '@/components/tasks/TimerReadout';
 import { entregaFlotante, subtareaLista } from '@/lib/ventanaFlotante';
@@ -24,7 +22,8 @@ interface Props {
   reuniones?: Reunion[];
   pending: boolean;
   error?: string;
-  recientes: ReactNode;
+  descripcion?: string;
+  personas?: string;
   onPause: () => void;
   onFinish: () => void;
 }
@@ -40,14 +39,12 @@ function Ayuda({ texto, children }: { texto: string; children: ReactNode }) {
 
 /** Presentation shared by the PiP portal and the isolated visual harness. */
 export function VistaFlotante(props: Props) {
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-  const attach = useCallback((node: HTMLElement | null) => setContainer(node?.ownerDocument.body ?? null), []);
   const entrega = props.entrega ? entregaFlotante(props.entrega, props.now) : '';
   const reunion = props.reuniones?.find(r => estadoReunion(r, props.now) === 'en_curso')
     ?? props.reuniones?.find(r => estadoReunion(r, props.now) === 'proxima' && fechaReunion(r.start) === fechaReunion(props.now));
   return (
     <TooltipProvider delayDuration={300}>
-      <article ref={attach} aria-label="Tarea en ventana flotante" className="flex min-h-full flex-col justify-center bg-background p-3 text-foreground">
+      <article aria-label="Tarea en ventana flotante" className="flex min-h-full flex-col justify-center bg-background p-3 text-foreground">
         <div className="mx-auto flex w-full max-w-sm flex-col gap-2">
           <header className="flex h-6 items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -64,7 +61,11 @@ export function VistaFlotante(props: Props) {
               {entrega && <span className={`truncate ${entrega.startsWith('Vencida') ? 'text-destructive' : ''}`} title={entrega}>{entrega}</span>}
               {!!props.subtareas?.length && <span className="shrink-0">· {props.subtareas.filter(subtareaLista).length}/{props.subtareas.length} subtareas</span>}
             </div>}
-          <div className="flex items-center justify-between gap-2">
+          {props.descripcion && <p data-testid="descripcion-flotante" className="line-clamp-2 break-words text-[12px] leading-[18px] text-muted-foreground">{props.descripcion}</p>}
+          {props.personas && <div data-testid="personas-flotante" className="flex min-w-0 items-center gap-1.5 text-[11px] leading-[14px] text-muted-foreground">
+            <UserRound aria-hidden="true" className="size-3 shrink-0" /><span className="truncate" title={props.personas}>{props.personas}</span>
+          </div>}
+          <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2">
             <div className="min-w-0">
               <TimerReadout time={props.tiempo} running large />
               {props.estimacion > 0 && <div className="space-y-1">
@@ -75,15 +76,6 @@ export function VistaFlotante(props: Props) {
             <div className="flex shrink-0 items-center gap-1">
               <Ayuda texto="Pausar"><Button variant="outline" size="icon" className="h-8 w-8 rounded-full border-border/60" aria-label="Pausar" disabled={props.pending} onClick={props.onPause}><Pause aria-hidden="true" /></Button></Ayuda>
               <Ayuda texto="Terminar"><Button size="icon" className="h-8 w-8 rounded-full" aria-label="Terminar" disabled={props.pending} onClick={props.onFinish}><Check aria-hidden="true" /></Button></Ayuda>
-              <Popover>
-                <Ayuda texto="Cambiar tarea"><PopoverTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-muted-foreground" aria-label="Cambiar tarea" disabled={props.pending}><ArrowLeftRight aria-hidden="true" /></Button></PopoverTrigger></Ayuda>
-                {/* Explicit container keeps the portal and its inherited theme in the PiP document. */}
-                <PopoverPrimitive.Portal container={container}>
-                  <PopoverPrimitive.Content side="top" align="end" sideOffset={4} aria-label="Cambiar tarea" className="z-50 max-h-[calc(100vh-24px)] w-72 max-w-[calc(100vw-24px)] overflow-y-auto rounded-lg border border-border/60 bg-popover p-1 text-popover-foreground">
-                    {props.recientes}
-                  </PopoverPrimitive.Content>
-                </PopoverPrimitive.Portal>
-              </Popover>
             </div>
           </div>
           {reunion && <ReunionFlotante reunion={reunion} now={props.now} />}
