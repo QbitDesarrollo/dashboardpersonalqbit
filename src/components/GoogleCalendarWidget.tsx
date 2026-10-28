@@ -30,6 +30,7 @@ interface CalEvent {
 export default function GoogleCalendarWidget() {
   const { profile } = useAuth();
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [calendarPermitido, setCalendarPermitido] = useState(false);
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -37,7 +38,10 @@ export default function GoogleCalendarWidget() {
 
   useEffect(() => {
     api.getGoogleCalendarStatus()
-      .then((d: { connected: boolean }) => setConnected(d.connected))
+      .then((d: { connected: boolean; calendar?: boolean }) => {
+        setConnected(d.connected);
+        setCalendarPermitido(d.calendar !== false);
+      })
       .catch(() => setConnected(false));
   }, []);
 
@@ -61,7 +65,7 @@ export default function GoogleCalendarWidget() {
   }, [currentDate, view]);
 
   const fetchEvents = () => {
-    if (!connected) return;
+    if (!connected || !calendarPermitido) return;
     setLoading(true);
     api.getGoogleCalendarEvents(rangeStart, rangeEnd)
       .then((d: { events: CalEvent[] }) => setEvents(d.events.filter((ev) => !ev.es_tarea_tiusdei)))
@@ -73,9 +77,9 @@ export default function GoogleCalendarWidget() {
   };
 
   useEffect(() => {
-    if (connected) fetchEvents();
+    if (connected && calendarPermitido) fetchEvents();
     else setLoading(false);
-  }, [connected, rangeStart, rangeEnd]);
+  }, [connected, calendarPermitido, rangeStart, rangeEnd]);
 
   const navigate = (dir: number) => {
     const d = new Date(currentDate);
@@ -141,6 +145,32 @@ export default function GoogleCalendarWidget() {
     );
   }
 
+  const darPermiso = () => {
+    const base = import.meta.env.VITE_API_URL || window.location.origin;
+    window.location.href = `${base}/api/auth/google?mode=connect`;
+  };
+
+  if (connected && !calendarPermitido) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <CalIcon className="h-5 w-5 text-primary" />
+            Google Calendar
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-center space-y-4 py-8">
+          <p className="font-medium">Falta el permiso de Google Calendar</p>
+          <p className="text-sm text-muted-foreground">Tu cuenta de Google está conectada, pero Tiusdei todavía no puede leer tu calendario.</p>
+          <Button onClick={darPermiso} className="gap-2">
+            <LinkIcon className="h-4 w-4" />
+            Dar permiso
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (!connected) {
     return (
       <Card>
@@ -152,13 +182,7 @@ export default function GoogleCalendarWidget() {
         </CardHeader>
         <CardContent className="text-center space-y-4 py-8">
           <p className="text-muted-foreground">Conecta tu cuenta de Google para ver tu calendario aqui.</p>
-          <Button
-            onClick={() => {
-              const base = import.meta.env.VITE_API_URL || window.location.origin;
-              window.location.href = `${base}/api/auth/google?mode=connect`;
-            }}
-            className="gap-2"
-          >
+          <Button onClick={darPermiso} className="gap-2">
             <LinkIcon className="h-4 w-4" />
             Conectar Google Calendar
           </Button>

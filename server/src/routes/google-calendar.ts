@@ -3,7 +3,8 @@ import { google } from 'googleapis';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { requireAdminOrEjecutivo } from '../middleware/auth.js';
 import { query, queryOne } from '../db/mysql.js';
-import { getAuthedClient, handleExpiredToken } from '../utils/googleAuth.js';
+import { getAuthedClient, getUserTokenScopes, handleExpiredToken } from '../utils/googleAuth.js';
+import { esFaltaDePermiso, permisosGoogle } from '../utils/googlePermisos.js';
 import { aEventoCalendario } from '../calendario/eventos.js';
 
 export const googleCalendarRouter = Router();
@@ -11,10 +12,17 @@ export const googleCalendarRouter = Router();
 // Alias for backward compatibility within this file
 const handleExpired = handleExpiredToken;
 
+const FALTA_PERMISO_CALENDAR = {
+  error: 'Tu cuenta de Google está conectada, pero falta el permiso de Google Calendar. Vuelve a dar permiso.',
+  code: 'falta_permiso_calendar',
+};
+
 googleCalendarRouter.get('/google-calendar/status', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const row = await queryOne<{ user_id: string }>('SELECT user_id FROM google_tokens WHERE user_id=?', [req.userId!]);
-    res.json({ connected: !!row });
+    const row = await queryOne<{ scope: string | null }>('SELECT scope FROM google_tokens WHERE user_id=?', [req.userId!]);
+    const permisos = permisosGoogle(!!row, row?.scope);
+    // connected se mantiene por compatibilidad: hay token. calendar dice si se puede leer el calendario.
+    res.json({ connected: permisos.conectado, calendar: permisos.calendar, permisos });
   } catch (e) {
     console.error('[GCAL] status error:', e);
     res.status(500).json({ error: 'Error' });
@@ -25,6 +33,10 @@ googleCalendarRouter.get('/google-calendar/events', requireAuth, async (req: Aut
   try {
     const client = await getAuthedClient(req.userId!);
     if (!client) { res.status(401).json({ error: 'Google no conectado' }); return; }
+    if (!permisosGoogle(true, await getUserTokenScopes(req.userId!)).calendar) {
+      res.status(403).json(FALTA_PERMISO_CALENDAR);
+      return;
+    }
 
     const cal = google.calendar({ version: 'v3', auth: client });
     const timeMin = (req.query.start as string) || new Date().toISOString();
@@ -40,6 +52,7 @@ googleCalendarRouter.get('/google-calendar/events', requireAuth, async (req: Aut
     res.json({ events });
   } catch (e) {
     console.error('[GCAL] events error:', (e as Error).message);
+    if (esFaltaDePermiso(e)) { res.status(403).json(FALTA_PERMISO_CALENDAR); return; }
     if (await handleExpired(e, req.userId!, res)) return;
     res.status(500).json({ error: 'Error al obtener eventos' });
   }
