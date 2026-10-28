@@ -30,6 +30,37 @@ export function esReunionReal(ev: calendar_v3.Schema$Event): boolean {
   return true;
 }
 
+export type Plataforma = 'meet' | 'zoom' | 'teams' | 'otro';
+export interface EnlaceReunion { url: string; plataforma: Plataforma }
+
+const LINKS_CONOCIDOS: { patron: RegExp; plataforma: Plataforma }[] = [
+  { patron: /https:\/\/meet\.google\.com\/[a-z0-9-]+/i, plataforma: 'meet' },
+  { patron: /https:\/\/[a-z0-9.-]*zoom\.us\/(?:j|my|w)\/[^\s"'<>]+/i, plataforma: 'zoom' },
+  { patron: /https:\/\/teams\.(?:microsoft|live)\.com\/[^\s"'<>]+/i, plataforma: 'teams' },
+];
+
+function plataformaDe(url: string): Plataforma {
+  return LINKS_CONOCIDOS.find((l) => l.patron.test(url))?.plataforma ?? 'otro';
+}
+
+/**
+ * Enlace para entrar a la videollamada del evento: el Meet del evento, el punto de
+ * entrada de video de la conferencia (Zoom/Teams instalados en Calendar) o un link
+ * conocido pegado en la ubicación o la descripción. Sin videollamada: null.
+ */
+export function enlaceDeReunion(ev: calendar_v3.Schema$Event): EnlaceReunion | null {
+  if (ev.hangoutLink) return { url: ev.hangoutLink, plataforma: 'meet' };
+  const video = ev.conferenceData?.entryPoints?.find((p) => p.entryPointType === 'video' && p.uri);
+  if (video?.uri) return { url: video.uri, plataforma: plataformaDe(video.uri) };
+  for (const texto of [ev.location || '', ev.description || '']) {
+    for (const { patron, plataforma } of LINKS_CONOCIDOS) {
+      const m = texto.match(patron);
+      if (m) return { url: m[0], plataforma };
+    }
+  }
+  return null;
+}
+
 export interface EventoCalendario {
   id: string | null | undefined;
   summary: string;
@@ -40,6 +71,8 @@ export interface EventoCalendario {
   status: string | null | undefined;
   es_tarea_tiusdei: boolean;
   es_reunion: boolean;
+  enlace: EnlaceReunion | null;
+  ubicacion: string;
 }
 
 /** Forma en que la API entrega cada evento al frontend. */
@@ -54,5 +87,7 @@ export function aEventoCalendario(ev: calendar_v3.Schema$Event): EventoCalendari
     status: ev.status,
     es_tarea_tiusdei: esTareaTiusdei(ev.summary),
     es_reunion: esReunionReal(ev),
+    enlace: enlaceDeReunion(ev),
+    ubicacion: ev.location || '',
   };
 }

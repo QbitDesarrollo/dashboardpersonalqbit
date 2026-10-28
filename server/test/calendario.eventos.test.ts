@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { calendar_v3 } from 'googleapis';
-import { aEventoCalendario, esReunionReal, esTareaTiusdei } from '../src/calendario/eventos.js';
+import { aEventoCalendario, enlaceDeReunion, esReunionReal, esTareaTiusdei } from '../src/calendario/eventos.js';
 
 const reunion = (extra: Partial<calendar_v3.Schema$Event> = {}): calendar_v3.Schema$Event => ({
   id: 'ev1',
@@ -32,6 +32,8 @@ describe('eventos del calendario · tareas de Tiusdei', () => {
       status: 'confirmed',
       es_tarea_tiusdei: false,
       es_reunion: true,
+      enlace: null,
+      ubicacion: '',
     });
   });
 
@@ -43,5 +45,43 @@ describe('eventos del calendario · tareas de Tiusdei', () => {
     expect(esReunionReal(reunion({ attendees: [], hangoutLink: 'https://meet.google.com/abc-defg-hij' }))).toBe(true);
     expect(esReunionReal(reunion({ attendees: [{ self: true, responseStatus: 'needsAction' }, { email: 'x@y.com' }] }))).toBe(false);
     expect(esReunionReal(reunion({ attendees: [{ self: true, responseStatus: 'tentative' }, { email: 'x@y.com' }] }))).toBe(true);
+  });
+});
+
+describe('eventos del calendario · enlace para entrar', () => {
+  it('usa el link de Meet del evento', () => {
+    expect(enlaceDeReunion(reunion({ hangoutLink: 'https://meet.google.com/abc-defg-hij' })))
+      .toEqual({ url: 'https://meet.google.com/abc-defg-hij', plataforma: 'meet' });
+  });
+
+  it('usa el punto de entrada de video de la conferencia (Zoom o Teams instalados en Calendar)', () => {
+    const ev = reunion({
+      conferenceData: {
+        conferenceSolution: { name: 'Zoom Meeting' },
+        entryPoints: [
+          { entryPointType: 'phone', uri: 'tel:+1-555-0100' },
+          { entryPointType: 'video', uri: 'https://us02web.zoom.us/j/81234567890?pwd=abc' },
+        ],
+      },
+    });
+    expect(enlaceDeReunion(ev)).toEqual({ url: 'https://us02web.zoom.us/j/81234567890?pwd=abc', plataforma: 'zoom' });
+  });
+
+  it('encuentra un link de Zoom, Teams o Meet pegado en la ubicación o en la descripción', () => {
+    expect(enlaceDeReunion(reunion({ location: 'https://zoom.us/j/99887766554' })))
+      .toEqual({ url: 'https://zoom.us/j/99887766554', plataforma: 'zoom' });
+    expect(enlaceDeReunion(reunion({ description: 'Únete aquí: <a href="https://teams.microsoft.com/l/meetup-join/19%3ameeting_x">Teams</a>' })))
+      .toEqual({ url: 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_x', plataforma: 'teams' });
+  });
+
+  it('sin videollamada no inventa enlace y entrega la ubicación', () => {
+    const ev = reunion({ location: 'Oficina Qbit, sala 2' });
+    expect(enlaceDeReunion(ev)).toBeNull();
+    expect(aEventoCalendario(ev)).toMatchObject({ enlace: null, ubicacion: 'Oficina Qbit, sala 2' });
+  });
+
+  it('la API entrega el enlace junto al evento', () => {
+    expect(aEventoCalendario(reunion({ hangoutLink: 'https://meet.google.com/abc-defg-hij' })).enlace)
+      .toEqual({ url: 'https://meet.google.com/abc-defg-hij', plataforma: 'meet' });
   });
 });
