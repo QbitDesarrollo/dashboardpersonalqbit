@@ -21,13 +21,14 @@ function preparar(opciones: { archivado?: boolean; referencia?: string; fallo?: 
     llamadas.push({ sql, params });
     if (sql === opciones.fallo) throw new Error('Fallo simulado');
     let resultado: unknown = { affectedRows: 1 };
-    if (sql === SQL.BLOQUEAR_DEPARTAMENTOS) resultado = opciones.inexistente ? [] : [{ ...origen, activo: opciones.archivado ? 0 : 1 }, destino];
+    if (sql === SQL.BLOQUEAR_DEPARTAMENTOS || sql === SQL.LEER_DEPARTAMENTOS) resultado = opciones.inexistente ? [] : [{ ...origen, activo: opciones.archivado ? 0 : 1 }, destino];
     else if (sql === SQL.TAREAS_ABIERTAS) {
       expect(params).toEqual(['a', 'entregado', 'aprobado', 'cancelado']);
       expect(sql).toContain('estado NOT IN (?, ?, ?)');
       resultado = [{ id: 't1', responsable_user_id: 'u1' }, { id: 't2', responsable_user_id: null }];
     } else if (sql === SQL.ETAPAS_ENTRANTES) resultado = [{ id: 'b' }, { id: 'x' }];
     else if (Object.values(SQL.REFERENCIAS).includes(sql)) resultado = sql === SQL.REFERENCIAS[opciones.referencia as keyof typeof SQL.REFERENCIAS] ? [{ id: 'ref' }] : [];
+    else if (Object.values(SQL.CONTAR_REFERENCIAS).includes(sql)) resultado = [{ n: sql === SQL.CONTAR_REFERENCIAS[opciones.referencia as keyof typeof SQL.CONTAR_REFERENCIAS] ? 1 : 0 }];
     else estado.escrituras++;
     return resultado as T;
   } };
@@ -145,5 +146,7 @@ describe('archivo transaccional · S9', () => {
     expect(await f.servicio.referencias('a')).toEqual({ tareas: 0, historial: 1, traspasos: 0, plantillas: 0, personas: 0, mesas: 0, etapas: 0 });
     expect(f.estado.escrituras).toBe(0);
     expect(f.eventos).toEqual(['begin', 'commit']);
+    // Se abre al mostrar el diálogo: no debe bloquear filas que otros están escribiendo.
+    expect(f.llamadas.filter(l => /FOR UPDATE/i.test(l.sql))).toEqual([]);
   });
 });

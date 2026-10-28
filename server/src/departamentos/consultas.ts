@@ -43,6 +43,17 @@ export const REFERENCIAS = {
   mesas: 'SELECT id FROM desks WHERE department_id = ? FOR UPDATE',
   etapas: 'SELECT id FROM departments WHERE next_department_id = ? FOR UPDATE',
 } as const;
+// Vista previa del diálogo (solo lectura): conteos sin bloquear filas.
+export const LEER_DEPARTAMENTOS = 'SELECT id, nombre, activo, next_department_id FROM departments ORDER BY id';
+export const CONTAR_REFERENCIAS = {
+  tareas: 'SELECT COUNT(*) AS n FROM tasks WHERE department_id = ?',
+  historial: 'SELECT COUNT(*) AS n FROM task_department_history WHERE department_id = ?',
+  traspasos: 'SELECT COUNT(*) AS n FROM task_handoffs WHERE from_department_id = ? OR to_department_id = ?',
+  plantillas: 'SELECT COUNT(*) AS n FROM template_tasks WHERE department_id = ?',
+  personas: 'SELECT COUNT(*) AS n FROM profiles WHERE department_id = ?',
+  mesas: 'SELECT COUNT(*) AS n FROM desks WHERE department_id = ?',
+  etapas: 'SELECT COUNT(*) AS n FROM departments WHERE next_department_id = ?',
+} as const;
 export const AISLAMIENTO = 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ';
 
 export async function consultarResumen() {

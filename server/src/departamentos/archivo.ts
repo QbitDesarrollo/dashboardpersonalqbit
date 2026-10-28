@@ -51,8 +51,14 @@ export function crearServicioArchivo(conTransaccion: ConTransaccion, uuid: () =>
       return { ok: true };
     }),
     referencias: (id: string) => conTransaccion(async tx => {
-      await departamentos(tx, id);
-      return contarReferencias(tx, id);
+      const filas = await tx.query<DepartamentoArchivo[]>(SQL.LEER_DEPARTAMENTOS);
+      exigirDepartamento(filas.find(d => d.id === id) ?? null);
+      const referencias: Referencias = { tareas: 0, historial: 0, traspasos: 0, plantillas: 0, personas: 0, mesas: 0, etapas: 0 };
+      for (const clave of Object.keys(SQL.CONTAR_REFERENCIAS) as (keyof Referencias)[]) {
+        const [fila] = await tx.query<{ n: number }[]>(SQL.CONTAR_REFERENCIAS[clave], clave === 'traspasos' ? [id, id] : [id]);
+        referencias[clave] = Number(fila?.n ?? 0);
+      }
+      return referencias;
     }),
     eliminar: (id: string, confirmacion: string) => conTransaccion(async tx => {
       const { origen } = await departamentos(tx, id);

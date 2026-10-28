@@ -1962,12 +1962,6 @@ export async function patchDepartment(id: string, data: Partial<{ nombre: string
   return res.json() as Promise<Department>;
 }
 
-export async function deleteDepartment(id: string) {
-  const res = await request(`/api/data/departments/${id}`, { method: 'DELETE' });
-  if (!res.ok) { const t = await res.text(); try { throw new Error(JSON.parse(t).error || t); } catch { throw new Error(t); } }
-  return res.json() as Promise<{ ok: true }>;
-}
-
 export async function taskHandoff(taskId: string, data: {
   to_department_id: string;
   to_responsable_ids?: string[];
