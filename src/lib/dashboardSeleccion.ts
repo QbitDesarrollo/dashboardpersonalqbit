@@ -40,6 +40,12 @@ export function metricasResponsables(tareas: Task[], personas: { id: string; nom
   return [...mapa.values()].sort((a, b) => b.total - a.total);
 }
 
+export function rankingMarcas(marcas: BrandMetric[], limite = 6) {
+  const ordenadas = [...marcas].sort((a, b) => b.total - a.total);
+  const visibles = ordenadas.slice(0, Math.max(0, limite));
+  return { visibles, restantes: ordenadas.length - visibles.length };
+}
+
 export function metricasMarcas(tareas: Task[]): BrandMetric[] {
   const mapa = new Map<string, BrandMetric>();
   for (const t of tareas) {

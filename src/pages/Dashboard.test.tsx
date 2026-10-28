@@ -79,7 +79,7 @@ describe('Dashboard · consultar las tareas de los indicadores', () => {
     expect(await screen.findByText('Tareas Activas')).toBeInTheDocument();
   });
   it('el gráfico de marca abre sus tareas y la búsqueda filtra por título', async () => {
-    abrir(); fireEvent.click(await screen.findByRole('button', { name: 'Sector Dinatek' }));
+    abrir(); fireEvent.click(within(await screen.findByTestId('marcas-barras')).getByRole('button', { name: 'Ver tareas de Dinatek' }));
     const dialogo = screen.getByRole('dialog'); expect(dialogo).not.toHaveTextContent('Tarea otra');
     fireEvent.change(within(dialogo).getByRole('textbox', { name: 'Buscar en estas tareas' }), { target: { value: 'aprobada' } });
     expect(within(dialogo).getAllByRole('button', { name: /^Abrir / })).toHaveLength(1);
@@ -96,7 +96,7 @@ describe('Dashboard · consultar las tareas de los indicadores', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent('Tarea aprobada');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Tarea entregada');
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    fireEvent.click(screen.getByRole('button', { name: 'total de Dinatek' }));
+    fireEvent.click(within(screen.getByTestId('marcas-barras')).getByRole('button', { name: 'Ver tareas de Dinatek' }));
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Tarea otra');
   });
   it('ignora una respuesta vieja después de cambiar de usuario', async () => {
@@ -111,6 +111,47 @@ describe('Dashboard · consultar las tareas de los indicadores', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ver tareas: Tareas Activas' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Tarea nueva');
     expect(screen.getByRole('dialog')).not.toHaveTextContent('Tarea activa');
+  });
+});
+
+describe('Dashboard · rediseño compartido', () => {
+  it.each([false, true])('comparte barras por marca y progreso con equipo=%s', async (equipo) => {
+    contexto.equipo = equipo; abrir();
+    const marcas = await screen.findByTestId('marcas-barras');
+    expect(within(marcas).getByRole('button', { name: 'Ver tareas de Dinatek' })).toHaveTextContent('6');
+    expect(screen.getByText(equipo ? 'Mi Progreso' : 'Progreso')).toBeInTheDocument();
+    expect(screen.getByText(equipo ? '33%' : '29%', { selector: 'strong' }).closest('p')).toHaveTextContent(equipo ? '33% entregadas' : '29% entregadas');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver progreso: Aprobado' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Tarea aprobada');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Tarea entregada');
+  });
+  it.each([false, true])('filtra grupos urgentes sin aprobadas con equipo=%s', async (equipo) => {
+    contexto.equipo = equipo;
+    vi.mocked(dashboardApi.getDashboardTasks).mockResolvedValue([
+      tarea('ayer', 'backlog', { fecha_entrega: '2026-10-01' }),
+      tarea('hoy', 'en_proceso', { fecha_entrega: '2026-10-02' }),
+      tarea('semana', 'en_proceso', { fecha_entrega: '2026-10-09' }),
+      tarea('fuera', 'en_proceso', { fecha_entrega: '2026-10-10' }),
+      tarea('aprobada', 'aprobado', { fecha_entrega: '2026-10-01' }),
+    ]);
+    abrir(); const urgentes = await screen.findByRole('region', { name: equipo ? 'Mis Tareas Urgentes' : 'Tareas Urgentes' });
+    expect(urgentes).toHaveTextContent('Tarea ayer'); expect(urgentes).not.toHaveTextContent('Tarea aprobada');
+    expect(urgentes).not.toHaveTextContent('Tarea fuera');
+    if (!equipo) expect(urgentes).toHaveTextContent('Even');
+    fireEvent.click(within(urgentes).getByRole('button', { name: 'Hoy 1' }));
+    expect(urgentes).toHaveTextContent('Tarea hoy'); expect(urgentes).not.toHaveTextContent('Tarea ayer');
+    fireEvent.click(within(urgentes).getByRole('button', { name: 'Esta semana 1' }));
+    expect(urgentes).toHaveTextContent('Tarea semana'); expect(urgentes).not.toHaveTextContent('Tarea hoy');
+    expect(within(urgentes).getByRole('link', { name: 'Ver todas mis tareas' })).toHaveAttribute('href', '/tareas');
+  });
+  it('permite consultar las marcas fuera del top seis sin agruparlas como Otras', async () => {
+    vi.mocked(dashboardApi.getDashboardTasks).mockResolvedValue(Array.from({ length: 8 }, (_, i) => tarea(`marca${i}`, 'backlog', { brand_id: `b${i}`, brands: { nombre: `Marca ${i}` } })));
+    abrir(); await screen.findByTestId('marcas-barras');
+    expect(within(screen.getByTestId('marcas-barras')).getAllByRole('button')).toHaveLength(6);
+    fireEvent.click(screen.getByText('+2 marcas más · Ver todas'));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver tareas de Marca 7' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Tarea marca7');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Tarea marca0');
   });
 });
 
@@ -163,7 +204,7 @@ describe('Dashboard · comportamiento anterior a la extracción', () => {
     expect(tarjeta('Atrasadas')).toHaveTextContent('0');
     expect(tarjeta('Total Entregables')).toHaveTextContent('8');
     expect(screen.getByTestId('barras')).not.toHaveTextContent('Diego');
-    expect(screen.getByTestId('pastel')).not.toHaveTextContent('Pronaca');
+    expect(screen.getByTestId('marcas-barras')).not.toHaveTextContent('Pronaca');
   });
 
   it('el equipo solo cuenta sus tareas y conserva sus gráficos personales', async () => {
@@ -172,7 +213,7 @@ describe('Dashboard · comportamiento anterior a la extracción', () => {
     expect(tarjeta('Mis Entregables')).toHaveTextContent('12');
     expect(screen.getByText('Mis Tareas por Estado')).toBeInTheDocument();
     expect(screen.queryByText('Tareas por Responsable')).not.toBeInTheDocument();
-    expect(screen.getByTestId('barras')).not.toHaveTextContent('Pronaca');
+    expect(screen.getByTestId('marcas-barras')).not.toHaveTextContent('Pronaca');
   });
 
   it('ya abre una tarea urgente por su identificador', async () => {

@@ -1,12 +1,12 @@
 import { DashboardTareasDialog } from '@/components/dashboard/DashboardTareasDialog';
 import { useDashboardDatos } from '@/components/dashboard/useDashboardDatos';
 import { metricasResponsables, metricasMarcas, seleccionarTareas, type SeleccionDashboard } from '@/lib/dashboardSeleccion';
-import { CHART_COLORS, formatTime, calcStats, tareasUrgentes, type Task, type UrgentTask } from '@/lib/dashboardDatos';
+import { CHART_COLORS, formatTime, calcStats } from '@/lib/dashboardDatos';
 import { DashboardKpis } from '@/components/dashboard/DashboardKpis';
 import { GraficoResponsables } from '@/components/dashboard/GraficoResponsables';
 import { GraficoMarcas } from '@/components/dashboard/GraficoMarcas';
 import { DashboardEquipoGraficos } from '@/components/dashboard/DashboardEquipoGraficos';
-import { DashboardProgreso } from '@/components/dashboard/DashboardProgreso';
+import { DashboardResumen } from '@/components/dashboard/DashboardResumen';
 import { useState, useMemo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,7 +14,6 @@ import { useAuth } from '@/contexts/AuthContext';
 const GoogleCalendarWidget = lazy(() => import('@/components/GoogleCalendarWidget'));
 import { useGlobalFilter } from '@/contexts/GlobalFilterContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Select,
@@ -24,10 +23,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn, getInitials } from '@/lib/utils';
+import { getInitials } from '@/lib/utils';
 import {
-  CheckCircle2,
-  AlertTriangle,
   Calendar,
   Building2,
   User,
@@ -39,7 +36,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { profile, isAdmin, isEjecutivo, isEquipo, canViewAll } = useAuth();
   const { pinnedDeskId, pinnedBrandId } = useGlobalFilter();
-  const { tasks, profiles, brands, desks, recentActivity, loading, error, reintentar } = useDashboardDatos(profile?.id, isAdmin || isEjecutivo);
+  const { tasks, profiles, brands, recentActivity, loading, error, reintentar } = useDashboardDatos(profile?.id, isAdmin || isEjecutivo);
   const [filterBrand, setFilterBrand] = useState<string>('all');
   const [filterResponsable, setFilterResponsable] = useState<string>('all');
   // Período por fecha de entrega ("hay como dejarlo x dia o mes?" — Steven)
@@ -91,12 +88,6 @@ export default function Dashboard() {
   // Stats for equipo (my tasks only)
   const myStats = useMemo(() => calcStats(myTasks), [myTasks]);
 
-  // Urgent tasks for admin/ops
-  const filteredUrgentTasks = useMemo(() => tareasUrgentes(filteredTasks), [filteredTasks]);
-
-  // Urgent tasks for equipo
-  const myUrgentTasks = useMemo(() => tareasUrgentes(myTasks), [myTasks]);
-
   const responsableMetrics = useMemo(() => metricasResponsables(filteredTasks, profiles), [filteredTasks, profiles]);
   const brandMetrics = useMemo(() => metricasMarcas(filteredTasks), [filteredTasks]);
 
@@ -114,39 +105,6 @@ export default function Dashboard() {
   const tareasActivas = isEquipo ? myTasks : filteredTasks;
   const [seleccion, setSeleccion] = useState<SeleccionDashboard | null>(null);
   const tareasSeleccionadas = useMemo(() => seleccion ? seleccionarTareas(tareasActivas, seleccion.criterio) : [], [tareasActivas, seleccion]);
-
-  const getPriorityColor = (prioridad: string) => {
-    switch (prioridad) {
-      case 'alta': return 'bg-priority-high text-white';
-      case 'media': return 'bg-priority-medium text-black';
-      case 'baja': return 'bg-priority-low text-white';
-      default: return 'bg-muted text-muted-foreground';
-    }
-  };
-
-  const getStatusColor = (estado: string) => {
-    const colors: Record<string, string> = {
-      backlog: 'bg-status-backlog text-white',
-      en_proceso: 'bg-status-in-progress text-white',
-      en_revision: 'bg-status-in-review text-black',
-      aprobado: 'bg-status-approved text-white',
-      entregado: 'bg-status-delivered text-white',
-      bloqueado: 'bg-status-blocked text-white',
-    };
-    return colors[estado] || 'bg-muted text-muted-foreground';
-  };
-
-  const getStatusLabel = (estado: string) => {
-    const labels: Record<string, string> = {
-      backlog: 'Pendiente',
-      en_proceso: 'En Proceso',
-      en_revision: 'En Revisión',
-      aprobado: 'Aprobado',
-      entregado: 'Entregado',
-      bloqueado: 'Bloqueado',
-    };
-    return labels[estado] || estado;
-  };
 
   const getActionLabel = (action: string) => {
     const labels: Record<string, string> = {
@@ -202,8 +160,6 @@ export default function Dashboard() {
   }
 
   if (error) return <div role="alert" className="rounded-lg border p-6"><p>{error}</p><button type="button" onClick={reintentar} className="mt-3 text-primary underline">Volver a intentar</button></div>;
-
-  const activeUrgentTasks = isEquipo ? myUrgentTasks : filteredUrgentTasks;
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-fade-in">
@@ -304,14 +260,19 @@ export default function Dashboard() {
 
       <DashboardKpis stats={activeStats} totals={totals} isEquipo={isEquipo} tareas={tareasActivas} onMostrar={setSeleccion} />
 
+      <DashboardResumen tareas={tareasActivas} personas={profiles} isEquipo={isEquipo} onMostrar={setSeleccion}
+        onAbrir={(id) => navigate(`/tareas?task=${encodeURIComponent(id)}`)}
+        reuniones={profile?.google_connected ? <Suspense fallback={null}><GoogleCalendarWidget /></Suspense> : null} />
+
+      {isEquipo && <DashboardEquipoGraficos myTasks={myTasks} myStats={myStats} onMostrar={setSeleccion} />}
+
       {/* ====== ADMIN/OPS DASHBOARD ====== */}
       {canViewAll && (
         <>
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <GraficoMarcas brandMetrics={brandMetrics} onMostrar={setSeleccion} />
             <GraficoResponsables responsableMetrics={responsableMetrics} tareas={filteredTasks} onMostrar={setSeleccion} />
-
-            <GraficoMarcas brandMetrics={brandMetrics} tareas={filteredTasks} onMostrar={setSeleccion} />
           </div>
 
           {/* Detailed Metrics Tables */}
@@ -462,80 +423,6 @@ export default function Dashboard() {
         </>
       )}
 
-      {isEquipo && <DashboardEquipoGraficos myTasks={myTasks} myStats={myStats} onMostrar={setSeleccion} />}
-
-      <DashboardProgreso activeStats={activeStats} isEquipo={isEquipo} onMostrar={setSeleccion} />
-
-      {/* Urgent tasks */}
-      <Card className="glass-card">
-        <CardHeader className="pb-2 sm:pb-4">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-warning" />
-            <CardTitle className="text-base sm:text-lg">
-              {isEquipo ? 'Mis Tareas Urgentes' : 'Tareas Urgentes'}
-            </CardTitle>
-            <Badge variant="secondary" className="ml-2 text-xs">
-              {activeUrgentTasks.length}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {activeUrgentTasks.length === 0 ? (
-            <div className="text-center py-6 sm:py-8 text-muted-foreground">
-              <CheckCircle2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 text-success" />
-              <p className="text-sm">
-                {isEquipo ? '¡No tienes tareas urgentes!' : '¡No hay tareas urgentes!'}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2 sm:space-y-3">
-              {activeUrgentTasks.slice(0, 5).map((task) => (
-                <div
-                  key={task.id}
-                  onClick={() => navigate(`/tareas?task=${task.id}`)}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors gap-2 cursor-pointer"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground text-sm sm:text-base truncate">{task.titulo_tarea}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] sm:text-xs text-muted-foreground truncate">{task.brand_name}</span>
-                      <Badge className={cn("text-[10px] px-1.5", getPriorityColor(task.prioridad))}>
-                        {task.prioridad.toUpperCase()}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 sm:gap-3 justify-between sm:justify-end">
-                    <Badge className={cn("text-[10px] sm:text-xs", getStatusColor(task.estado))}>
-                      {getStatusLabel(task.estado)}
-                    </Badge>
-                    <div className={cn(
-                      "text-xs sm:text-sm font-medium px-2 py-1 rounded whitespace-nowrap",
-                      task.dias_restantes < 0
-                        ? "bg-destructive/20 text-destructive"
-                        : task.dias_restantes === 0
-                        ? "bg-warning/20 text-warning"
-                        : "bg-info/20 text-info"
-                    )}>
-                      {task.dias_restantes < 0
-                        ? `${Math.abs(task.dias_restantes)}d atrasada`
-                        : task.dias_restantes === 0
-                        ? 'Hoy'
-                        : `${task.dias_restantes}d`}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Google Calendar */}
-      {profile?.google_connected && (
-        <Suspense fallback={null}>
-          <GoogleCalendarWidget />
-        </Suspense>
-      )}
     </div>
   );
 }

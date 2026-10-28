@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from './dashboardDatos';
-import { seleccionarTareas, metricasResponsables, metricasMarcas } from './dashboardSeleccion';
+import { seleccionarTareas, metricasResponsables, metricasMarcas, rankingMarcas } from './dashboardSeleccion';
 
 const tarea = (id: string, estado: string, extra: Partial<Task> = {}): Task => ({
   id, titulo_tarea: id, estado, fecha_entrega: '2026-10-10', prioridad: 'media', responsable_user_id: 'u1',
@@ -11,6 +11,18 @@ const tareas = [tarea('a', 'en_proceso'), tarea('b', 'en_revision'), tarea('c', 
   tarea('e', 'backlog', { fecha_entrega: '2026-09-30' }), tarea('f', 'revision_cliente', { fecha_entrega: '2026-09-30' }),
   tarea('g', 'en_proceso', { responsable_user_id: 'u2', brand_id: 'b2', cantidad_entregables: 0, tiempo_trabajado: 0 })];
 const ids = (xs: Task[]) => xs.map((t) => t.id);
+
+describe('ranking de marcas', () => {
+  it('ordena por total, muestra las primeras seis y cuenta marcas restantes, sin Otras', () => {
+    const lista = Array.from({ length: 8 }, (_, i) => ({ id: String(i), nombre: `Marca ${i}`, total: i + 1, completadas: 0, tiempoTotal: 0, entregables: 0 }));
+    expect(rankingMarcas(lista)).toEqual({ visibles: [...lista].reverse().slice(0, 6), restantes: 2 });
+    expect(lista[0].id).toBe('0');
+    expect(rankingMarcas(lista, 2).restantes).toBe(6);
+    expect(rankingMarcas([], 6)).toEqual({ visibles: [], restantes: 0 });
+    expect(rankingMarcas(lista, 0)).toEqual({ visibles: [], restantes: 8 });
+    expect(rankingMarcas(lista.slice(0, 6)).restantes).toBe(0);
+  });
+});
 
 describe('las tareas detrás de cada indicador del dashboard', () => {
   it('las activas reúnen en proceso y en revisión; entregadas excluye aprobadas', () => {

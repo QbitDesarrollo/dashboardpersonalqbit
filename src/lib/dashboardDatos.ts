@@ -11,6 +11,7 @@ export interface Task {
   tiempo_trabajado: number;
   brands?: { nombre: string };
   profiles?: { nombre: string };
+  projects?: { nombre: string } | null;
 }
 
 export interface TaskStats {
@@ -89,8 +90,8 @@ const inicioDelDia = (ahora: Date): Date => {
   return hoy;
 };
 
-/** Tareas que vencen en 2 días o menos (o ya vencieron) y siguen pendientes, de la más atrasada a la más lejana. */
-export const tareasUrgentes = (taskList: Task[], ahora = new Date()): UrgentTask[] => {
+/** Pendientes de la más atrasada a la más lejana; ventana predeterminada de 2 días. */
+export const tareasUrgentes = (taskList: Task[], ahora = new Date(), ventanaDias = 2): UrgentTask[] => {
   const hoy = inicioDelDia(ahora);
   return taskList
     .filter((task) => !!task.fecha_entrega && !ESTADOS_SIN_ATRASO.includes(task.estado))
@@ -103,7 +104,7 @@ export const tareasUrgentes = (taskList: Task[], ahora = new Date()): UrgentTask
       estado: task.estado,
       brand_name: task.brands?.nombre || 'Sin marca',
     }))
-    .filter((task) => task.dias_restantes <= 2)
+    .filter((task) => task.dias_restantes <= ventanaDias)
     .sort((a, b) => a.dias_restantes - b.dias_restantes);
 };
 

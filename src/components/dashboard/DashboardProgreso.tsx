@@ -1,29 +1,31 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import type { TaskStats } from '@/lib/dashboardDatos';
+import type { Task } from '@/lib/dashboardDatos';
+import { calcularProgreso } from '@/lib/dashboardProgreso';
 import type { MostrarTareas } from '@/lib/dashboardSeleccion';
 
-interface Props { activeStats: TaskStats; isEquipo: boolean; onMostrar: MostrarTareas }
-export function DashboardProgreso({ activeStats, isEquipo, onMostrar }: Props) {
+interface Props { tareas: Task[]; isEquipo: boolean; onMostrar: MostrarTareas }
+export function DashboardProgreso({ tareas, isEquipo, onMostrar }: Props) {
+  const { total, segmentos, porcentajeEntregadas } = calcularProgreso(tareas);
   return (
     <Card className="glass-card">
-      <CardHeader className="pb-2 sm:pb-4"><CardTitle className="text-base sm:text-lg">{isEquipo ? 'Mi Progreso' : 'Progreso General'}</CardTitle></CardHeader>
+      <CardHeader className="flex-row items-center justify-between pb-2">
+        <CardTitle className="text-base sm:text-lg">{isEquipo ? 'Mi Progreso' : 'Progreso'}</CardTitle>
+        <span className="text-xs text-muted-foreground">{total} tareas</span>
+      </CardHeader>
       <CardContent>
-        <div className="space-y-3 sm:space-y-4">
-          {[
-            { label: 'Pendiente', estado: 'backlog', value: activeStats.backlog, color: 'bg-status-backlog' },
-            { label: 'En Proceso', estado: 'en_proceso', value: activeStats.en_proceso, color: 'bg-status-in-progress' },
-            { label: 'En Revisión', estado: 'en_revision', value: activeStats.en_revision, color: 'bg-status-in-review' },
-            { label: 'Aprobado', estado: 'aprobado', value: activeStats.aprobado, color: 'bg-status-approved' },
-            { label: 'Entregado', estado: 'entregado', value: activeStats.entregado, color: 'bg-status-delivered' },
-          ].map((item) => (
-            <button type="button" key={item.estado} aria-label={`Ver progreso: ${item.label}`}
-              className="block w-full space-y-1 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:space-y-2"
-              onClick={() => onMostrar({ titulo: item.label, criterio: { tipo: 'estado', estado: item.estado } })}>
-              <div className="flex items-center justify-between text-xs sm:text-sm"><span className="text-muted-foreground">{item.label}</span>
-                <span className="font-medium text-foreground">{item.value} / {activeStats.total}</span></div>
-              <div className="h-1.5 sm:h-2 bg-muted rounded-full overflow-hidden"><div className={cn('h-full rounded-full transition-all', item.color)}
-                style={{ width: `${activeStats.total > 0 ? (item.value / activeStats.total) * 100 : 0}%` }} /></div>
+        <p className="mb-3 text-sm text-muted-foreground"><strong className="text-3xl font-semibold text-foreground">{porcentajeEntregadas}%</strong> entregadas</p>
+        {/* The loaded task data has no status-transition date: do not invent a weekly delta. */}
+        <div role="img" aria-label={`${total} tareas: ${segmentos.map((s) => `${s.label} ${s.cantidad}`).join(', ')}`}
+          className="flex h-2.5 overflow-hidden rounded-full bg-muted">
+          {segmentos.filter((s) => s.cantidad > 0).map((s) => <span key={s.estado} style={{ width: `${s.proporcion}%`, backgroundColor: `hsl(var(--${s.token}))` }} />)}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {segmentos.filter((s) => s.cantidad > 0 || ['backlog', 'en_proceso', 'en_revision', 'aprobado', 'entregado', 'bloqueado'].includes(s.estado)).map((s) => (
+            <button type="button" key={s.estado} aria-label={`Ver progreso: ${s.label}`} title={`${s.label}: ${s.cantidad} tareas, ${s.porcentaje}%`}
+              className="flex flex-wrap items-center gap-2 rounded-lg border p-2 text-left text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"
+              onClick={() => onMostrar({ titulo: s.label, criterio: { tipo: 'estado', estado: s.estado } })}>
+              <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ backgroundColor: `hsl(var(--${s.token}))` }} />
+              <span>{s.label}</span><strong>{s.cantidad}</strong><small className="ml-auto text-muted-foreground">{s.porcentaje}%</small>
             </button>
           ))}
         </div>
