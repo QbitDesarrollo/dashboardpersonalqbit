@@ -244,3 +244,49 @@ describe('floating timer', () => {
     add.mockRestore();
   });
 });
+
+describe('floating timer · switching tasks with the window open', () => {
+  const otra = { id: 'b', titulo: 'Reel lanzamiento', brand_nombre: 'Nirsa', timer_inicio: new Date().toISOString(), tiempo_trabajado: 0 };
+  const arbol = () => (
+    <>
+      <ActiveTaskTimer />
+      <TaskTimer taskId="b" initialTime={0} isActive={false} startTime={null} canEdit compact />
+    </>
+  );
+  beforeEach(() => {
+    vi.mocked(api.getTask).mockImplementation(async (id: string) => ({ titulo_tarea: id === 'b' ? otra.titulo : task.titulo, brands: { nombre: 'Dinatek' }, prioridad: 'alta' }));
+    vi.mocked(api.getActiveTimers).mockResolvedValue([task]);
+  });
+
+  it('keeps the window, does not steal focus, and shows the new task after the existing confirmation', async () => {
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const vista = renderUI(arbol());
+    const pipView = await open();
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar timer' }));
+    await waitFor(() => expect(confirmar).toHaveBeenCalledWith(expect.stringContaining('Ya tienes un timer activo en otra tarea')));
+    expect(pip.focus).not.toHaveBeenCalled();
+    expect(requestWindow).toHaveBeenCalledTimes(1);
+    expect(pipView.getByText('Cambiando de tarea…')).toBeInTheDocument();
+    // Between pausing the old task and starting the new one there is no active timer.
+    state.timers = [];
+    vista.rerender(<QueryClientProvider client={client}>{arbol()}</QueryClientProvider>);
+    expect(pip.close).not.toHaveBeenCalled();
+    state.timers = [otra];
+    vista.rerender(<QueryClientProvider client={client}>{arbol()}</QueryClientProvider>);
+    await waitFor(() => expect(pipView.getByText(otra.titulo)).toBeInTheDocument());
+    expect(pip.close).not.toHaveBeenCalled();
+    confirmar.mockRestore();
+  });
+
+  it('cancelling the confirmation keeps the window open on the current task', async () => {
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderUI(arbol());
+    const pipView = await open();
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar timer' }));
+    await waitFor(() => expect(confirmar).toHaveBeenCalled());
+    await waitFor(() => expect(pipView.getByText(task.titulo)).toBeInTheDocument());
+    expect(pip.close).not.toHaveBeenCalled();
+    expect(api.patchTask).not.toHaveBeenCalled();
+    confirmar.mockRestore();
+  });
+});

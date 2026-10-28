@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import * as api from '@/lib/apiClient';
 import { notifyTaskTimerChanged } from '@/lib/taskTimer';
 import { TimerReadout } from './TimerReadout';
-import { abrirAlIniciar, cerrarVentanaFlotante } from '@/components/flotante/useVentanaFlotante';
+import { abrirAlIniciar, cancelarApertura } from '@/components/flotante/useVentanaFlotante';
 
 interface TaskTimerProps {
   taskId: string;
@@ -63,7 +63,7 @@ export function TaskTimer({
   const handleStart = async () => {
     const apertura = abrirAlIniciar(taskId);
     if (!(await startTimer())) {
-      void apertura.then(cerrarVentanaFlotante);
+      void apertura.then(cancelarApertura);
       return;
     }
     // Also start Time Doctor session for screenshots & activity tracking

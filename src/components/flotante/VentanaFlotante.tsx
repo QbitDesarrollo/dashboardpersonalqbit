@@ -21,7 +21,9 @@ export function VentanaFlotante({ task }: { task?: ActiveTimer }) {
   }, [estado, task]);
   useEffect(() => () => cerrarVentanaFlotante(), []);
   if (!estado) return null;
-  return createPortal(task
+  const cambiando = !!estado.cambiando && estado.tareaEsperada !== task?.id;
+  const espera = cambiando ? 'Cambiando de tarea…' : 'Iniciando tarea…';
+  return createPortal(task && !cambiando
     ? <ContenidoFlotante key={task.id} task={task} onClose={cerrarVentanaFlotante} />
-    : <p className="p-4 text-sm">Iniciando tarea…</p>, estado.ventana.document.body);
+    : <p className="p-4 text-sm text-muted-foreground">{espera}</p>, estado.ventana.document.body);
 }
