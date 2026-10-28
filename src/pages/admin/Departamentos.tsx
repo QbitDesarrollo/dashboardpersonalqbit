@@ -5,6 +5,9 @@ import * as api from '@/lib/apiClient';
 import { calcularReorden, mensajeErrorDepartamento, ordenarDepartamentos, type DepartamentoResumen } from '@/lib/departamentos';
 import { DepartamentoDialog } from '@/components/departamentos/DepartamentoDialog';
 import { DepartamentosTabla } from '@/components/departamentos/DepartamentosTabla';
+import { ArchivarDepartamentoDialog } from '@/components/departamentos/ArchivarDepartamentoDialog';
+import { EliminarDepartamentoDialog } from '@/components/departamentos/EliminarDepartamentoDialog';
+import { solicitarArchivo } from '@/components/departamentos/archivoApi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -16,6 +19,7 @@ export default function Departamentos() {
   const [tab, setTab] = useState<'activos' | 'archivados'>('activos');
   const [dialog, setDialog] = useState<{ departamento: api.Department | null } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [archivoDialog, setArchivoDialog] = useState<{ accion: 'archivar' | 'eliminar'; departamento: DepartamentoResumen } | null>(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -56,6 +60,16 @@ export default function Departamentos() {
     }
   }
 
+  async function restaurar(departamento: DepartamentoResumen) {
+    if (!isAdmin || saving) return;
+    setSaving(true); setError('');
+    try {
+      await solicitarArchivo(departamento.id, '/restaurar', { method: 'POST' });
+      await cargar();
+    } catch (e) { setError(mensajeErrorDepartamento(e)); }
+    finally { setSaving(false); }
+  }
+
   return <div className="space-y-4 sm:space-y-6 animate-fade-in">
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
       <div>
@@ -75,11 +89,17 @@ export default function Departamentos() {
           </button>)}
         </div>
         <div role="tabpanel" id="departamentos-panel" aria-labelledby={`tab-${tab}`}>
+          {tab === 'archivados' && <p className="px-4 py-3 text-sm text-muted-foreground">Puedes restaurar un departamento. Los elementos movidos se quedan donde están; restaurarlo no los devuelve.</p>}
           {loading ? <div role="status" className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /><span className="sr-only">Cargando departamentos</span></div>
-            : <DepartamentosTabla departamentos={visibles} isAdmin={isAdmin} saving={saving} onEdit={departamento => setDialog({ departamento })} onMove={mover} />}
+            : <DepartamentosTabla departamentos={visibles} isAdmin={isAdmin} saving={saving} onEdit={departamento => setDialog({ departamento })} onMove={mover}
+              onArchive={departamento => setArchivoDialog({ accion: 'archivar', departamento })}
+              onRestore={departamento => void restaurar(departamento)}
+              onDelete={departamento => setArchivoDialog({ accion: 'eliminar', departamento })} />}
         </div>
       </CardContent>
     </Card>
     {isAdmin && dialog && <DepartamentoDialog departamento={dialog.departamento} departamentos={departamentos} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); void cargar(); }} />}
+    {isAdmin && archivoDialog?.accion === 'archivar' && <ArchivarDepartamentoDialog departamento={archivoDialog.departamento} departamentos={departamentos} onClose={() => setArchivoDialog(null)} onSaved={() => { setArchivoDialog(null); void cargar(); }} />}
+    {isAdmin && archivoDialog?.accion === 'eliminar' && <EliminarDepartamentoDialog departamento={archivoDialog.departamento} onClose={() => setArchivoDialog(null)} onSaved={() => { setArchivoDialog(null); void cargar(); }} />}
   </div>;
 }

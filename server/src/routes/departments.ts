@@ -1,8 +1,12 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { query, queryOne, uuid } from '../db/mysql.js';
 import { hasRole } from '../utils/roles.js';
 import { consultarResumen } from '../departamentos/consultas.js';
+import { servicioArchivo } from '../departamentos/transaccion.js';
+import { archivarSchema, eliminarSchema } from '../departamentos/esquemas.js';
+import { ErrorDepartamento } from '../departamentos/dominio.js';
+import { puedeAdministrarDepartamentos } from '../departamentos/permisos.js';
 
 /**
  * Departamentos = etapas del flujo de producción (Contenido → Diseño → Producción → ...).
@@ -124,25 +128,43 @@ departmentsRouter.patch('/departments/:id', requireAuth, async (req: AuthRequest
   }
 });
 
+function responderErrorArchivo(error: unknown, res: Response) {
+  if (error instanceof ErrorDepartamento) {
+    return res.status(error.status).json({ error: error.message, ...(error.referencias ? { referencias: error.referencias } : {}) });
+  }
+  console.error('[DEPARTMENTS] archivo:', error);
+  return res.status(500).json({ error: 'No se pudo completar la operación del departamento' });
+}
+
+departmentsRouter.post('/departments/:id/archivar', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!await puedeAdministrarDepartamentos(req.userId!)) return res.status(403).json({ error: 'Solo admin puede archivar departamentos' });
+    const body = archivarSchema.safeParse(req.body);
+    if (!body.success) return res.status(400).json({ error: 'Indica destino_id como UUID o null' });
+    res.json(await servicioArchivo.archivar(String(req.params.id), body.data.destino_id));
+  } catch (error) { responderErrorArchivo(error, res); }
+});
+
+departmentsRouter.post('/departments/:id/restaurar', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!await puedeAdministrarDepartamentos(req.userId!)) return res.status(403).json({ error: 'Solo admin puede restaurar departamentos' });
+    res.json(await servicioArchivo.restaurar(String(req.params.id)));
+  } catch (error) { responderErrorArchivo(error, res); }
+});
+
+// Previsualización de solo lectura; DELETE vuelve a validar dentro de su propia transacción.
+departmentsRouter.get('/departments/:id/referencias', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!await puedeAdministrarDepartamentos(req.userId!)) return res.status(403).json({ error: 'Solo admin puede consultar las referencias' });
+    res.json(await servicioArchivo.referencias(String(req.params.id)));
+  } catch (error) { responderErrorArchivo(error, res); }
+});
+
 departmentsRouter.delete('/departments/:id', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const allowed = await hasRole(req.userId!, ['admin']);
-    if (!allowed) return res.status(403).json({ error: 'Solo admin puede eliminar departamentos' });
-
-    const id = String(req.params.id);
-    // No permitir eliminar si hay tareas asignadas
-    const inUse = await queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM tasks WHERE department_id = ?', [id]);
-    if ((inUse?.n ?? 0) > 0) {
-      return res.status(409).json({
-        error: `No se puede eliminar: hay ${inUse?.n} tarea(s) en este departamento. Pasalas a otro o desactivalo en lugar de eliminar.`,
-      });
-    }
-    // Limpiar referencias next_department_id que apuntan a este
-    await query('UPDATE departments SET next_department_id = NULL WHERE next_department_id = ?', [id]);
-    await query('DELETE FROM departments WHERE id = ?', [id]);
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('[DEPARTMENTS] delete:', e);
-    res.status(500).json({ error: 'Error al eliminar departamento' });
-  }
+    if (!await puedeAdministrarDepartamentos(req.userId!)) return res.status(403).json({ error: 'Solo admin puede eliminar departamentos' });
+    const body = eliminarSchema.safeParse(req.body);
+    if (!body.success) return res.status(400).json({ error: 'Escribe el nombre exacto' });
+    res.json(await servicioArchivo.eliminar(String(req.params.id), body.data.confirmacion));
+  } catch (error) { responderErrorArchivo(error, res); }
 });

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Edit, GripVertical } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, Edit, GripVertical, RotateCcw, Trash2 } from 'lucide-react';
 import type { DepartamentoResumen } from '@/lib/departamentos';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,9 +10,12 @@ interface Props {
   saving: boolean;
   onEdit: (departamento: DepartamentoResumen) => void;
   onMove: (id: string, direccion: -1 | 1) => void;
+  onArchive: (departamento: DepartamentoResumen) => void;
+  onRestore: (departamento: DepartamentoResumen) => void;
+  onDelete: (departamento: DepartamentoResumen) => void;
 }
 
-export function DepartamentosTabla({ departamentos, isAdmin, saving, onEdit, onMove }: Props) {
+export function DepartamentosTabla({ departamentos, isAdmin, saving, onEdit, onMove, onArchive, onRestore, onDelete }: Props) {
   return <div className="overflow-x-auto">
     <Table>
       <TableHeader><TableRow>
@@ -37,7 +40,13 @@ export function DepartamentosTabla({ departamentos, isAdmin, saving, onEdit, onM
           <TableCell className="whitespace-nowrap">{d.tareas_abiertas} abiertas / {d.tareas_total}</TableCell>
           <TableCell>{d.canales.length ? <div className="flex flex-wrap gap-1">{d.canales.map(canal => <Badge variant="outline" key={canal}>Canal: {canal}</Badge>)}</div> : '—'}</TableCell>
           <TableCell><Badge variant={d.activo ? 'default' : 'secondary'}>{d.activo ? 'Activo' : 'Archivado'}</Badge></TableCell>
-          <TableCell>{isAdmin && <Button variant="ghost" size="icon" disabled={saving} aria-label={`Editar ${d.nombre}`} onClick={() => onEdit(d)}><Edit className="h-4 w-4" /></Button>}</TableCell>
+          <TableCell>{isAdmin && <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" disabled={saving} aria-label={`Editar ${d.nombre}`} onClick={() => onEdit(d)}><Edit className="h-4 w-4" /></Button>
+            {d.activo ? <Button variant="ghost" size="icon" disabled={saving} aria-label={`Archivar ${d.nombre}`} onClick={() => onArchive(d)}><Archive className="h-4 w-4" /></Button> : <>
+              <Button variant="ghost" size="sm" disabled={saving} aria-label={`Restaurar ${d.nombre}`} onClick={() => onRestore(d)}><RotateCcw className="h-4 w-4 mr-1" />Restaurar</Button>
+              <Button variant="ghost" size="sm" disabled={saving} aria-label={`Eliminar definitivamente ${d.nombre}`} onClick={() => onDelete(d)}><Trash2 className="h-4 w-4 mr-1" />Eliminar definitivamente</Button>
+            </>}
+          </div>}</TableCell>
         </TableRow>)}
       </TableBody>
     </Table>
