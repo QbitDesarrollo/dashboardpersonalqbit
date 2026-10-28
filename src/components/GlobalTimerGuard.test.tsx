@@ -7,7 +7,9 @@ vi.mock('@/lib/apiClient', () => ({
   timerHeartbeat: vi.fn(async () => ({ active: false })),
   getTimerResumeSuggestion: vi.fn(),
   resumeAutoTimer: vi.fn(async () => ({ ok: true, recuperado_seg: 0 })),
+  pauseMyTimer: vi.fn(async () => ({ ok: true })),
 }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const PAUSE = { task_id: 't1', titulo: 'Demo task', end_time: '2026-10-17T14:00:00.000Z', duration_seconds: 360 };
 
@@ -47,5 +49,40 @@ describe('GlobalTimerGuard automatic pause notice', () => {
     render(<GlobalTimerGuard />);
     await waitFor(() => expect(api.getTimerResumeSuggestion).toHaveBeenCalled());
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('GlobalTimerGuard después de la hora de cierre', () => {
+  const sesion = (inicioHaceMs: number) => ({
+    active: true, session_id: 'ses-1', task_id: 't1', titulo: 'Exigir las guardas del juez', eod: true,
+    start_time: new Date(Date.now() - inicioHaceMs).toISOString(),
+  });
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+    vi.mocked(api.getTimerResumeSuggestion).mockResolvedValue({});
+  });
+  afterEach(cleanup);
+
+  it('no pregunta si el timer se acaba de iniciar', async () => {
+    vi.mocked(api.timerHeartbeat).mockResolvedValue(sesion(16_000));
+    render(<GlobalTimerGuard />);
+    await waitFor(() => expect(api.timerHeartbeat).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole('alertdialog', { name: '¿Sigues trabajando?' })).not.toBeInTheDocument();
+  });
+
+  it('pregunta si el timer lleva más de 3 horas y la confirmación sobrevive a recargar la app', async () => {
+    vi.mocked(api.timerHeartbeat).mockResolvedValue(sesion(4 * 3600_000));
+    const vista = render(<GlobalTimerGuard />);
+    await screen.findByRole('alertdialog', { name: '¿Sigues trabajando?' });
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, sigo trabajando' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    vista.unmount();
+
+    render(<GlobalTimerGuard />);
+    await waitFor(() => expect(api.timerHeartbeat).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole('alertdialog', { name: '¿Sigues trabajando?' })).not.toBeInTheDocument();
   });
 });

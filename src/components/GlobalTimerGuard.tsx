@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import * as api from '@/lib/apiClient';
+import { confirmadoHasta, debePreguntarCierre, esClaveDeConfirmacion, guardarConfirmacion } from '@/lib/guardianTimer';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -10,6 +11,7 @@ import {
 
 const PAUSA_AVISADA = 'timer_pausa_auto_avisada';
 
+interface Latido { active?: boolean; eod?: boolean; titulo?: string | null; session_id?: string; start_time?: string | null }
 interface PausaAuto { task_id?: string; titulo?: string; end_time?: string; duration_seconds?: number; tarea_abierta?: boolean; recuperable_seg?: number }
 const claveDe = (r: PausaAuto) => `${r.task_id}|${r.end_time ?? ''}`;
 const fmtMin = (seg: number) => {
@@ -23,13 +25,15 @@ const fmtMin = (seg: number) => {
  *   pausa la sesión sola (15 min sin latido) con el tiempo hasta el último latido.
  * - Aviso del navegador al intentar cerrar la pestaña con timer corriendo.
  * - Después de la hora de cierre (20:00 ECU): modal "¿Sigues trabajando?" —
- *   confirmar protege 3 horas; sin respuesta en 30 min se pausa solo.
+ *   no pregunta en las primeras 3 h del timer; confirmar protege 3 horas para esa
+ *   sesión en todas las pestañas; sin respuesta en 30 min se pausa solo.
  * - Al volver: si un timer se pausó solo, pregunta si siguió trabajando y ofrece
  *   recuperar ese tiempo (dentro de la jornada, máx. 10 h) y reanudar.
  */
 export function GlobalTimerGuard() {
   const activeRef = useRef(false);
   const confirmedUntilRef = useRef(0);
+  const sessionIdRef = useRef<string | null>(null);
   const modalShownAtRef = useRef(0);
   const [confirmInfo, setConfirmInfo] = useState<{ titulo: string } | null>(null);
 
@@ -38,7 +42,7 @@ export function GlobalTimerGuard() {
     let alive = true;
     const tick = async () => {
       try {
-        const r: any = await api.timerHeartbeat();
+        const r = await api.timerHeartbeat() as Latido;
         if (!alive) return;
         activeRef.current = !!r?.active;
         if (!r?.active) {
@@ -46,7 +50,9 @@ export function GlobalTimerGuard() {
           modalShownAtRef.current = 0;
           return;
         }
-        if (r?.eod && Date.now() > confirmedUntilRef.current) {
+        sessionIdRef.current = r.session_id ?? null;
+        const hasta = Math.max(confirmedUntilRef.current, r.session_id ? confirmadoHasta(localStorage, r.session_id) : 0);
+        if (debePreguntarCierre({ eod: !!r?.eod, inicio: r.start_time ?? null, confirmadoHasta: hasta, ahora: Date.now() })) {
           if (!modalShownAtRef.current) {
             modalShownAtRef.current = Date.now();
             setConfirmInfo({ titulo: r.titulo || 'tu tarea' });
@@ -57,6 +63,10 @@ export function GlobalTimerGuard() {
             setConfirmInfo(null);
             modalShownAtRef.current = 0;
           }
+        } else if (modalShownAtRef.current) {
+          // Otra pestaña ya confirmó
+          setConfirmInfo(null);
+          modalShownAtRef.current = 0;
         }
       } catch {
         // sin sesión / sin permisos: silencio
@@ -79,7 +89,17 @@ export function GlobalTimerGuard() {
     document.addEventListener('visibilitychange', onWake);
     window.addEventListener('focus', onWake);
     window.addEventListener('online', onWake);
+    // Si se confirma en otra pestaña, cerrar el aviso aquí también
+    const onStorage = (e: StorageEvent) => {
+      if (!esClaveDeConfirmacion(e.key) || !sessionIdRef.current) return;
+      if (confirmadoHasta(localStorage, sessionIdRef.current) > Date.now()) {
+        modalShownAtRef.current = 0;
+        setConfirmInfo(null);
+      }
+    };
+    window.addEventListener('storage', onStorage);
     return () => {
+      window.removeEventListener('storage', onStorage);
       alive = false;
       clearInterval(iv);
       worker?.terminate();
@@ -216,6 +236,7 @@ export function GlobalTimerGuard() {
           </AlertDialogCancel>
           <AlertDialogAction onClick={() => {
             confirmedUntilRef.current = Date.now() + 3 * 60 * 60 * 1000;
+            if (sessionIdRef.current) guardarConfirmacion(localStorage, sessionIdRef.current, confirmedUntilRef.current);
             modalShownAtRef.current = 0;
             setConfirmInfo(null);
             toast.success('Listo, seguimos. Te volveremos a preguntar en 3 horas.');

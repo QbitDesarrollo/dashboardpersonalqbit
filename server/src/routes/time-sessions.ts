@@ -245,7 +245,7 @@ timeSessionsRouter.post('/time-sessions/heartbeat', requireAuth, async (req: Aut
       [req.userId]
     );
     const row = await queryOne<any>(
-      `SELECT te.id, te.task_id, t.titulo_tarea FROM time_entries te
+      `SELECT te.id, te.task_id, te.start_time, t.titulo_tarea FROM time_entries te
        LEFT JOIN tasks t ON t.id = te.task_id
        WHERE te.user_id = ? AND te.status = 'active' LIMIT 1`,
       [req.userId]
@@ -260,7 +260,8 @@ timeSessionsRouter.post('/time-sessions/heartbeat', requireAuth, async (req: Aut
     const ecuHour = new Date(Date.now() - 5 * 3600 * 1000).getUTCHours();
     const eod = (!enabledRow || enabledRow.value !== '0') && ecuHour >= closeHour;
 
-    res.json({ active: true, session_id: row.id, task_id: row.task_id, titulo: row.titulo_tarea || null, eod });
+    res.json({ active: true, session_id: row.id, task_id: row.task_id, titulo: row.titulo_tarea || null, eod,
+      start_time: row.start_time ? new Date(row.start_time).toISOString() : null });
   } catch (e) {
     console.error('[TIME-SESSIONS] heartbeat error:', e);
     res.status(500).json({ error: 'Error en heartbeat' });
