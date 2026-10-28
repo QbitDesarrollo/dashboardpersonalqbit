@@ -1,84 +1,105 @@
-import { useEffect, useState } from 'react';
-import { Calendar, Video } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import * as api from '@/lib/apiClient';
+import { duracionTotal, fechaReunion, leerIngreso, registrarIngreso, type Reunion } from '@/lib/reuniones';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TarjetaReunion } from '@/components/reuniones/TarjetaReunion';
 import { cn } from '@/lib/utils';
 
-interface Meeting {
-  id: string;
-  summary: string;
-  start: string;
-  end: string;
-  htmlLink: string;
-  status?: string;
-  /** Lo calcula la API con la misma regla del monitor: excluye las tareas "[Tiusdei]" y los bloqueos personales. */
-  es_reunion?: boolean;
-}
+const VISTA = 'tiusdei:reuniones:vista';
 
-/**
- * "Tu día": franja con las reuniones de HOY del usuario (Google Calendar).
- * Carga automática al entrar a Tareas — el ejecutivo ve su día mapeado sin hacer nada.
- * Si Google no está conectado o no hay reuniones, no se muestra nada.
- */
+/** Franja de reuniones reales de hoy; el reloj local no necesita consultas por minuto. */
 export function TodayMeetings() {
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [meetings, setMeetings] = useState<Reunion[]>([]);
+  const [now, setNow] = useState(Date.now);
+  const [ingresos, setIngresos] = useState<Record<string, number>>({});
+  const [compacta, setCompacta] = useState(() => {
+    try { return localStorage.getItem(VISTA) === 'compacta'; } catch { return false; }
+  });
+  const scroll = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
+    let lastFetch = -Infinity;
+    let requestId = 0;
     const load = () => {
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
-      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
-      api.getGoogleCalendarEvents(start, end)
-        .then((r: { events?: Meeting[] }) => {
-          if (!alive) return;
-          const evs = (r?.events || [])
-            .filter((e: Meeting) => e.es_reunion === true)
-            .sort((a: Meeting, b: Meeting) => a.start.localeCompare(b.start));
-          setMeetings(evs);
+      const instante = Date.now();
+      if (instante - lastFetch < 60000) return;
+      lastFetch = instante;
+      const id = ++requestId;
+      const dia = fechaReunion(instante);
+      api.getGoogleCalendarEvents(`${dia}T00:00:00-05:00`, `${dia}T23:59:59.999-05:00`)
+        .then((r: { events?: Reunion[] }) => {
+          if (!alive || id !== requestId) return;
+          setMeetings((r.events ?? []).filter(e => e.es_reunion === true).sort((a, b) => a.start.localeCompare(b.start)));
         })
-        .catch(() => { /* Google no conectado o error: no mostrar nada */ });
+        .catch(() => { /* Google no conectado: conservar la franja no invasiva. */ });
+    };
+    const volver = () => {
+      if (document.visibilityState === 'hidden') return;
+      setNow(Date.now());
+      load();
     };
     load();
-    // refrescar cada 5 min: las reuniones se mueven o cancelan
-    const iv = setInterval(load, 5 * 60 * 1000);
-    return () => { alive = false; clearInterval(iv); };
+    const reloj = setInterval(() => setNow(Date.now()), 60000);
+    const refresco = setInterval(load, 5 * 60000);
+    window.addEventListener('focus', volver);
+    document.addEventListener('visibilitychange', volver);
+    return () => {
+      alive = false;
+      clearInterval(reloj);
+      clearInterval(refresco);
+      window.removeEventListener('focus', volver);
+      document.removeEventListener('visibilitychange', volver);
+    };
   }, []);
+
+  const cambiarVista = (valor: boolean) => {
+    setCompacta(valor);
+    try { localStorage.setItem(VISTA, valor ? 'compacta' : 'tarjetas'); } catch { /* Vista en memoria. */ }
+  };
+  const ingreso = (reunion: Reunion) => {
+    try { return leerIngreso(localStorage, reunion) ?? ingresos[`${reunion.id}:${reunion.start}`] ?? null; }
+    catch { return ingresos[`${reunion.id}:${reunion.start}`] ?? null; }
+  };
+  const entrar = (reunion: Reunion) => {
+    const instante = Date.now();
+    const primero = ingreso(reunion) ?? instante;
+    try { registrarIngreso(localStorage, reunion, primero); } catch { /* Ingreso en memoria. */ }
+    setIngresos(prev => ({ ...prev, [`${reunion.id}:${reunion.start}`]: primero }));
+    setNow(instante);
+  };
 
   if (meetings.length === 0) return null;
 
-  const now = Date.now();
-  const fmt = (iso: string) => new Date(iso).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', hour12: false });
-
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted/30 overflow-x-auto">
-      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0">
-        <Calendar className="h-3.5 w-3.5" />
-        Tu día · {meetings.length} {meetings.length === 1 ? 'reunión' : 'reuniones'}
+    <section aria-label="Reuniones de hoy" className={cn('flex min-w-0 items-center gap-1 rounded-lg border bg-muted/20 px-2', compacta ? 'h-12' : 'h-[84px]')}>
+      <span className="max-w-[180px] shrink-0 text-xs font-medium text-muted-foreground">
+        Tu día · {meetings.length} {meetings.length === 1 ? 'reunión' : 'reuniones'} · {duracionTotal(meetings)}
       </span>
-      <div className="flex items-center gap-1.5">
-        {meetings.map((m) => {
-          const enCurso = now >= new Date(m.start).getTime() && now <= new Date(m.end).getTime();
-          const pasada = now > new Date(m.end).getTime();
-          return (
-            <a
-              key={m.id}
-              href={m.htmlLink}
-              target="_blank"
-              rel="noreferrer"
-              title={`${m.summary} · ${fmt(m.start)}–${fmt(m.end)} (abrir en Google Calendar)`}
-              className={cn(
-                'inline-flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-md border text-[11px] font-medium transition-colors hover:bg-muted',
-                enCurso && 'border-green-500 text-green-600 bg-green-500/10',
-                pasada && 'opacity-50 line-through'
-              )}
-            >
-              {enCurso && <Video className="h-3 w-3" />}
-              <span className="font-mono">{fmt(m.start)}</span>
-              <span className="max-w-[180px] truncate">{m.summary}</span>
-            </a>
-          );
-        })}
+      <Button variant="ghost" size="icon" className="h-7 w-6 shrink-0" aria-label="Reuniones anteriores"
+        onClick={() => scroll.current?.scrollBy({ left: -300, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })}>
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <div ref={scroll} tabIndex={0} aria-label="Todas las reuniones de hoy" className="flex min-w-0 flex-1 gap-2 overflow-x-auto [scrollbar-width:none]">
+        {meetings.map(reunion => <TarjetaReunion key={reunion.id} reunion={reunion} now={now} ingreso={ingreso(reunion)} compacta={compacta} onEntrar={() => entrar(reunion)} />)}
       </div>
-    </div>
+      <Button variant="ghost" size="icon" className="h-7 w-6 shrink-0" aria-label="Reuniones siguientes"
+        onClick={() => scroll.current?.scrollBy({ left: 300, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })}>
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+      <div className="flex shrink-0 items-center gap-1">
+        <div role="group" aria-label="Vista de reuniones" className="flex rounded-md border">
+          <Button variant={compacta ? 'ghost' : 'secondary'} size="sm" className="h-7 px-2 text-xs" aria-pressed={!compacta} onClick={() => cambiarVista(false)}>Tarjetas</Button>
+          <Button variant={compacta ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2 text-xs" aria-pressed={compacta} onClick={() => cambiarVista(true)}>Compacta</Button>
+        </div>
+        <TooltipProvider><Tooltip><TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Acerca de Estás aquí"><Info className="h-3.5 w-3.5" /></Button>
+        </TooltipTrigger><TooltipContent className="max-w-xs">
+          “Estás aquí” aparece solo si entras desde Tiusdei y la reunión está en curso. No confirma tu asistencia en la videollamada.
+        </TooltipContent></Tooltip></TooltipProvider>
+      </div>
+    </section>
   );
 }
